@@ -177,7 +177,7 @@ export default function TidalCalendarApp() {
       setLoading(true);
       const response = await fetch(`${API_BASE_URL}/Stations`, {
         headers: {
-          'Cache-Control': 'no-cache',
+          'Cache-Control: no-cache',
           'Ocp-Apim-Subscription-Key': apiKey
         },
       });
