@@ -176,18 +176,30 @@ export default function TidalCalendarApp() {
     try {
       setLoading(true);
       const response = await fetch(`${API_BASE_URL}/Stations`, {
+        method: 'GET',
         headers: {
+          'Ocp-Apim-Subscription-Key': apiKey,
           'Cache-Control': 'no-cache',
-          'Ocp-Apim-Subscription-Key': apiKey
+          Accept: 'application/json',
         },
       });
       if (!response.ok) throw new Error('Failed to fetch stations.');
       const data = await response.json();
-      const formatted = data.features?.map(f => ({
-        id: f.properties.Id, name: f.properties.Name, country: f.properties.Country,
-        lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
-        mhws: 4.5, mhwn: 3.5, mlwn: 1.5, mlws: 0.5,
-      })) || [];
+      const formatted = Array.isArray(data)
+        ? data.map(s => ({
+            id: s.Id || s.id,
+            name: s.Name || s.name,
+            country: s.Country || s.country || 'Unknown',
+            lat: s.Latitude || s.lat || s.geometry?.coordinates?.[1],
+            lon: s.Longitude || s.lon || s.geometry?.coordinates?.[0],
+            mhws: 4.5, mhwn: 3.5, mlwn: 1.5, mlws: 0.5,
+          }))
+        : data.features?.map(f => ({
+            id: f.properties.Id, name: f.properties.Name, country: f.properties.Country,
+            lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
+            mhws: 4.5, mhwn: 3.5, mlwn: 1.5, mlws: 0.5,
+          })) || [];
+      if (formatted.length === 0) throw new Error('No stations returned from API.');
       setStations(formatted); setIsDemo(false); setError(null);
     } catch (err) { setError(err.message); setStations(DEMO_STATIONS); setIsDemo(true); }
     finally { setLoading(false); }
@@ -204,12 +216,15 @@ export default function TidalCalendarApp() {
     if (apiKey && !isDemo) {
       try {
         const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=7`, {
+          method: 'GET',
           headers: {
             'Ocp-Apim-Subscription-Key': apiKey,
             'Cache-Control': 'no-cache',
+            Accept: 'application/json',
           },
         });
-        if (response.ok) apiEvents = await response.json();
+        if (!response.ok) throw new Error(`TidalEvents fetch failed (${response.status})`);
+        apiEvents = await response.json();
       } catch (err) { console.warn('API fetch failed:', err); }
     }
     
