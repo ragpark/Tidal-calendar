@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 // UK Admiralty Tidal API Configuration
-const API_BASE_URL = 'https://admiraltyapi.azure-api.net/uktidalapi/api/V1';
+const API_BASE_URL = '/api';
 const DEFAULT_API_KEY = 'baec423358314e4e8f527980f959295d';
 
 const loadUsers = () => {
@@ -201,10 +201,7 @@ export default function TidalCalendarApp() {
     if (!apiKey) { setStations(DEMO_STATIONS); setIsDemo(true); return; }
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/Stations?subscription-key=${apiKey}`, {
-        method: 'GET',
-        cache: 'no-store',
-      });
+      const response = await fetch(`${API_BASE_URL}/Stations`, { method: 'GET', cache: 'no-store' });
       if (!response.ok) throw new Error('Failed to fetch stations.');
       const data = await response.json();
       const formatted = Array.isArray(data)
@@ -237,10 +234,7 @@ export default function TidalCalendarApp() {
     let apiEvents = [];
     if (apiKey && !isDemo) {
       try {
-        const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=7&subscription-key=${apiKey}`, {
-          method: 'GET',
-          cache: 'no-store',
-        });
+        const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=7`, { method: 'GET', cache: 'no-store' });
         if (!response.ok) throw new Error(`TidalEvents fetch failed (${response.status})`);
         apiEvents = await response.json();
       } catch (err) { console.warn('API fetch failed:', err); }
