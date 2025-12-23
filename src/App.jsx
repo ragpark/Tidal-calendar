@@ -2,6 +2,27 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 // UK Admiralty Tidal API Configuration
 const API_BASE_URL = 'https://admiraltyapi.azure-api.net/uktidalapi/api/V1';
+const DEFAULT_API_KEY = 'baec423358314e4e8f527980f959295d';
+
+const loadUsers = () => {
+  if (typeof localStorage === 'undefined') return [];
+  try { return JSON.parse(localStorage.getItem('tc_users') || '[]'); } catch { return []; }
+};
+
+const persistUsers = (users) => {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem('tc_users', JSON.stringify(users));
+};
+
+const loadAlerts = (email) => {
+  if (!email || typeof localStorage === 'undefined') return [];
+  try { return JSON.parse(localStorage.getItem(`tc_alerts_${email}`) || '[]'); } catch { return []; }
+};
+
+const persistAlerts = (email, alerts) => {
+  if (!email || typeof localStorage === 'undefined') return;
+  localStorage.setItem(`tc_alerts_${email}`, JSON.stringify(alerts));
+};
 
 // Sample stations with tidal characteristics for prediction
 const DEMO_STATIONS = [
@@ -153,18 +174,23 @@ const ScrubbingBadge = ({ rating, small = false }) => {
 // ===========================================
 
 export default function TidalCalendarApp() {
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey] = useState(DEFAULT_API_KEY);
   const [stations, setStations] = useState(DEMO_STATIONS);
   const [selectedStation, setSelectedStation] = useState(null);
   const [tidalEvents, setTidalEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isDemo, setIsDemo] = useState(true);
-  const [showApiInput, setShowApiInput] = useState(false);
+  const [isDemo, setIsDemo] = useState(!DEFAULT_API_KEY);
   const [viewMode, setViewMode] = useState('monthly');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null);
+  const [user, setUser] = useState(null);
+  const [authMode, setAuthMode] = useState('signin');
+  const [authForm, setAuthForm] = useState({ email: '', password: '' });
+  const [authError, setAuthError] = useState('');
+  const [alerts, setAlerts] = useState([]);
+  const [alertForm, setAlertForm] = useState({ title: '', dueDate: '', notes: '' });
   
   const [scrubSettings, setScrubSettings] = useState({
     highWaterStart: '06:30',
@@ -175,14 +201,27 @@ export default function TidalCalendarApp() {
     if (!apiKey) { setStations(DEMO_STATIONS); setIsDemo(true); return; }
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/Stations`, { headers: { 'Ocp-Apim-Subscription-Key': apiKey } });
+      const response = await fetch(`${API_BASE_URL}/Stations?subscription-key=${apiKey}`, {
+        method: 'GET',
+        cache: 'no-store',
+      });
       if (!response.ok) throw new Error('Failed to fetch stations.');
       const data = await response.json();
-      const formatted = data.features?.map(f => ({
-        id: f.properties.Id, name: f.properties.Name, country: f.properties.Country,
-        lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
-        mhws: 4.5, mhwn: 3.5, mlwn: 1.5, mlws: 0.5,
-      })) || [];
+      const formatted = Array.isArray(data)
+        ? data.map(s => ({
+            id: s.Id || s.id,
+            name: s.Name || s.name,
+            country: s.Country || s.country || 'Unknown',
+            lat: s.Latitude || s.lat || s.geometry?.coordinates?.[1],
+            lon: s.Longitude || s.lon || s.geometry?.coordinates?.[0],
+            mhws: 4.5, mhwn: 3.5, mlwn: 1.5, mlws: 0.5,
+          }))
+        : data.features?.map(f => ({
+            id: f.properties.Id, name: f.properties.Name, country: f.properties.Country,
+            lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
+            mhws: 4.5, mhwn: 3.5, mlwn: 1.5, mlws: 0.5,
+          })) || [];
+      if (formatted.length === 0) throw new Error('No stations returned from API.');
       setStations(formatted); setIsDemo(false); setError(null);
     } catch (err) { setError(err.message); setStations(DEMO_STATIONS); setIsDemo(true); }
     finally { setLoading(false); }
@@ -198,8 +237,12 @@ export default function TidalCalendarApp() {
     let apiEvents = [];
     if (apiKey && !isDemo) {
       try {
-        const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=7`, { headers: { 'Ocp-Apim-Subscription-Key': apiKey } });
-        if (response.ok) apiEvents = await response.json();
+        const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=7&subscription-key=${apiKey}`, {
+          method: 'GET',
+          cache: 'no-store',
+        });
+        if (!response.ok) throw new Error(`TidalEvents fetch failed (${response.status})`);
+        apiEvents = await response.json();
       } catch (err) { console.warn('API fetch failed:', err); }
     }
     
@@ -213,10 +256,65 @@ export default function TidalCalendarApp() {
 
   useEffect(() => { fetchStations(); }, [fetchStations]);
   useEffect(() => { if (selectedStation) fetchTidalEvents(selectedStation); }, [selectedStation, fetchTidalEvents]);
+  useEffect(() => {
+    try {
+      const savedUser = JSON.parse(localStorage.getItem('tc_user'));
+      if (savedUser?.email) {
+        setUser(savedUser);
+        setAlerts(loadAlerts(savedUser.email));
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   const filteredStations = stations.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.country.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleAuthSubmit = (e) => {
+    e.preventDefault();
+    setAuthError('');
+    const { email, password } = authForm;
+    if (!email || !password) { setAuthError('Email and password are required.'); return; }
+    const users = loadUsers();
+    if (authMode === 'signup') {
+      if (users.find(u => u.email === email)) { setAuthError('An account already exists for this email.'); return; }
+      const nextUsers = [...users, { email, password }];
+      persistUsers(nextUsers);
+      setUser({ email });
+      localStorage.setItem('tc_user', JSON.stringify({ email }));
+      setAlerts(loadAlerts(email));
+    } else {
+      const existing = users.find(u => u.email === email && u.password === password);
+      if (!existing) { setAuthError('Invalid email or password.'); return; }
+      setUser({ email });
+      localStorage.setItem('tc_user', JSON.stringify({ email }));
+      setAlerts(loadAlerts(email));
+    }
+    setAuthForm({ email: '', password: '' });
+  };
+
+  const handleSignOut = () => {
+    setUser(null);
+    setAlerts([]);
+    localStorage.removeItem('tc_user');
+  };
+
+  const handleAlertSubmit = (e) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!alertForm.title || !alertForm.dueDate) return;
+    const nextAlerts = [...alerts, { id: Date.now(), ...alertForm }];
+    setAlerts(nextAlerts);
+    persistAlerts(user.email, nextAlerts);
+    setAlertForm({ title: '', dueDate: '', notes: '' });
+  };
+
+  const handleDeleteAlert = (id) => {
+    if (!user) return;
+    const nextAlerts = alerts.filter(a => a.id !== id);
+    setAlerts(nextAlerts);
+    persistAlerts(user.email, nextAlerts);
+  };
 
   // Analyse scrubbing suitability
   const scrubbingByDate = useMemo(() => {
@@ -349,26 +447,10 @@ export default function TidalCalendarApp() {
           <h1 style={{ fontSize: 'clamp(36px, 8vw, 64px)', fontWeight: 300, letterSpacing: '3px', margin: '0 0 16px', background: 'linear-gradient(135deg, #f8fafc 0%, #94a3b8 50%, #f8fafc 100%)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', animation: 'shimmer 4s linear infinite' }}>Tidal Calendar</h1>
           <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#64748b', maxWidth: '500px', margin: '0 auto 24px' }}>Monthly view • Harmonic predictions • Boat scrubbing planner</p>
           
-          <button onClick={() => setShowApiInput(!showApiInput)} style={{ background: isDemo ? 'rgba(251, 191, 36, 0.2)' : 'rgba(34, 197, 94, 0.2)', border: `1px solid ${isDemo ? 'rgba(251, 191, 36, 0.4)' : 'rgba(34, 197, 94, 0.4)'}`, color: isDemo ? '#fbbf24' : '#22c55e', padding: '8px 16px', borderRadius: '20px', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '1px' }}>
-            {isDemo ? '⚠ Demo Mode — Add API Key' : '✓ Live API Connected'}
-          </button>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.4)', color: '#22c55e', padding: '8px 16px', borderRadius: '20px', fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '1px' }}>
+            ✓ Live API Connected
+          </span>
         </div>
-
-        {showApiInput && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-            <div style={{ background: 'linear-gradient(180deg, #1e3a5f 0%, #0f2744 100%)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '16px', padding: '32px', maxWidth: '480px', width: '90%' }}>
-              <h3 style={{ margin: '0 0 8px', fontSize: '24px', fontWeight: 400 }}>Connect to Live API</h3>
-              <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#94a3b8', margin: '0 0 24px' }}>
-                Get your free API key from <a href="https://admiraltyapi.portal.azure-api.net" target="_blank" rel="noopener noreferrer" style={{ color: '#38bdf8' }}>Admiralty Developer Portal</a>
-              </p>
-              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Ocp-Apim-Subscription-Key" style={{ width: '100%', padding: '14px 18px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '8px', color: '#e2e8f0', fontSize: '14px', fontFamily: "'Outfit', sans-serif", marginBottom: '16px', boxSizing: 'border-box' }} />
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button onClick={() => setShowApiInput(false)} style={{ flex: 1, padding: '12px', background: 'transparent', border: '1px solid rgba(148, 163, 184, 0.3)', borderRadius: '8px', color: '#94a3b8', cursor: 'pointer', fontFamily: "'Outfit', sans-serif" }}>Cancel</button>
-                <button onClick={() => { fetchStations(); setShowApiInput(false); }} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontWeight: 500 }}>Connect</button>
-              </div>
-            </div>
-          </div>
-        )}
 
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}><TideWave height={80} /></div>
       </header>
@@ -377,47 +459,117 @@ export default function TidalCalendarApp() {
       <main style={{ position: 'relative', zIndex: 10, padding: '0 24px 60px', maxWidth: '1400px', margin: '0 auto' }}>
         {error && <div style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#fca5a5' }}>⚠ {error}</div>}
 
-        {/* Station Selection */}
-        <section style={{ marginBottom: '40px', animation: 'fadeInUp 0.8s ease-out 0.2s both' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 400, letterSpacing: '2px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ width: '40px', height: '1px', background: 'linear-gradient(90deg, transparent, #38bdf8)' }} />Select Tidal Station
-          </h2>
-          
-          <div style={{ position: 'relative', marginBottom: '20px' }}>
-            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search stations..." style={{ width: '100%', maxWidth: '400px', padding: '14px 18px 14px 48px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '12px', color: '#e2e8f0', fontSize: '15px', fontFamily: "'Outfit', sans-serif", boxSizing: 'border-box' }} />
-            <span style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', opacity: 0.5 }}>⚓</span>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px', maxHeight: '160px', overflowY: 'auto', padding: '4px' }}>
-            {filteredStations.slice(0, 20).map((station, i) => (
-              <button key={station.id} className="station-card" onClick={() => setSelectedStation(station)} style={{ background: selectedStation?.id === station.id ? 'rgba(56, 189, 248, 0.2)' : 'rgba(30, 58, 95, 0.5)', border: `1px solid ${selectedStation?.id === station.id ? 'rgba(56, 189, 248, 0.5)' : 'rgba(56, 189, 248, 0.15)'}`, borderRadius: '12px', padding: '14px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease' }}>
-                <div style={{ fontSize: '15px', fontWeight: 500, color: '#f1f5f9', marginBottom: '2px' }}>{station.name}</div>
-                <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>{station.country}</div>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* Station Content */}
-        {selectedStation && (
-          <section style={{ animation: 'fadeInUp 0.6s ease-out' }}>
-            {/* Station Header */}
-            <div style={{ background: 'linear-gradient(135deg, rgba(30, 58, 95, 0.8) 0%, rgba(15, 39, 68, 0.9) 100%)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '20px', padding: '24px 28px', marginBottom: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', alignItems: 'start' }}>
+          {/* Left Column: Account + Station */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Account & Alerts */}
+            <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both' }}>
+              <div style={{ background: 'rgba(30, 58, 95, 0.4)', border: '1px solid rgba(56, 189, 248, 0.15)', borderRadius: '16px', padding: '20px', display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
                 <div>
-                  <h2 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 400, margin: '0 0 4px' }}>{selectedStation.name}</h2>
-                  <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#94a3b8', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: 500, margin: 0 }}>Account</h3>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => setAuthMode('signin')} style={{ padding: '6px 10px', background: authMode === 'signin' ? 'rgba(56, 189, 248, 0.2)' : 'transparent', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '6px', color: '#e2e8f0', cursor: 'pointer' }}>Sign In</button>
+                      <button onClick={() => setAuthMode('signup')} style={{ padding: '6px 10px', background: authMode === 'signup' ? 'rgba(56, 189, 248, 0.2)' : 'transparent', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '6px', color: '#e2e8f0', cursor: 'pointer' }}>Sign Up</button>
+                    </div>
+                  </div>
+
+                  {!user ? (
+                    <form onSubmit={handleAuthSubmit} style={{ display: 'grid', gap: '10px' }}>
+                      <input type="email" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '12px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', color: '#e2e8f0' }} />
+                      <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '12px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', color: '#e2e8f0' }} />
+                      {authError && <div style={{ color: '#fca5a5', fontSize: '12px' }}>{authError}</div>}
+                      <button type="submit" style={{ padding: '12px', background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>{authMode === 'signup' ? 'Create Account' : 'Sign In'}</button>
+                    </form>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: '14px', color: '#e2e8f0' }}>Signed in as</div>
+                        <div style={{ fontSize: '13px', color: '#94a3b8' }}>{user.email}</div>
+                      </div>
+                      <button onClick={handleSignOut} style={{ padding: '10px 12px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', color: '#f87171', cursor: 'pointer' }}>Sign Out</button>
+                    </div>
+                  )}
                 </div>
-                
-                <div style={{ display: 'flex', gap: '8px', background: 'rgba(15, 23, 42, 0.5)', padding: '4px', borderRadius: '12px' }}>
-                  {['monthly', 'scrubbing'].map(mode => (
-                    <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? 'rgba(56, 189, 248, 0.3)' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#38bdf8' : '#64748b', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 500, transition: 'all 0.3s' }}>
-                      {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
-                    </button>
-                  ))}
+
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: 500, margin: 0 }}>Maintenance Alerts</h3>
+                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>{alerts.length} scheduled</span>
+                  </div>
+                  {user ? (
+                    <>
+                      <form onSubmit={handleAlertSubmit} style={{ display: 'grid', gap: '8px', marginBottom: '12px' }}>
+                        <input type="text" placeholder="Task (e.g., Scrub hull)" value={alertForm.title} onChange={(e) => setAlertForm(f => ({ ...f, title: e.target.value }))} style={{ padding: '10px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', color: '#e2e8f0', fontSize: '13px' }} />
+                        <input type="datetime-local" value={alertForm.dueDate} onChange={(e) => setAlertForm(f => ({ ...f, dueDate: e.target.value }))} style={{ padding: '10px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', color: '#e2e8f0', fontSize: '13px' }} />
+                        <textarea placeholder="Notes (tools, crew, conditions...)" value={alertForm.notes} onChange={(e) => setAlertForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ padding: '10px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', color: '#e2e8f0', fontSize: '13px', resize: 'vertical' }} />
+                        <button type="submit" style={{ padding: '10px', background: 'rgba(34, 197, 94, 0.2)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '8px', color: '#22c55e', cursor: 'pointer', fontWeight: 600 }}>Add Alert</button>
+                      </form>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                        {alerts.length === 0 && <div style={{ fontSize: '13px', color: '#94a3b8' }}>No alerts yet. Create one to nudge yourself before scrubbing or maintenance.</div>}
+                        {alerts.map(a => (
+                          <div key={a.id} style={{ padding: '10px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.1)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                            <div>
+                              <div style={{ fontSize: '13px', color: '#e2e8f0', marginBottom: '2px' }}>{a.title}</div>
+                              <div style={{ fontSize: '12px', color: '#94a3b8' }}>{a.dueDate ? new Date(a.dueDate).toLocaleString('en-GB') : ''}</div>
+                              {a.notes && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{a.notes}</div>}
+                            </div>
+                            <button onClick={() => handleDeleteAlert(a.id)} style={{ alignSelf: 'flex-start', padding: '6px 8px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', color: '#f87171', cursor: 'pointer' }}>Remove</button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: '13px', color: '#94a3b8' }}>Sign in to create scrubbing and maintenance alerts.</div>
+                  )}
                 </div>
               </div>
-            </div>
+            </section>
+
+            {/* Station Selection */}
+            <section style={{ animation: 'fadeInUp 0.8s ease-out 0.2s both' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 400, letterSpacing: '2px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ width: '40px', height: '1px', background: 'linear-gradient(90deg, transparent, #38bdf8)' }} />Select Tidal Station
+              </h2>
+              
+              <div style={{ position: 'relative', marginBottom: '20px' }}>
+                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search stations..." style={{ width: '100%', padding: '14px 18px 14px 48px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '12px', color: '#e2e8f0', fontSize: '15px', fontFamily: "'Outfit', sans-serif", boxSizing: 'border-box' }} />
+                <span style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', opacity: 0.5 }}>⚓</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px', maxHeight: '160px', overflowY: 'auto', padding: '4px' }}>
+                {filteredStations.slice(0, 20).map((station, i) => (
+                  <button key={station.id} className="station-card" onClick={() => setSelectedStation(station)} style={{ background: selectedStation?.id === station.id ? 'rgba(56, 189, 248, 0.2)' : 'rgba(30, 58, 95, 0.5)', border: `1px solid ${selectedStation?.id === station.id ? 'rgba(56, 189, 248, 0.5)' : 'rgba(56, 189, 248, 0.15)'}`, borderRadius: '12px', padding: '14px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease' }}>
+                    <div style={{ fontSize: '15px', fontWeight: 500, color: '#f1f5f9', marginBottom: '2px' }}>{station.name}</div>
+                    <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>{station.country}</div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          </div>
+
+          {/* Right Column: Calendar & Detail */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Station Content */}
+            {selectedStation && (
+              <section style={{ animation: 'fadeInUp 0.6s ease-out' }}>
+                {/* Station Header */}
+                <div style={{ background: 'linear-gradient(135deg, rgba(30, 58, 95, 0.8) 0%, rgba(15, 39, 68, 0.9) 100%)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '20px', padding: '24px 28px', marginBottom: '24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                    <div>
+                      <h2 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 400, margin: '0 0 4px' }}>{selectedStation.name}</h2>
+                      <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#94a3b8', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '8px', background: 'rgba(15, 23, 42, 0.5)', padding: '4px', borderRadius: '12px' }}>
+                      {['monthly', 'scrubbing'].map(mode => (
+                        <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? 'rgba(56, 189, 248, 0.3)' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#38bdf8' : '#64748b', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 500, transition: 'all 0.3s' }}>
+                          {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
 
             {/* Scrubbing Settings */}
             <div style={{ background: 'rgba(30, 58, 95, 0.4)', border: '1px solid rgba(56, 189, 248, 0.1)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center' }}>
@@ -642,6 +794,8 @@ export default function TidalCalendarApp() {
             <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '15px', color: '#64748b', maxWidth: '400px', margin: '0 auto' }}>Choose a station to view monthly tide times and find the best days for scrubbing your boat.</p>
           </div>
         )}
+          </div>
+        </div>
       </main>
 
       {/* Footer */}
