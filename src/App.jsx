@@ -201,13 +201,9 @@ export default function TidalCalendarApp() {
     if (!apiKey) { setStations(DEMO_STATIONS); setIsDemo(true); return; }
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/Stations`, {
+      const response = await fetch(`${API_BASE_URL}/Stations?subscription-key=${apiKey}`, {
         method: 'GET',
-        headers: {
-          'Ocp-Apim-Subscription-Key': apiKey,
-          'Cache-Control': 'no-cache',
-          Accept: 'application/json',
-        },
+        cache: 'no-store',
       });
       if (!response.ok) throw new Error('Failed to fetch stations.');
       const data = await response.json();
@@ -241,13 +237,9 @@ export default function TidalCalendarApp() {
     let apiEvents = [];
     if (apiKey && !isDemo) {
       try {
-        const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=7`, {
+        const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=7&subscription-key=${apiKey}`, {
           method: 'GET',
-          headers: {
-            'Ocp-Apim-Subscription-Key': apiKey,
-            'Cache-Control': 'no-cache',
-            Accept: 'application/json',
-          },
+          cache: 'no-store',
         });
         if (!response.ok) throw new Error(`TidalEvents fetch failed (${response.status})`);
         apiEvents = await response.json();
