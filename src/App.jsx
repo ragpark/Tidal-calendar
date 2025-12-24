@@ -286,6 +286,7 @@ export default function TidalCalendarApp() {
   const [authError, setAuthError] = useState('');
   const [alerts, setAlerts] = useState([]);
   const [alertForm, setAlertForm] = useState({ title: '', dueDate: '', notes: '' });
+  const [subscriptionEnd, setSubscriptionEnd] = useState('2025-12-31');
   const [clubWindows, setClubWindows] = useState([
     { id: 'w1', date: 'Thu 18 Sep', lowWater: '11:42', duration: '2h 20m', capacity: 8, booked: 5, boats: ['Aurora', 'Seaglass', 'Tern', 'Mistral', 'Swift'] },
     { id: 'w2', date: 'Fri 19 Sep', lowWater: '12:28', duration: '2h 10m', capacity: 8, booked: 3, boats: ['Aurora', 'Bluefin', 'Wren'] },
@@ -356,6 +357,7 @@ export default function TidalCalendarApp() {
       if (savedUser?.email) {
         setUser(savedUser);
         setHomePort(savedUser.homePortId || '');
+        if (savedUser.subscriptionEnd) setSubscriptionEnd(savedUser.subscriptionEnd);
         setAlerts(loadAlerts(savedUser.email));
       }
     } catch { /* ignore */ }
@@ -369,6 +371,79 @@ export default function TidalCalendarApp() {
   const filteredStations = stations.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.country.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const subscriptionActive = useMemo(() => {
+    const end = new Date(subscriptionEnd);
+    return end.getTime() > Date.now();
+  }, [subscriptionEnd]);
+
+  const handleAuthSubmit = (e) => {
+    e.preventDefault();
+    setAuthError('');
+    const { email, password } = authForm;
+    if (!email || !password) { setAuthError('Email and password are required.'); return; }
+    const users = loadUsers();
+    if (authMode === 'signup') {
+      if (users.find(u => u.email === email)) { setAuthError('An account already exists for this email.'); return; }
+      const nextUsers = [...users, { email, password, homePortId: '', homePortName: '', subscriptionEnd }];
+      persistUsers(nextUsers);
+      const newUser = { email, homePortId: '', homePortName: '', subscriptionEnd };
+      setUser(newUser);
+      setHomePort('');
+      localStorage.setItem('tc_user', JSON.stringify(newUser));
+      setAlerts(loadAlerts(email));
+    } else {
+      const existing = users.find(u => u.email === email && u.password === password);
+      if (!existing) { setAuthError('Invalid email or password.'); return; }
+      setUser(existing);
+      setHomePort(existing.homePortId || '');
+      if (existing.subscriptionEnd) setSubscriptionEnd(existing.subscriptionEnd);
+      localStorage.setItem('tc_user', JSON.stringify(existing));
+      setAlerts(loadAlerts(email));
+    }
+    setAuthForm({ email: '', password: '' });
+  };
+
+  const handleSignOut = () => {
+    setUser(null);
+    setAlerts([]);
+    localStorage.removeItem('tc_user');
+  };
+
+  const handleAlertSubmit = (e) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!alertForm.title || !alertForm.dueDate) return;
+    const nextAlerts = [...alerts, { id: Date.now(), ...alertForm }];
+    setAlerts(nextAlerts);
+    persistAlerts(user.email, nextAlerts);
+    setAlertForm({ title: '', dueDate: '', notes: '' });
+  };
+
+  const handleDeleteAlert = (id) => {
+    if (!user) return;
+    const nextAlerts = alerts.filter(a => a.id !== id);
+    setAlerts(nextAlerts);
+    persistAlerts(user.email, nextAlerts);
+  };
+
+  const handleSaveHomePort = () => {
+    if (!user) return;
+    const match = stations.find(s => s.id === homePort);
+    const updated = updateUserInStorage(user.email, (u) => ({ ...u, homePortId: homePort, homePortName: match?.name || '' }));
+    if (updated) {
+      setUser(updated);
+      if (match) setSelectedStation(match);
+    }
+  };
+
+  const handleJoinWindow = (id) => {
+    setClubWindows(prev => prev.map(w => {
+      if (w.id !== id || w.booked >= w.capacity) return w;
+      const boatName = user?.homePortName || 'My Boat';
+      if (w.boats.includes(boatName)) return w;
+      return { ...w, booked: w.booked + 1, boats: [...w.boats, boatName] };
+    }));
+  };
 
   const handleAuthSubmit = (e) => {
     e.preventDefault();
@@ -612,11 +687,11 @@ export default function TidalCalendarApp() {
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
-                    <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
-                  </div>
-                  <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
+                  <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
+                  <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
                 </div>
+                <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
+              </div>
               )}
 
               {user && (
@@ -628,6 +703,7 @@ export default function TidalCalendarApp() {
                   </select>
                   <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Port</button>
                   {user.homePortName && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.homePortName}</strong></div>}
+                  <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{new Date(subscriptionEnd).toLocaleDateString('en-GB')}</strong></div>
                 </div>
               )}
             </div>
@@ -818,9 +894,11 @@ export default function TidalCalendarApp() {
                           </div>
                         )}
 
-                        {/* Predicted indicator */}
-                        {isPredicted && isCurrentMonth && (
-                          <div style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: '#b45309', opacity: 0.9 }}>pred</div>
+                        {/* Data source indicator */}
+                        {isCurrentMonth && (
+                          <div style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: subscriptionActive ? '#0ea5e9' : '#b45309', opacity: 0.9 }}>
+                            {subscriptionActive ? 'UKHO' : (isPredicted ? 'pred' : 'API')}
+                          </div>
                         )}
                       </div>
                     );
@@ -850,7 +928,7 @@ export default function TidalCalendarApp() {
                   <div>
                     <h3 style={{ fontSize: '24px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>{selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
                     <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#334155', margin: 0 }}>
-                      {getMoonPhaseName(selectedDay).icon} {getMoonPhaseName(selectedDay).name} • {eventsByDay[selectedDay.toDateString()]?.some(e => e.IsPredicted) ? 'Predicted' : 'API Data'}
+                      {getMoonPhaseName(selectedDay).icon} {getMoonPhaseName(selectedDay).name} • {subscriptionActive ? 'UKHO data' : (eventsByDay[selectedDay.toDateString()]?.some(e => e.IsPredicted) ? 'Predicted' : 'API Data')}
                     </p>
                   </div>
                   {scrubbingByDate[selectedDay.toDateString()] && <ScrubbingBadge rating={scrubbingByDate[selectedDay.toDateString()].rating} />}
@@ -865,7 +943,8 @@ export default function TidalCalendarApp() {
                         <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: isHigh ? '#0ea5e9' : '#475569', marginBottom: '4px', fontWeight: 600 }}>{isHigh ? '↑ High Water' : '↓ Low Water'}</div>
                         <div style={{ fontSize: '28px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{formatTime(event.DateTime)}</div>
                         <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155' }}>{event.Height?.toFixed(2)}m</div>
-                        {event.IsPredicted && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#b45309', marginTop: '8px' }}>⚠ Predicted (harmonic algorithm)</div>}
+                        {event.IsPredicted && !subscriptionActive && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#b45309', marginTop: '8px' }}>⚠ Predicted (harmonic algorithm)</div>}
+                        {subscriptionActive && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '8px' }}>UKHO data (subscription)</div>}
                       </div>
                     );
                   })}
@@ -917,7 +996,7 @@ export default function TidalCalendarApp() {
                                 <div style={{ fontSize: '20px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
                                 <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155' }}>
                                   HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m
-                                  {isPredicted && <span style={{ color: '#b45309', marginLeft: '8px' }}>• Predicted</span>}
+                                  {subscriptionActive ? <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>• UKHO</span> : (isPredicted && <span style={{ color: '#b45309', marginLeft: '8px' }}>• Predicted</span>)}
                                 </div>
                               </div>
                               <ScrubbingBadge rating={data.rating} />
