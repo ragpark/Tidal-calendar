@@ -38,6 +38,84 @@ const persistAlerts = (email, alerts) => {
   localStorage.setItem(`tc_alerts_${email}`, JSON.stringify(alerts));
 };
 
+// MODE SWITCH
+const ModeSwitch = ({ mode, onChange, clubName }) => (
+  <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginBottom: '12px' }}>
+    <button onClick={() => onChange('personal')} style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(56,189,248,0.3)', background: mode === 'personal' ? 'rgba(56, 189, 248, 0.25)' : 'rgba(15,23,42,0.6)', color: '#e2e8f0', cursor: 'pointer', fontFamily: "'Outfit', sans-serif" }}>Personal</button>
+    <button onClick={() => onChange('club')} style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(56,189,248,0.3)', background: mode === 'club' ? 'rgba(56, 189, 248, 0.25)' : 'rgba(15,23,42,0.6)', color: '#e2e8f0', cursor: 'pointer', fontFamily: "'Outfit', sans-serif" }}>Club: {clubName}</button>
+  </div>
+);
+
+// CLUB COMPONENTS
+const ScrubWindowCard = ({ window, onJoin }) => {
+  const isFull = window.booked >= window.capacity;
+  return (
+    <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.2)', background: 'rgba(15,23,42,0.6)', display: 'grid', gap: '6px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: '14px', color: '#e2e8f0' }}>{window.date}</div>
+          <div style={{ fontSize: '12px', color: '#94a3b8' }}>Low water {window.lowWater} • Duration {window.duration}</div>
+        </div>
+        {window.booked > 5 && <span style={{ fontSize: '12px', color: '#fbbf24' }}>Scrub day vibe</span>}
+      </div>
+      <div style={{ fontSize: '12px', color: '#94a3b8' }}>{window.booked} of {window.capacity} boats booked</div>
+      {window.booked > 5 && window.boats?.length > 0 && (
+        <div style={{ fontSize: '12px', color: '#cbd5e1' }}>
+          Boats: {window.boats.slice(0, 6).join(', ')}
+          {window.boats.length > 6 && '…'}
+        </div>
+      )}
+      <button disabled={isFull} onClick={onJoin} style={{ padding: '10px', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.4)', background: isFull ? 'rgba(148,163,184,0.2)' : 'rgba(34,197,94,0.2)', color: isFull ? '#94a3b8' : '#22c55e', cursor: isFull ? 'not-allowed' : 'pointer', fontWeight: 600 }}>
+        {isFull ? 'Capacity reached' : 'Join this window'}
+      </button>
+    </div>
+  );
+};
+
+const ClubRulesPanel = () => (
+  <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.2)', background: 'rgba(15,23,42,0.5)', display: 'grid', gap: '8px' }}>
+    <h4 style={{ margin: 0, fontSize: '14px', color: '#e2e8f0' }}>Club Rules</h4>
+    <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+      <strong style={{ color: '#e2e8f0' }}>Scrubbing area:</strong> Outer grid, west wall only.
+    </div>
+    <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+      <strong style={{ color: '#e2e8f0' }}>Permitted:</strong> Soft brush, hand tools, buckets of seawater.
+    </div>
+    <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+      <strong style={{ color: '#e2e8f0' }}>Prohibited:</strong> Pressure washers, detergents, scrubbing antifoul into the mud.
+    </div>
+  </div>
+);
+
+const ClubDashboard = ({ clubName, windows, onJoinWindow }) => {
+  const nextWindow = windows[0];
+  return (
+    <div style={{ display: 'grid', gap: '14px' }}>
+      <div style={{ padding: '16px', borderRadius: '14px', border: '1px solid rgba(56,189,248,0.2)', background: 'linear-gradient(135deg, rgba(30,58,95,0.8) 0%, rgba(15,39,68,0.9) 100%)', color: '#e2e8f0' }}>
+        <div style={{ fontSize: '12px', letterSpacing: '1px', color: '#94a3b8' }}>{clubName}</div>
+        {nextWindow ? (
+          <>
+            <div style={{ fontSize: '18px', margin: '6px 0' }}>Next scrub window: {nextWindow.date}</div>
+            <div style={{ fontSize: '13px', color: '#cbd5e1' }}>Low water {nextWindow.lowWater} • Estimated {nextWindow.duration}</div>
+            <div style={{ fontSize: '13px', color: '#94a3b8' }}>{nextWindow.booked} of {nextWindow.capacity} boats booked • {nextWindow.capacity - nextWindow.booked} remaining</div>
+          </>
+        ) : (
+          <div style={{ fontSize: '13px', color: '#94a3b8' }}>No upcoming windows</div>
+        )}
+      </div>
+
+      <ClubRulesPanel />
+
+      <div style={{ display: 'grid', gap: '10px' }}>
+        <h4 style={{ margin: '8px 0', color: '#e2e8f0', fontSize: '14px' }}>Upcoming scrub windows</h4>
+        {windows.map(w => (
+          <ScrubWindowCard key={w.id} window={w} onJoin={() => onJoinWindow(w.id)} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // Sample stations with tidal characteristics for prediction
 const DEMO_STATIONS = [
   { id: '0001', name: 'Aberdeen', country: 'Scotland', lat: 57.143, lon: -2.079, mhws: 4.3, mhwn: 3.4, mlwn: 1.3, mlws: 0.5 },
@@ -202,11 +280,17 @@ export default function TidalCalendarApp() {
   const [user, setUser] = useState(null);
   const [homePort, setHomePort] = useState('');
   const [currentPage, setCurrentPage] = useState('dashboard');
+  const [mode, setMode] = useState('personal');
   const [authMode, setAuthMode] = useState('signin');
   const [authForm, setAuthForm] = useState({ email: '', password: '' });
   const [authError, setAuthError] = useState('');
   const [alerts, setAlerts] = useState([]);
   const [alertForm, setAlertForm] = useState({ title: '', dueDate: '', notes: '' });
+  const [clubWindows, setClubWindows] = useState([
+    { id: 'w1', date: 'Thu 18 Sep', lowWater: '11:42', duration: '2h 20m', capacity: 8, booked: 5, boats: ['Aurora', 'Seaglass', 'Tern', 'Mistral', 'Swift'] },
+    { id: 'w2', date: 'Fri 19 Sep', lowWater: '12:28', duration: '2h 10m', capacity: 8, booked: 3, boats: ['Aurora', 'Bluefin', 'Wren'] },
+    { id: 'w3', date: 'Sat 20 Sep', lowWater: '13:10', duration: '2h 05m', capacity: 8, booked: 7, boats: ['Aurora', 'Tern', 'Bluefin', 'Solent Star', 'Sea Otter', 'Swift', 'Kittiwake'] },
+  ]);
   
   const [scrubSettings, setScrubSettings] = useState({
     highWaterStart: '06:30',
@@ -343,6 +427,15 @@ export default function TidalCalendarApp() {
       setUser(updated);
       if (match) setSelectedStation(match);
     }
+  };
+
+  const handleJoinWindow = (id) => {
+    setClubWindows(prev => prev.map(w => {
+      if (w.id !== id || w.booked >= w.capacity) return w;
+      const boatName = user?.homePortName || 'My Boat';
+      if (w.boats.includes(boatName)) return w;
+      return { ...w, booked: w.booked + 1, boats: [...w.boats, boatName] };
+    }));
   };
 
   // Analyse scrubbing suitability
@@ -488,6 +581,8 @@ export default function TidalCalendarApp() {
       <main style={{ position: 'relative', zIndex: 10, padding: '0 24px 60px', maxWidth: '1400px', margin: '0 auto' }}>
         {error && <div style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#fca5a5' }}>⚠ {error}</div>}
 
+        <ModeSwitch mode={mode} onChange={setMode} clubName="Solent Cruising Club" />
+
         <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '20px' }}>
           {['dashboard', 'account'].map(page => (
             <button key={page} onClick={() => setCurrentPage(page)} style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(56,189,248,0.3)', background: currentPage === page ? 'rgba(56, 189, 248, 0.2)' : 'rgba(15,23,42,0.6)', color: '#e2e8f0', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px' }}>
@@ -569,6 +664,10 @@ export default function TidalCalendarApp() {
               )}
             </div>
           </section>
+        ) : mode === 'club' ? (
+          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.2s both', display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+            <ClubDashboard clubName="Solent Cruising Club" windows={clubWindows} onJoinWindow={handleJoinWindow} />
+          </section>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', alignItems: 'start' }}>
             {/* Left Column: Station selection */}
@@ -616,23 +715,6 @@ export default function TidalCalendarApp() {
                       </div>
                     </div>
                   </div>
-                {/* Station Header */}
-                <div style={{ background: 'linear-gradient(135deg, rgba(30, 58, 95, 0.8) 0%, rgba(15, 39, 68, 0.9) 100%)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '20px', padding: '24px 28px', marginBottom: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                    <div>
-                      <h2 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 400, margin: '0 0 4px' }}>{selectedStation.name}</h2>
-                      <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#94a3b8', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
-                    </div>
-                    
-                    <div style={{ display: 'flex', gap: '8px', background: 'rgba(15, 23, 42, 0.5)', padding: '4px', borderRadius: '12px' }}>
-                      {['monthly', 'scrubbing'].map(mode => (
-                        <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? 'rgba(56, 189, 248, 0.3)' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#38bdf8' : '#64748b', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 500, transition: 'all 0.3s' }}>
-                          {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
 
             {/* Scrubbing Settings */}
             <div style={{ background: 'rgba(30, 58, 95, 0.4)', border: '1px solid rgba(56, 189, 248, 0.1)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center' }}>
