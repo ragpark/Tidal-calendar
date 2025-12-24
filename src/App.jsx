@@ -445,6 +445,74 @@ export default function TidalCalendarApp() {
     }));
   };
 
+  const handleAuthSubmit = (e) => {
+    e.preventDefault();
+    setAuthError('');
+    const { email, password } = authForm;
+    if (!email || !password) { setAuthError('Email and password are required.'); return; }
+    const users = loadUsers();
+    if (authMode === 'signup') {
+      if (users.find(u => u.email === email)) { setAuthError('An account already exists for this email.'); return; }
+      const nextUsers = [...users, { email, password, homePortId: '', homePortName: '' }];
+      persistUsers(nextUsers);
+      const newUser = { email, homePortId: '', homePortName: '' };
+      setUser(newUser);
+      setHomePort('');
+      localStorage.setItem('tc_user', JSON.stringify(newUser));
+      setAlerts(loadAlerts(email));
+    } else {
+      const existing = users.find(u => u.email === email && u.password === password);
+      if (!existing) { setAuthError('Invalid email or password.'); return; }
+      setUser(existing);
+      setHomePort(existing.homePortId || '');
+      localStorage.setItem('tc_user', JSON.stringify(existing));
+      setAlerts(loadAlerts(email));
+    }
+    setAuthForm({ email: '', password: '' });
+  };
+
+  const handleSignOut = () => {
+    setUser(null);
+    setAlerts([]);
+    localStorage.removeItem('tc_user');
+  };
+
+  const handleAlertSubmit = (e) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!alertForm.title || !alertForm.dueDate) return;
+    const nextAlerts = [...alerts, { id: Date.now(), ...alertForm }];
+    setAlerts(nextAlerts);
+    persistAlerts(user.email, nextAlerts);
+    setAlertForm({ title: '', dueDate: '', notes: '' });
+  };
+
+  const handleDeleteAlert = (id) => {
+    if (!user) return;
+    const nextAlerts = alerts.filter(a => a.id !== id);
+    setAlerts(nextAlerts);
+    persistAlerts(user.email, nextAlerts);
+  };
+
+  const handleSaveHomePort = () => {
+    if (!user) return;
+    const match = stations.find(s => s.id === homePort);
+    const updated = updateUserInStorage(user.email, (u) => ({ ...u, homePortId: homePort, homePortName: match?.name || '' }));
+    if (updated) {
+      setUser(updated);
+      if (match) setSelectedStation(match);
+    }
+  };
+
+  const handleJoinWindow = (id) => {
+    setClubWindows(prev => prev.map(w => {
+      if (w.id !== id || w.booked >= w.capacity) return w;
+      const boatName = user?.homePortName || 'My Boat';
+      if (w.boats.includes(boatName)) return w;
+      return { ...w, booked: w.booked + 1, boats: [...w.boats, boatName] };
+    }));
+  };
+
   // Analyse scrubbing suitability
   const scrubbingByDate = useMemo(() => {
     if (tidalEvents.length === 0) return {};
@@ -949,6 +1017,9 @@ export default function TidalCalendarApp() {
             <div style={{ fontSize: '64px', marginBottom: '24px' }}>🌊</div>
             <h3 style={{ fontSize: '24px', fontWeight: 400, marginBottom: '12px' }}>Select a Tidal Station</h3>
             <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '15px', color: '#64748b', maxWidth: '400px', margin: '0 auto' }}>Choose a station to view monthly tide times and find the best days for scrubbing your boat.</p>
+          </div>
+        )}
+            </div>
           </div>
         )}
       </main>
