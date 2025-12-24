@@ -717,13 +717,13 @@ export default function TidalCalendarApp() {
                   </div>
 
             {/* Scrubbing Settings */}
-            <div style={{ background: 'rgba(30, 58, 95, 0.4)', border: '1px solid rgba(56, 189, 248, 0.1)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center' }}>
-              <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#64748b' }}>High Water Window:</span>
-              <input type="time" value={scrubSettings.highWaterStart} onChange={(e) => setScrubSettings(s => ({ ...s, highWaterStart: e.target.value }))} style={{ padding: '8px 12px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', color: '#e2e8f0', fontFamily: "'Outfit', sans-serif", fontSize: '13px' }} />
-              <span style={{ color: '#64748b' }}>to</span>
-              <input type="time" value={scrubSettings.highWaterEnd} onChange={(e) => setScrubSettings(s => ({ ...s, highWaterEnd: e.target.value }))} style={{ padding: '8px 12px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', color: '#e2e8f0', fontFamily: "'Outfit', sans-serif", fontSize: '13px' }} />
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
+              <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#0f172a' }}>High Water Window:</span>
+              <input type="time" value={scrubSettings.highWaterStart} onChange={(e) => setScrubSettings(s => ({ ...s, highWaterStart: e.target.value }))} style={{ padding: '8px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#0f172a', fontFamily: "'Outfit', sans-serif", fontSize: '13px' }} />
+              <span style={{ color: '#334155' }}>to</span>
+              <input type="time" value={scrubSettings.highWaterEnd} onChange={(e) => setScrubSettings(s => ({ ...s, highWaterEnd: e.target.value }))} style={{ padding: '8px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#0f172a', fontFamily: "'Outfit', sans-serif", fontSize: '13px' }} />
               
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: '12px', alignItems: 'center', fontFamily: "'Outfit', sans-serif", fontSize: '11px' }}>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: '12px', alignItems: 'center', fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#0f172a' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e' }} />Excellent</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#84cc16' }} />Good</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#eab308' }} />Fair</span>
@@ -740,29 +740,29 @@ export default function TidalCalendarApp() {
 
             {/* MONTHLY VIEW */}
             {!loading && viewMode === 'monthly' && (
-              <div style={{ background: 'rgba(30, 58, 95, 0.3)', border: '1px solid rgba(56, 189, 248, 0.15)', borderRadius: '16px', padding: '24px', marginBottom: '24px' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', marginBottom: '24px', boxShadow: '0 10px 24px rgba(15,23,42,0.06)' }}>
                 {/* Month Navigation */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                  <button onClick={() => navigateMonth(-1)} style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', padding: '10px 20px', color: '#38bdf8', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px' }}>← Previous</button>
+                  <button onClick={() => navigateMonth(-1)} style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 20px', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600 }}>← Previous</button>
                   
                   <div style={{ textAlign: 'center' }}>
-                    <h3 style={{ fontSize: '28px', fontWeight: 400, margin: '0 0 4px' }}>{currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h3>
-                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#64748b', margin: 0 }}>
+                    <h3 style={{ fontSize: '28px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>{currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h3>
+                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155', margin: 0 }}>
                       {getMoonPhaseName(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 15)).icon} {getMoonPhaseName(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 15)).name} mid-month
                     </p>
                   </div>
                   
-                  <button onClick={() => navigateMonth(1)} style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', padding: '10px 20px', color: '#38bdf8', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px' }}>Next →</button>
+                  <button onClick={() => navigateMonth(1)} style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 20px', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600 }}>Next →</button>
                 </div>
 
                 {/* Calendar Grid */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', marginBottom: '8px' }}>
                   {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                    <div key={day} style={{ padding: '12px 8px', textAlign: 'center', fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: '#64748b' }}>{day}</div>
+                    <div key={day} style={{ padding: '12px 8px', textAlign: 'center', fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: '#475569' }}>{day}</div>
                   ))}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
                   {getMonthData().map(({ date, isCurrentMonth }, i) => {
                     const dateStr = date.toDateString();
                     const dayEvents = eventsByDay[dateStr] || [];
@@ -778,22 +778,23 @@ export default function TidalCalendarApp() {
                         className="day-cell"
                         onClick={() => setSelectedDay(isCurrentMonth ? date : null)}
                         style={{
-                          background: isSelected ? 'rgba(56, 189, 248, 0.2)' : scrubData?.rating === 'excellent' ? 'rgba(34, 197, 94, 0.15)' : scrubData?.rating === 'good' ? 'rgba(132, 204, 22, 0.1)' : 'rgba(15, 23, 42, 0.4)',
-                          border: `1px solid ${isSelected ? 'rgba(56, 189, 248, 0.5)' : isToday ? 'rgba(56, 189, 248, 0.4)' : scrubData?.rating === 'excellent' ? 'rgba(34, 197, 94, 0.3)' : scrubData?.rating === 'good' ? 'rgba(132, 204, 22, 0.2)' : 'rgba(56, 189, 248, 0.1)'}`,
+                          background: isSelected ? '#e0f2fe' : '#ffffff',
+                          border: `1px solid ${isSelected ? '#0ea5e9' : isToday ? '#94a3b8' : '#e2e8f0'}`,
                           borderRadius: '10px',
                           padding: '10px 8px',
                           minHeight: '90px',
-                          opacity: isCurrentMonth ? 1 : 0.3,
+                          opacity: isCurrentMonth ? 1 : 0.4,
                           cursor: isCurrentMonth ? 'pointer' : 'default',
                           transition: 'all 0.2s ease',
                           position: 'relative',
+                          boxShadow: '0 2px 10px rgba(15,23,42,0.05)',
                         }}
                       >
                         {/* Date Number */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-                          <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: isToday ? 600 : 400, color: isToday ? '#38bdf8' : '#e2e8f0' }}>{date.getDate()}</span>
+                          <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: isToday ? 700 : 500, color: isToday ? '#0ea5e9' : '#0f172a' }}>{date.getDate()}</span>
                           {(moonPhase.isSpring || moonPhase.name.includes('Quarter')) && (
-                            <span style={{ fontSize: '12px' }} title={moonPhase.name}>{moonPhase.icon}</span>
+                            <span style={{ fontSize: '12px', color: '#0f172a' }} title={moonPhase.name}>{moonPhase.icon}</span>
                           )}
                         </div>
 
@@ -806,7 +807,7 @@ export default function TidalCalendarApp() {
 
                         {/* Tide times */}
                         {isCurrentMonth && dayEvents.length > 0 && (
-                          <div style={{ fontSize: '10px', fontFamily: "'Outfit', sans-serif", color: '#94a3b8', lineHeight: 1.5 }}>
+                          <div style={{ fontSize: '10px', fontFamily: "'Outfit', sans-serif", color: '#334155', lineHeight: 1.5 }}>
                             {dayEvents.slice(0, 4).map((e, j) => (
                               <div key={j} style={{ display: 'flex', alignItems: 'center', gap: '4px', opacity: e.IsPredicted ? 0.7 : 1 }}>
                                 <span style={{ color: e.EventType === 'HighWater' ? '#0ea5e9' : '#64748b' }}>{e.EventType === 'HighWater' ? '▲' : '▼'}</span>
@@ -819,7 +820,7 @@ export default function TidalCalendarApp() {
 
                         {/* Predicted indicator */}
                         {isPredicted && isCurrentMonth && (
-                          <div style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: '#fbbf24', opacity: 0.8 }}>pred</div>
+                          <div style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: '#b45309', opacity: 0.9 }}>pred</div>
                         )}
                       </div>
                     );
@@ -827,15 +828,15 @@ export default function TidalCalendarApp() {
                 </div>
 
                 {/* Legend */}
-                <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(15, 23, 42, 0.4)', borderRadius: '10px', display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'center' }}>
-                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ marginTop: '20px', padding: '16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'center' }}>
+                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#475569', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ color: '#0ea5e9' }}>▲</span> High Water
-                    <span style={{ color: '#64748b', marginLeft: '8px' }}>▼</span> Low Water
+                    <span style={{ color: '#475569', marginLeft: '8px' }}>▼</span> Low Water
                   </div>
-                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '8px', padding: '2px 6px', background: 'rgba(251, 191, 36, 0.2)', borderRadius: '4px' }}>pred</span> Algorithmically predicted (beyond 7-day API)
+                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#b45309', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '8px', padding: '2px 6px', background: '#fef3c7', borderRadius: '4px', color: '#b45309' }}>pred</span> Algorithmically predicted (beyond 7-day API)
                   </div>
-                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#94a3b8' }}>
+                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#334155' }}>
                     🌑🌕 = Spring tides (larger range) • 🌓🌗 = Neap tides (smaller range)
                   </div>
                 </div>
@@ -844,11 +845,11 @@ export default function TidalCalendarApp() {
 
             {/* Selected Day Detail */}
             {!loading && selectedDay && (
-              <div style={{ background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.1) 0%, rgba(30, 58, 95, 0.6) 100%)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '16px', padding: '24px', marginBottom: '24px' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', marginBottom: '24px', boxShadow: '0 10px 24px rgba(15,23,42,0.06)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
                   <div>
-                    <h3 style={{ fontSize: '24px', fontWeight: 400, margin: '0 0 4px' }}>{selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
-                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#94a3b8', margin: 0 }}>
+                    <h3 style={{ fontSize: '24px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>{selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
+                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#334155', margin: 0 }}>
                       {getMoonPhaseName(selectedDay).icon} {getMoonPhaseName(selectedDay).name} • {eventsByDay[selectedDay.toDateString()]?.some(e => e.IsPredicted) ? 'Predicted' : 'API Data'}
                     </p>
                   </div>
@@ -860,11 +861,11 @@ export default function TidalCalendarApp() {
                   {(eventsByDay[selectedDay.toDateString()] || []).map((event, i) => {
                     const isHigh = event.EventType === 'HighWater';
                     return (
-                      <div key={i} style={{ background: 'rgba(15, 23, 42, 0.5)', borderRadius: '12px', padding: '16px', borderLeft: `3px solid ${isHigh ? '#0ea5e9' : '#64748b'}` }}>
-                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: isHigh ? '#0ea5e9' : '#64748b', marginBottom: '4px' }}>{isHigh ? '↑ High Water' : '↓ Low Water'}</div>
-                        <div style={{ fontSize: '28px', fontWeight: 400, marginBottom: '4px' }}>{formatTime(event.DateTime)}</div>
-                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#94a3b8' }}>{event.Height?.toFixed(2)}m</div>
-                        {event.IsPredicted && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#fbbf24', marginTop: '8px' }}>⚠ Predicted (harmonic algorithm)</div>}
+                      <div key={i} style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', borderLeft: `3px solid ${isHigh ? '#0ea5e9' : '#64748b'}`, border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: isHigh ? '#0ea5e9' : '#475569', marginBottom: '4px', fontWeight: 600 }}>{isHigh ? '↑ High Water' : '↓ Low Water'}</div>
+                        <div style={{ fontSize: '28px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{formatTime(event.DateTime)}</div>
+                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155' }}>{event.Height?.toFixed(2)}m</div>
+                        {event.IsPredicted && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#b45309', marginTop: '8px' }}>⚠ Predicted (harmonic algorithm)</div>}
                       </div>
                     );
                   })}
@@ -872,13 +873,13 @@ export default function TidalCalendarApp() {
 
                 {/* Scrubbing Info */}
                 {scrubbingByDate[selectedDay.toDateString()] && (
-                  <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(34, 197, 94, 0.1)', borderRadius: '12px', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
-                    <h4 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', fontWeight: 500, color: '#22c55e', margin: '0 0 12px' }}>🧽 Scrubbing Schedule</h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', fontFamily: "'Outfit', sans-serif", fontSize: '13px' }}>
-                      <div><span style={{ color: '#64748b' }}>Beach at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].hwTime)}</strong></div>
-                      <div><span style={{ color: '#64748b' }}>Work at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].lwTime)}</strong></div>
-                      {scrubbingByDate[selectedDay.toDateString()].refloatTime && <div><span style={{ color: '#64748b' }}>Refloat at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].refloatTime)}</strong></div>}
-                      <div><span style={{ color: '#64748b' }}>Tidal Range:</span> <strong>{scrubbingByDate[selectedDay.toDateString()].tidalRange.toFixed(1)}m</strong></div>
+                  <div style={{ marginTop: '20px', padding: '16px', background: '#ecfdf3', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
+                    <h4 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', fontWeight: 600, color: '#15803d', margin: '0 0 12px' }}>🧽 Scrubbing Schedule</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#0f172a' }}>
+                      <div><span style={{ color: '#475569' }}>Beach at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].hwTime)}</strong></div>
+                      <div><span style={{ color: '#475569' }}>Work at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].lwTime)}</strong></div>
+                      {scrubbingByDate[selectedDay.toDateString()].refloatTime && <div><span style={{ color: '#475569' }}>Refloat at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].refloatTime)}</strong></div>}
+                      <div><span style={{ color: '#475569' }}>Tidal Range:</span> <strong>{scrubbingByDate[selectedDay.toDateString()].tidalRange.toFixed(1)}m</strong></div>
                     </div>
                   </div>
                 )}
@@ -888,14 +889,14 @@ export default function TidalCalendarApp() {
             {/* SCRUBBING LIST VIEW */}
             {!loading && viewMode === 'scrubbing' && (
               <div>
-                <h3 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 500, color: '#94a3b8', marginBottom: '16px' }}>
+                <h3 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600, color: '#0f172a', marginBottom: '16px' }}>
                   Suitable Scrubbing Days in {currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
                 </h3>
                 
                 {Object.keys(scrubbingByDate).length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '60px', background: 'rgba(30, 58, 95, 0.3)', borderRadius: '16px' }}>
+                  <div style={{ textAlign: 'center', padding: '60px', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
                     <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
-                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#64748b' }}>No suitable dates found this month. Try adjusting the time window.</p>
+                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155' }}>No suitable dates found this month. Try adjusting the time window.</p>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -907,16 +908,16 @@ export default function TidalCalendarApp() {
                         
                         return (
                           <div key={i} onClick={() => { setSelectedDay(date); setViewMode('monthly'); }} style={{
-                            background: data.rating === 'excellent' ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(30, 58, 95, 0.8) 100%)' : data.rating === 'good' ? 'linear-gradient(135deg, rgba(132, 204, 22, 0.1) 0%, rgba(30, 58, 95, 0.8) 100%)' : 'rgba(30, 58, 95, 0.6)',
-                            border: `1px solid ${data.rating === 'excellent' ? 'rgba(34, 197, 94, 0.3)' : data.rating === 'good' ? 'rgba(132, 204, 22, 0.2)' : 'rgba(56, 189, 248, 0.15)'}`,
-                            borderRadius: '12px', padding: '20px', cursor: 'pointer', transition: 'all 0.3s'
+                            background: '#ffffff',
+                            border: `1px solid ${data.rating === 'excellent' ? '#22c55e' : data.rating === 'good' ? '#84cc16' : '#cbd5e1'}`,
+                            borderRadius: '12px', padding: '20px', cursor: 'pointer', transition: 'all 0.3s', boxShadow: '0 4px 12px rgba(15,23,42,0.06)'
                           }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                               <div>
-                                <div style={{ fontSize: '20px', fontWeight: 400, marginBottom: '4px' }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
-                                <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#64748b' }}>
+                                <div style={{ fontSize: '20px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                                <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155' }}>
                                   HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m
-                                  {isPredicted && <span style={{ color: '#fbbf24', marginLeft: '8px' }}>• Predicted</span>}
+                                  {isPredicted && <span style={{ color: '#b45309', marginLeft: '8px' }}>• Predicted</span>}
                                 </div>
                               </div>
                               <ScrubbingBadge rating={data.rating} />
