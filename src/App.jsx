@@ -595,72 +595,72 @@ export default function TidalCalendarApp() {
           <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: 500, margin: 0 }}>Account</h3>
+                <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Account</h3>
                 <div style={{ display: 'flex', gap: '6px' }}>
-                  <button onClick={() => setAuthMode('signin')} style={{ padding: '6px 10px', background: authMode === 'signin' ? 'rgba(56, 189, 248, 0.2)' : 'transparent', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '6px', color: '#e2e8f0', cursor: 'pointer' }}>Sign In</button>
-                  <button onClick={() => setAuthMode('signup')} style={{ padding: '6px 10px', background: authMode === 'signup' ? 'rgba(56, 189, 248, 0.2)' : 'transparent', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '6px', color: '#e2e8f0', cursor: 'pointer' }}>Sign Up</button>
+                  <button onClick={() => setAuthMode('signin')} style={{ padding: '6px 10px', background: authMode === 'signin' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign In</button>
+                  <button onClick={() => setAuthMode('signup')} style={{ padding: '6px 10px', background: authMode === 'signup' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign Up</button>
                 </div>
               </div>
 
               {!user ? (
                 <form onSubmit={handleAuthSubmit} style={{ display: 'grid', gap: '10px' }}>
-                  <input type="email" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '12px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', color: '#e2e8f0' }} />
-                  <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '12px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', color: '#e2e8f0' }} />
-                  {authError && <div style={{ color: '#fca5a5', fontSize: '12px' }}>{authError}</div>}
-                  <button type="submit" style={{ padding: '12px', background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>{authMode === 'signup' ? 'Create Account' : 'Sign In'}</button>
+                  <input type="email" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
+                  <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
+                  {authError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{authError}</div>}
+                  <button type="submit" style={{ padding: '12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>{authMode === 'signup' ? 'Create Account' : 'Sign In'}</button>
                 </form>
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <div style={{ fontSize: '14px', color: '#e2e8f0' }}>Signed in as</div>
-                    <div style={{ fontSize: '13px', color: '#94a3b8' }}>{user.email}</div>
+                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
+                    <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
                   </div>
-                  <button onClick={handleSignOut} style={{ padding: '10px 12px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', color: '#f87171', cursor: 'pointer' }}>Sign Out</button>
+                  <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
                 </div>
               )}
 
               {user && (
-                <div style={{ marginTop: '16px', padding: '14px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '10px', display: 'grid', gap: '10px' }}>
-                  <div style={{ fontSize: '13px', color: '#94a3b8' }}>Home Port (default after sign-in)</div>
-                  <select value={homePort} onChange={(e) => setHomePort(e.target.value)} style={{ padding: '12px', background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(56,189,248,0.2)', borderRadius: '8px', color: '#e2e8f0' }}>
+                <div style={{ marginTop: '16px', padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'grid', gap: '10px', boxShadow: '0 4px 12px rgba(15,23,42,0.06)' }}>
+                  <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Home Port (default after sign-in)</div>
+                  <select value={homePort} onChange={(e) => setHomePort(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }}>
                     <option value="">Select a station</option>
                     {stations.map(s => <option key={s.id} value={s.id}>{s.name} — {s.country}</option>)}
                   </select>
-                  <button onClick={handleSaveHomePort} style={{ padding: '10px', background: 'rgba(34,197,94,0.2)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '8px', color: '#22c55e', cursor: 'pointer', fontWeight: 600 }}>Save Home Port</button>
-                  {user.homePortName && <div style={{ fontSize: '12px', color: '#94a3b8' }}>Current home port: <strong style={{ color: '#e2e8f0' }}>{user.homePortName}</strong></div>}
+                  <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Port</button>
+                  {user.homePortName && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.homePortName}</strong></div>}
                 </div>
               )}
             </div>
 
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: 500, margin: 0 }}>Maintenance Alerts</h3>
-                <span style={{ fontSize: '12px', color: '#94a3b8' }}>{alerts.length} scheduled</span>
+                <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Maintenance Alerts</h3>
+                <span style={{ fontSize: '12px', color: '#334155' }}>{alerts.length} scheduled</span>
               </div>
               {user ? (
                 <>
                   <form onSubmit={handleAlertSubmit} style={{ display: 'grid', gap: '8px', marginBottom: '12px' }}>
-                    <input type="text" placeholder="Task (e.g., Scrub hull)" value={alertForm.title} onChange={(e) => setAlertForm(f => ({ ...f, title: e.target.value }))} style={{ padding: '10px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', color: '#e2e8f0', fontSize: '13px' }} />
-                    <input type="datetime-local" value={alertForm.dueDate} onChange={(e) => setAlertForm(f => ({ ...f, dueDate: e.target.value }))} style={{ padding: '10px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', color: '#e2e8f0', fontSize: '13px' }} />
-                    <textarea placeholder="Notes (tools, crew, conditions...)" value={alertForm.notes} onChange={(e) => setAlertForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ padding: '10px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', color: '#e2e8f0', fontSize: '13px', resize: 'vertical' }} />
-                    <button type="submit" style={{ padding: '10px', background: 'rgba(34, 197, 94, 0.2)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '8px', color: '#22c55e', cursor: 'pointer', fontWeight: 600 }}>Add Alert</button>
+                    <input type="text" placeholder="Task (e.g., Scrub hull)" value={alertForm.title} onChange={(e) => setAlertForm(f => ({ ...f, title: e.target.value }))} style={{ padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
+                    <input type="datetime-local" value={alertForm.dueDate} onChange={(e) => setAlertForm(f => ({ ...f, dueDate: e.target.value }))} style={{ padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
+                    <textarea placeholder="Notes (tools, crew, conditions...)" value={alertForm.notes} onChange={(e) => setAlertForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px', resize: 'vertical', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
+                    <button type="submit" style={{ padding: '10px', background: '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>Add Alert</button>
                   </form>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '260px', overflowY: 'auto' }}>
-                    {alerts.length === 0 && <div style={{ fontSize: '13px', color: '#94a3b8' }}>No alerts yet. Create one to nudge yourself before scrubbing or maintenance.</div>}
+                    {alerts.length === 0 && <div style={{ fontSize: '13px', color: '#334155' }}>No alerts yet. Create one to nudge yourself before scrubbing or maintenance.</div>}
                     {alerts.map(a => (
-                      <div key={a.id} style={{ padding: '10px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.1)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+                      <div key={a.id} style={{ padding: '10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', gap: '10px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                         <div>
-                          <div style={{ fontSize: '13px', color: '#e2e8f0', marginBottom: '2px' }}>{a.title}</div>
-                          <div style={{ fontSize: '12px', color: '#94a3b8' }}>{a.dueDate ? new Date(a.dueDate).toLocaleString('en-GB') : ''}</div>
-                          {a.notes && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{a.notes}</div>}
+                          <div style={{ fontSize: '13px', color: '#0f172a', marginBottom: '2px', fontWeight: 600 }}>{a.title}</div>
+                          <div style={{ fontSize: '12px', color: '#334155' }}>{a.dueDate ? new Date(a.dueDate).toLocaleString('en-GB') : ''}</div>
+                          {a.notes && <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>{a.notes}</div>}
                         </div>
-                        <button onClick={() => handleDeleteAlert(a.id)} style={{ alignSelf: 'flex-start', padding: '6px 8px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', color: '#f87171', cursor: 'pointer' }}>Remove</button>
+                        <button onClick={() => handleDeleteAlert(a.id)} style={{ alignSelf: 'flex-start', padding: '6px 8px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '6px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Remove</button>
                       </div>
                     ))}
                   </div>
                 </>
               ) : (
-                <div style={{ fontSize: '13px', color: '#94a3b8' }}>Sign in to create scrubbing and maintenance alerts.</div>
+                <div style={{ fontSize: '13px', color: '#334155' }}>Sign in to create scrubbing and maintenance alerts.</div>
               )}
             </div>
           </section>
