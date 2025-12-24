@@ -50,22 +50,22 @@ const ModeSwitch = ({ mode, onChange, clubName }) => (
 const ScrubWindowCard = ({ window, onJoin }) => {
   const isFull = window.booked >= window.capacity;
   return (
-    <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.2)', background: 'rgba(15,23,42,0.6)', display: 'grid', gap: '6px' }}>
+    <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid #cbd5e1', background: '#f8fafc', display: 'grid', gap: '6px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ fontSize: '14px', color: '#e2e8f0' }}>{window.date}</div>
-          <div style={{ fontSize: '12px', color: '#94a3b8' }}>Low water {window.lowWater} • Duration {window.duration}</div>
+          <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>{window.date}</div>
+          <div style={{ fontSize: '12px', color: '#334155' }}>Low water {window.lowWater} • Duration {window.duration}</div>
         </div>
-        {window.booked > 5 && <span style={{ fontSize: '12px', color: '#fbbf24' }}>Scrub day vibe</span>}
+        {window.booked > 5 && <span style={{ fontSize: '12px', color: '#b45309', fontWeight: 600 }}>Scrub day</span>}
       </div>
-      <div style={{ fontSize: '12px', color: '#94a3b8' }}>{window.booked} of {window.capacity} boats booked</div>
+      <div style={{ fontSize: '12px', color: '#0f172a' }}>{window.booked} of {window.capacity} boats booked</div>
       {window.booked > 5 && window.boats?.length > 0 && (
-        <div style={{ fontSize: '12px', color: '#cbd5e1' }}>
+        <div style={{ fontSize: '12px', color: '#334155' }}>
           Boats: {window.boats.slice(0, 6).join(', ')}
           {window.boats.length > 6 && '…'}
         </div>
       )}
-      <button disabled={isFull} onClick={onJoin} style={{ padding: '10px', borderRadius: '8px', border: '1px solid rgba(34,197,94,0.4)', background: isFull ? 'rgba(148,163,184,0.2)' : 'rgba(34,197,94,0.2)', color: isFull ? '#94a3b8' : '#22c55e', cursor: isFull ? 'not-allowed' : 'pointer', fontWeight: 600 }}>
+      <button disabled={isFull} onClick={onJoin} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #0ea5e9', background: isFull ? '#e2e8f0' : '#0ea5e9', color: isFull ? '#475569' : '#ffffff', cursor: isFull ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
         {isFull ? 'Capacity reached' : 'Join this window'}
       </button>
     </div>
@@ -73,16 +73,16 @@ const ScrubWindowCard = ({ window, onJoin }) => {
 };
 
 const ClubRulesPanel = () => (
-  <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.2)', background: 'rgba(15,23,42,0.5)', display: 'grid', gap: '8px' }}>
-    <h4 style={{ margin: 0, fontSize: '14px', color: '#e2e8f0' }}>Club Rules</h4>
-    <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-      <strong style={{ color: '#e2e8f0' }}>Scrubbing area:</strong> Outer grid, west wall only.
+  <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid #cbd5e1', background: '#ffffff', display: 'grid', gap: '8px', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
+    <h4 style={{ margin: 0, fontSize: '14px', color: '#0f172a' }}>Club Rules</h4>
+    <div style={{ fontSize: '12px', color: '#334155' }}>
+      <strong style={{ color: '#0f172a' }}>Scrubbing area:</strong> Outer grid, west wall only.
     </div>
-    <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-      <strong style={{ color: '#e2e8f0' }}>Permitted:</strong> Soft brush, hand tools, buckets of seawater.
+    <div style={{ fontSize: '12px', color: '#334155' }}>
+      <strong style={{ color: '#0f172a' }}>Permitted:</strong> Soft brush, hand tools, buckets of seawater.
     </div>
-    <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-      <strong style={{ color: '#e2e8f0' }}>Prohibited:</strong> Pressure washers, detergents, scrubbing antifoul into the mud.
+    <div style={{ fontSize: '12px', color: '#334155' }}>
+      <strong style={{ color: '#0f172a' }}>Prohibited:</strong> Pressure washers, detergents, scrubbing antifoul into the mud.
     </div>
   </div>
 );
@@ -91,16 +91,16 @@ const ClubDashboard = ({ clubName, windows, onJoinWindow }) => {
   const nextWindow = windows[0];
   return (
     <div style={{ display: 'grid', gap: '14px' }}>
-      <div style={{ padding: '16px', borderRadius: '14px', border: '1px solid rgba(56,189,248,0.2)', background: 'linear-gradient(135deg, rgba(30,58,95,0.8) 0%, rgba(15,39,68,0.9) 100%)', color: '#e2e8f0' }}>
-        <div style={{ fontSize: '12px', letterSpacing: '1px', color: '#94a3b8' }}>{clubName}</div>
+      <div style={{ padding: '16px', borderRadius: '14px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', boxShadow: '0 10px 30px rgba(15,23,42,0.06)' }}>
+        <div style={{ fontSize: '12px', letterSpacing: '1px', color: '#334155' }}>{clubName}</div>
         {nextWindow ? (
           <>
-            <div style={{ fontSize: '18px', margin: '6px 0' }}>Next scrub window: {nextWindow.date}</div>
-            <div style={{ fontSize: '13px', color: '#cbd5e1' }}>Low water {nextWindow.lowWater} • Estimated {nextWindow.duration}</div>
-            <div style={{ fontSize: '13px', color: '#94a3b8' }}>{nextWindow.booked} of {nextWindow.capacity} boats booked • {nextWindow.capacity - nextWindow.booked} remaining</div>
+            <div style={{ fontSize: '18px', margin: '6px 0', fontWeight: 600 }}>Next scrub window: {nextWindow.date}</div>
+            <div style={{ fontSize: '13px', color: '#334155' }}>Low water {nextWindow.lowWater} • Estimated {nextWindow.duration}</div>
+            <div style={{ fontSize: '13px', color: '#0f172a' }}>{nextWindow.booked} of {nextWindow.capacity} boats booked • {nextWindow.capacity - nextWindow.booked} remaining</div>
           </>
         ) : (
-          <div style={{ fontSize: '13px', color: '#94a3b8' }}>No upcoming windows</div>
+          <div style={{ fontSize: '13px', color: '#334155' }}>No upcoming windows</div>
         )}
       </div>
 
@@ -683,15 +683,38 @@ export default function TidalCalendarApp() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px', maxHeight: '300px', overflowY: 'auto', padding: '4px' }}>
-                  {filteredStations.slice(0, 20).map((station, i) => (
-                    <button key={station.id} className="station-card" onClick={() => setSelectedStation(station)} style={{ background: selectedStation?.id === station.id ? '#e0f2fe' : '#ffffff', border: `1px solid ${selectedStation?.id === station.id ? 'rgba(14,165,233,0.4)' : 'rgba(15,23,42,0.08)'}`, borderRadius: '12px', padding: '14px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}>
+                {filteredStations.slice(0, 20).map((station, i) => (
+                    <button key={station.id} className="station-card" onClick={() => setSelectedStation(station)} style={{ background: selectedStation?.id === station.id ? '#e0f2fe' : '#ffffff', border: `1px solid ${selectedStation?.id === station.id ? '#0ea5e9' : '#cbd5e1'}`, borderRadius: '12px', padding: '14px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}>
                       <div style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a', marginBottom: '2px' }}>{station.name}</div>
-                      <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>{station.country}</div>
+                      <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#475569', letterSpacing: '1px', textTransform: 'uppercase' }}>{station.country}</div>
                     </button>
                   ))}
-                </div>
-              </section>
-            </div>
+              </div>
+            </section>
+          </div>
+
+            {/* Right Column: Calendar & Detail */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Station Content */}
+              {selectedStation && (
+                <section style={{ animation: 'fadeInUp 0.6s ease-out' }}>
+                  {/* Station Header */}
+                  <div style={{ background: 'linear-gradient(135deg, #e0f2fe 0%, #f8fafc 100%)', border: '1px solid rgba(14,165,233,0.25)', borderRadius: '20px', padding: '24px 28px', marginBottom: '24px', boxShadow: '0 10px 30px rgba(15,23,42,0.06)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                      <div>
+                        <h2 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 500, margin: '0 0 4px', color: '#0f172a' }}>{selectedStation.name}</h2>
+                        <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#475569', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px' }}>
+                        {['monthly', 'scrubbing'].map(mode => (
+                          <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 600, transition: 'all 0.3s' }}>
+                            {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
 
             {/* Right Column: Calendar & Detail */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
