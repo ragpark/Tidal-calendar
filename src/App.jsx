@@ -287,6 +287,7 @@ export default function TidalCalendarApp() {
   const [alerts, setAlerts] = useState([]);
   const [alertForm, setAlertForm] = useState({ title: '', dueDate: '', notes: '' });
   const [subscriptionEnd, setSubscriptionEnd] = useState('2025-12-31');
+  const SUBSCRIPTION_PRICE_GBP = 5;
   const [clubWindows, setClubWindows] = useState([
     { id: 'w1', date: 'Thu 18 Sep', lowWater: '11:42', duration: '2h 20m', capacity: 8, booked: 5, boats: ['Aurora', 'Seaglass', 'Tern', 'Mistral', 'Swift'] },
     { id: 'w2', date: 'Fri 19 Sep', lowWater: '12:28', duration: '2h 10m', capacity: 8, booked: 3, boats: ['Aurora', 'Bluefin', 'Wren'] },
@@ -426,72 +427,15 @@ export default function TidalCalendarApp() {
     persistAlerts(user.email, nextAlerts);
   };
 
-  const handleSaveHomePort = () => {
-    if (!user) return;
-    const match = stations.find(s => s.id === homePort);
-    const updated = updateUserInStorage(user.email, (u) => ({ ...u, homePortId: homePort, homePortName: match?.name || '' }));
-    if (updated) {
-      setUser(updated);
-      if (match) setSelectedStation(match);
+  const handlePurchaseSubscription = () => {
+    // Placeholder for Tide payment integration; later replace with Tide API call + webhook confirmation.
+    const nextEnd = new Date();
+    nextEnd.setFullYear(nextEnd.getFullYear() + 1);
+    setSubscriptionEnd(nextEnd.toISOString().slice(0, 10));
+    if (user?.email) {
+      const updated = updateUserInStorage(user.email, (u) => ({ ...u, subscriptionEnd: nextEnd.toISOString().slice(0, 10) }));
+      if (updated) setUser(updated);
     }
-  };
-
-  const handleJoinWindow = (id) => {
-    setClubWindows(prev => prev.map(w => {
-      if (w.id !== id || w.booked >= w.capacity) return w;
-      const boatName = user?.homePortName || 'My Boat';
-      if (w.boats.includes(boatName)) return w;
-      return { ...w, booked: w.booked + 1, boats: [...w.boats, boatName] };
-    }));
-  };
-
-  const handleAuthSubmit = (e) => {
-    e.preventDefault();
-    setAuthError('');
-    const { email, password } = authForm;
-    if (!email || !password) { setAuthError('Email and password are required.'); return; }
-    const users = loadUsers();
-    if (authMode === 'signup') {
-      if (users.find(u => u.email === email)) { setAuthError('An account already exists for this email.'); return; }
-      const nextUsers = [...users, { email, password, homePortId: '', homePortName: '' }];
-      persistUsers(nextUsers);
-      const newUser = { email, homePortId: '', homePortName: '' };
-      setUser(newUser);
-      setHomePort('');
-      localStorage.setItem('tc_user', JSON.stringify(newUser));
-      setAlerts(loadAlerts(email));
-    } else {
-      const existing = users.find(u => u.email === email && u.password === password);
-      if (!existing) { setAuthError('Invalid email or password.'); return; }
-      setUser(existing);
-      setHomePort(existing.homePortId || '');
-      localStorage.setItem('tc_user', JSON.stringify(existing));
-      setAlerts(loadAlerts(email));
-    }
-    setAuthForm({ email: '', password: '' });
-  };
-
-  const handleSignOut = () => {
-    setUser(null);
-    setAlerts([]);
-    localStorage.removeItem('tc_user');
-  };
-
-  const handleAlertSubmit = (e) => {
-    e.preventDefault();
-    if (!user) return;
-    if (!alertForm.title || !alertForm.dueDate) return;
-    const nextAlerts = [...alerts, { id: Date.now(), ...alertForm }];
-    setAlerts(nextAlerts);
-    persistAlerts(user.email, nextAlerts);
-    setAlertForm({ title: '', dueDate: '', notes: '' });
-  };
-
-  const handleDeleteAlert = (id) => {
-    if (!user) return;
-    const nextAlerts = alerts.filter(a => a.id !== id);
-    setAlerts(nextAlerts);
-    persistAlerts(user.email, nextAlerts);
   };
 
   const handleSaveHomePort = () => {
@@ -704,6 +648,14 @@ export default function TidalCalendarApp() {
                   <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Port</button>
                   {user.homePortName && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.homePortName}</strong></div>}
                   <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{new Date(subscriptionEnd).toLocaleDateString('en-GB')}</strong></div>
+                  <div style={{ display: 'grid', gap: '8px', padding: '10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                    <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
+                    <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • billed via Tide when enabled</div>
+                    <div style={{ fontSize: '11px', color: '#475569' }}>Tide payment integration will go here (client placeholder only).</div>
+                    <button onClick={handlePurchaseSubscription} style={{ padding: '10px', background: '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
+                      Pay £{SUBSCRIPTION_PRICE_GBP} via Tide (mock)
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
