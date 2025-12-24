@@ -682,7 +682,29 @@ export default function TidalCalendarApp() {
                           <div style={{ fontSize: '12px', color: '#334155' }}>{a.dueDate ? new Date(a.dueDate).toLocaleString('en-GB') : ''}</div>
                           {a.notes && <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>{a.notes}</div>}
                         </div>
-                        <button onClick={() => handleDeleteAlert(a.id)} style={{ alignSelf: 'flex-start', padding: '6px 8px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '6px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Remove</button>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+                          <button onClick={() => handleDeleteAlert(a.id)} style={{ alignSelf: 'flex-start', padding: '6px 8px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '6px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Remove</button>
+                          {a.dueDate && (
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <a
+                                href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(a.title || 'Maintenance')}&details=${encodeURIComponent(a.notes || '')}&dates=${new Date(a.dueDate).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}/${new Date(new Date(a.dueDate).getTime() + 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ padding: '6px 8px', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', fontSize: '11px', textDecoration: 'none', fontWeight: 600 }}
+                              >
+                                Add to Gmail
+                              </a>
+                              <a
+                                href={`https://outlook.live.com/calendar/0/action/compose?subject=${encodeURIComponent(a.title || 'Maintenance')}&body=${encodeURIComponent(a.notes || '')}&startdt=${encodeURIComponent(new Date(a.dueDate).toISOString())}&enddt=${encodeURIComponent(new Date(new Date(a.dueDate).getTime() + 60 * 60 * 1000).toISOString())}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ padding: '6px 8px', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', fontSize: '11px', textDecoration: 'none', fontWeight: 600 }}
+                              >
+                                Add to Outlook
+                              </a>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
