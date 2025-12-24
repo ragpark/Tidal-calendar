@@ -543,10 +543,10 @@ export default function TidalCalendarApp() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #0c1929 0%, #0f2744 40%, #0a1f38 100%)', color: '#e2e8f0', fontFamily: "'Cormorant Garamond', serif", position: 'relative', overflow: 'hidden' }}>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #f7fafc 0%, #eef2f7 40%, #e5ecf5 100%)', color: '#0f172a', fontFamily: "'Outfit', sans-serif", position: 'relative', overflow: 'hidden' }}>
       
       {/* Background */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: `radial-gradient(2px 2px at 20% 30%, rgba(255,255,255,0.3) 0%, transparent 100%), radial-gradient(2px 2px at 40% 70%, rgba(255,255,255,0.2) 0%, transparent 100%), radial-gradient(1px 1px at 60% 20%, rgba(255,255,255,0.4) 0%, transparent 100%), radial-gradient(2px 2px at 80% 50%, rgba(255,255,255,0.2) 0%, transparent 100%)`, pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: `radial-gradient(800px 800px at 20% 20%, rgba(56, 189, 248, 0.08), transparent), radial-gradient(600px 600px at 80% 10%, rgba(34, 197, 94, 0.06), transparent)`, pointerEvents: 'none', zIndex: 0 }} />
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Outfit:wght@300;400;500&display=swap');
@@ -565,11 +565,11 @@ export default function TidalCalendarApp() {
         <div style={{ position: 'absolute', top: '20px', right: '24px' }}><CompassRose size={60} /></div>
         
         <div style={{ animation: 'fadeInUp 0.8s ease-out' }}>
-          <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '4px', textTransform: 'uppercase', color: '#38bdf8', marginBottom: '12px' }}>UK Admiralty Tidal API</p>
-          <h1 style={{ fontSize: 'clamp(36px, 8vw, 64px)', fontWeight: 300, letterSpacing: '3px', margin: '0 0 16px', background: 'linear-gradient(135deg, #f8fafc 0%, #94a3b8 50%, #f8fafc 100%)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', animation: 'shimmer 4s linear infinite' }}>Tidal Calendar</h1>
-          <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#64748b', maxWidth: '500px', margin: '0 auto 24px' }}>Monthly view • Harmonic predictions • Boat scrubbing planner</p>
+          <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '4px', textTransform: 'uppercase', color: '#0ea5e9', marginBottom: '12px' }}>UK Admiralty Tidal API</p>
+          <h1 style={{ fontSize: 'clamp(36px, 8vw, 64px)', fontWeight: 400, letterSpacing: '2px', margin: '0 0 16px', background: 'linear-gradient(135deg, #0f172a 0%, #0ea5e9 60%, #0f172a 100%)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', animation: 'shimmer 4s linear infinite' }}>Tidal Calendar</h1>
+          <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#475569', maxWidth: '500px', margin: '0 auto 24px' }}>Monthly view • Harmonic predictions • Boat scrubbing planner</p>
           
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.4)', color: '#22c55e', padding: '8px 16px', borderRadius: '20px', fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '1px' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.25)', color: '#15803d', padding: '8px 16px', borderRadius: '20px', fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '1px' }}>
             ✓ Live API Connected
           </span>
         </div>
@@ -585,14 +585,14 @@ export default function TidalCalendarApp() {
 
         <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '20px' }}>
           {['dashboard', 'account'].map(page => (
-            <button key={page} onClick={() => setCurrentPage(page)} style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(56,189,248,0.3)', background: currentPage === page ? 'rgba(56, 189, 248, 0.2)' : 'rgba(15,23,42,0.6)', color: '#e2e8f0', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px' }}>
+            <button key={page} onClick={() => setCurrentPage(page)} style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(14,165,233,0.25)', background: currentPage === page ? '#e0f2fe' : '#ffffff', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }}>
               {page === 'dashboard' ? 'Dashboard' : 'Account'}
             </button>
           ))}
         </div>
 
         {currentPage === 'account' ? (
-          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: 'rgba(30, 58, 95, 0.4)', border: '1px solid rgba(56, 189, 248, 0.15)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: 500, margin: 0 }}>Account</h3>
@@ -673,19 +673,19 @@ export default function TidalCalendarApp() {
             {/* Left Column: Station selection */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <section style={{ animation: 'fadeInUp 0.8s ease-out 0.2s both' }}>
-                <h2 style={{ fontSize: '18px', fontWeight: 400, letterSpacing: '2px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ width: '40px', height: '1px', background: 'linear-gradient(90deg, transparent, #38bdf8)' }} />Select Tidal Station
+                <h2 style={{ fontSize: '18px', fontWeight: 500, letterSpacing: '1px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', color: '#0f172a' }}>
+                  <span style={{ width: '40px', height: '1px', background: 'linear-gradient(90deg, transparent, #0ea5e9)' }} />Select Tidal Station
                 </h2>
                 
                 <div style={{ position: 'relative', marginBottom: '20px' }}>
-                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search stations..." style={{ width: '100%', padding: '14px 18px 14px 48px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '12px', color: '#e2e8f0', fontSize: '15px', fontFamily: "'Outfit', sans-serif", boxSizing: 'border-box' }} />
-                  <span style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', opacity: 0.5 }}>⚓</span>
+                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search stations..." style={{ width: '100%', padding: '14px 18px 14px 48px', background: '#ffffff', border: '1px solid rgba(15,23,42,0.08)', borderRadius: '12px', color: '#0f172a', fontSize: '15px', fontFamily: "'Outfit', sans-serif", boxSizing: 'border-box', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }} />
+                  <span style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', opacity: 0.35 }}>⚓</span>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px', maxHeight: '300px', overflowY: 'auto', padding: '4px' }}>
                   {filteredStations.slice(0, 20).map((station, i) => (
-                    <button key={station.id} className="station-card" onClick={() => setSelectedStation(station)} style={{ background: selectedStation?.id === station.id ? 'rgba(56, 189, 248, 0.2)' : 'rgba(30, 58, 95, 0.5)', border: `1px solid ${selectedStation?.id === station.id ? 'rgba(56, 189, 248, 0.5)' : 'rgba(56, 189, 248, 0.15)'}`, borderRadius: '12px', padding: '14px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease' }}>
-                      <div style={{ fontSize: '15px', fontWeight: 500, color: '#f1f5f9', marginBottom: '2px' }}>{station.name}</div>
+                    <button key={station.id} className="station-card" onClick={() => setSelectedStation(station)} style={{ background: selectedStation?.id === station.id ? '#e0f2fe' : '#ffffff', border: `1px solid ${selectedStation?.id === station.id ? 'rgba(14,165,233,0.4)' : 'rgba(15,23,42,0.08)'}`, borderRadius: '12px', padding: '14px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a', marginBottom: '2px' }}>{station.name}</div>
                       <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>{station.country}</div>
                     </button>
                   ))}
@@ -699,16 +699,16 @@ export default function TidalCalendarApp() {
               {selectedStation && (
                 <section style={{ animation: 'fadeInUp 0.6s ease-out' }}>
                   {/* Station Header */}
-                  <div style={{ background: 'linear-gradient(135deg, rgba(30, 58, 95, 0.8) 0%, rgba(15, 39, 68, 0.9) 100%)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '20px', padding: '24px 28px', marginBottom: '24px' }}>
+                  <div style={{ background: 'linear-gradient(135deg, #e0f2fe 0%, #f8fafc 100%)', border: '1px solid rgba(14,165,233,0.25)', borderRadius: '20px', padding: '24px 28px', marginBottom: '24px', boxShadow: '0 10px 30px rgba(15,23,42,0.06)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                       <div>
-                        <h2 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 400, margin: '0 0 4px' }}>{selectedStation.name}</h2>
-                        <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#94a3b8', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
+                        <h2 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 500, margin: '0 0 4px', color: '#0f172a' }}>{selectedStation.name}</h2>
+                        <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#475569', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
                       </div>
                       
-                      <div style={{ display: 'flex', gap: '8px', background: 'rgba(15, 23, 42, 0.5)', padding: '4px', borderRadius: '12px' }}>
+                      <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px' }}>
                         {['monthly', 'scrubbing'].map(mode => (
-                          <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? 'rgba(56, 189, 248, 0.3)' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#38bdf8' : '#64748b', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 500, transition: 'all 0.3s' }}>
+                          <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 600, transition: 'all 0.3s' }}>
                             {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
                           </button>
                         ))}
