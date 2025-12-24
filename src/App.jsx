@@ -716,6 +716,29 @@ export default function TidalCalendarApp() {
                     </div>
                   </div>
 
+            {/* Right Column: Calendar & Detail */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Station Content */}
+              {selectedStation && (
+                <section style={{ animation: 'fadeInUp 0.6s ease-out' }}>
+                  {/* Station Header */}
+                  <div style={{ background: 'linear-gradient(135deg, #e0f2fe 0%, #f8fafc 100%)', border: '1px solid rgba(14,165,233,0.25)', borderRadius: '20px', padding: '24px 28px', marginBottom: '24px', boxShadow: '0 10px 30px rgba(15,23,42,0.06)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                      <div>
+                        <h2 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 500, margin: '0 0 4px', color: '#0f172a' }}>{selectedStation.name}</h2>
+                        <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#475569', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px' }}>
+                        {['monthly', 'scrubbing'].map(mode => (
+                          <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 600, transition: 'all 0.3s' }}>
+                            {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
             {/* Scrubbing Settings */}
             <div style={{ background: 'rgba(30, 58, 95, 0.4)', border: '1px solid rgba(56, 189, 248, 0.1)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center' }}>
               <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#64748b' }}>High Water Window:</span>
