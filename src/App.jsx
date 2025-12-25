@@ -934,6 +934,24 @@ export default function TidalCalendarApp() {
                       {scrubbingByDate[selectedDay.toDateString()].refloatTime && <div><span style={{ color: '#475569' }}>Refloat at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].refloatTime)}</strong></div>}
                       <div><span style={{ color: '#475569' }}>Tidal Range:</span> <strong>{scrubbingByDate[selectedDay.toDateString()].tidalRange.toFixed(1)}m</strong></div>
                     </div>
+                    <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        disabled={!user}
+                        onClick={() => { if (!user) return; const nextAlerts = [...alerts, { id: Date.now(), title: `Scrub boat - ${selectedDay.toDateString()}`, dueDate: scrubbingByDate[selectedDay.toDateString()].lwTime?.toISOString?.() || '', notes: 'Added from scrubbing schedule' }]; setAlerts(nextAlerts); if (user?.email) persistAlerts(user.email, nextAlerts); }}
+                        style={{
+                          padding: '10px 14px',
+                          background: user ? '#22c55e' : '#e2e8f0',
+                          border: `1px solid ${user ? '#16a34a' : '#cbd5e1'}`,
+                          borderRadius: '8px',
+                          color: user ? '#ffffff' : '#94a3b8',
+                          cursor: user ? 'pointer' : 'not-allowed',
+                          fontWeight: 700,
+                          boxShadow: user ? '0 4px 12px rgba(34,197,94,0.3)' : 'none'
+                        }}
+                      >
+                        Add to maintenance log
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
