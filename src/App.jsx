@@ -279,6 +279,7 @@ export default function TidalCalendarApp() {
   const [selectedDay, setSelectedDay] = useState(null);
   const [user, setUser] = useState(null);
   const [homePort, setHomePort] = useState('');
+  const [homeClub, setHomeClub] = useState('');
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [mode, setMode] = useState('personal');
   const [authMode, setAuthMode] = useState('signin');
@@ -288,11 +289,20 @@ export default function TidalCalendarApp() {
   const [alertForm, setAlertForm] = useState({ title: '', dueDate: '', notes: '' });
   const [subscriptionEnd, setSubscriptionEnd] = useState('2025-12-31');
   const SUBSCRIPTION_PRICE_GBP = 5;
-  const [clubWindows, setClubWindows] = useState([
-    { id: 'w1', date: 'Thu 18 Sep', lowWater: '11:42', duration: '2h 20m', capacity: 8, booked: 5, boats: ['Aurora', 'Seaglass', 'Tern', 'Mistral', 'Swift'] },
-    { id: 'w2', date: 'Fri 19 Sep', lowWater: '12:28', duration: '2h 10m', capacity: 8, booked: 3, boats: ['Aurora', 'Bluefin', 'Wren'] },
-    { id: 'w3', date: 'Sat 20 Sep', lowWater: '13:10', duration: '2h 05m', capacity: 8, booked: 7, boats: ['Aurora', 'Tern', 'Bluefin', 'Solent Star', 'Sea Otter', 'Swift', 'Kittiwake'] },
+  const [clubs, setClubs] = useState([
+    {
+      id: 'club-1',
+      name: 'Solent Cruising Club',
+      capacity: 8,
+      windows: [
+        { id: 'w1', date: 'Thu 18 Sep', lowWater: '11:42', duration: '2h 20m', capacity: 8, booked: 5, boats: ['Aurora', 'Seaglass', 'Tern', 'Mistral', 'Swift'] },
+        { id: 'w2', date: 'Fri 19 Sep', lowWater: '12:28', duration: '2h 10m', capacity: 8, booked: 3, boats: ['Aurora', 'Bluefin', 'Wren'] },
+        { id: 'w3', date: 'Sat 20 Sep', lowWater: '13:10', duration: '2h 05m', capacity: 8, booked: 7, boats: ['Aurora', 'Tern', 'Bluefin', 'Solent Star', 'Sea Otter', 'Swift', 'Kittiwake'] },
+      ],
+    },
   ]);
+  const [selectedClubId, setSelectedClubId] = useState('club-1');
+  const [createClubForm, setCreateClubForm] = useState({ name: '', capacity: 8 });
   
   const [scrubSettings, setScrubSettings] = useState({
     highWaterStart: '06:30',
@@ -358,6 +368,7 @@ export default function TidalCalendarApp() {
       if (savedUser?.email) {
         setUser(savedUser);
         setHomePort(savedUser.homePortId || '');
+        setHomeClub(savedUser.homeClubId || '');
         if (savedUser.subscriptionEnd) setSubscriptionEnd(savedUser.subscriptionEnd);
         setAlerts(loadAlerts(savedUser.email));
       }
@@ -376,6 +387,7 @@ export default function TidalCalendarApp() {
     const end = new Date(subscriptionEnd);
     return end.getTime() > Date.now();
   }, [subscriptionEnd]);
+  const selectedClub = useMemo(() => clubs.find(c => c.id === selectedClubId) || clubs[0], [clubs, selectedClubId]);
 
   const handleAuthSubmit = (e) => {
     e.preventDefault();
@@ -385,11 +397,12 @@ export default function TidalCalendarApp() {
     const users = loadUsers();
     if (authMode === 'signup') {
       if (users.find(u => u.email === email)) { setAuthError('An account already exists for this email.'); return; }
-      const nextUsers = [...users, { email, password, homePortId: '', homePortName: '', subscriptionEnd }];
+      const nextUsers = [...users, { email, password, homePortId: '', homePortName: '', homeClubId: '', homeClubName: '', subscriptionEnd }];
       persistUsers(nextUsers);
-      const newUser = { email, homePortId: '', homePortName: '', subscriptionEnd };
+      const newUser = { email, homePortId: '', homePortName: '', homeClubId: '', homeClubName: '', subscriptionEnd };
       setUser(newUser);
       setHomePort('');
+      setHomeClub('');
       localStorage.setItem('tc_user', JSON.stringify(newUser));
       setAlerts(loadAlerts(email));
     } else {
@@ -397,6 +410,7 @@ export default function TidalCalendarApp() {
       if (!existing) { setAuthError('Invalid email or password.'); return; }
       setUser(existing);
       setHomePort(existing.homePortId || '');
+      setHomeClub(existing.homeClubId || '');
       if (existing.subscriptionEnd) setSubscriptionEnd(existing.subscriptionEnd);
       localStorage.setItem('tc_user', JSON.stringify(existing));
       setAlerts(loadAlerts(email));
@@ -448,13 +462,42 @@ export default function TidalCalendarApp() {
     }
   };
 
+  const handleSaveHomeClub = () => {
+    if (!user) return;
+    const match = clubs.find(c => c.id === homeClub);
+    const updated = updateUserInStorage(user.email, (u) => ({ ...u, homeClubId: homeClub, homeClubName: match?.name || '' }));
+    if (updated) setUser(updated);
+  };
+
   const handleJoinWindow = (id) => {
-    setClubWindows(prev => prev.map(w => {
-      if (w.id !== id || w.booked >= w.capacity) return w;
-      const boatName = user?.homePortName || 'My Boat';
-      if (w.boats.includes(boatName)) return w;
-      return { ...w, booked: w.booked + 1, boats: [...w.boats, boatName] };
+    setClubs(prev => prev.map(club => {
+      if (club.id !== selectedClubId) return club;
+      return {
+        ...club,
+        windows: club.windows.map(w => {
+          if (w.id !== id || w.booked >= w.capacity) return w;
+          const boatName = user?.homePortName || 'My Boat';
+          if (w.boats.includes(boatName)) return w;
+          return { ...w, booked: w.booked + 1, boats: [...w.boats, boatName] };
+        }),
+      };
     }));
+  };
+
+  const handleCreateClub = (e) => {
+    e.preventDefault();
+    if (!createClubForm.name) return;
+    const newClub = {
+      id: `club-${Date.now()}`,
+      name: createClubForm.name,
+      capacity: Number(createClubForm.capacity) || 8,
+      windows: [
+        { id: `w-${Date.now()}-1`, date: 'Sun 21 Sep', lowWater: '10:55', duration: '2h 10m', capacity: Number(createClubForm.capacity) || 8, booked: 0, boats: [] },
+      ],
+    };
+    setClubs(prev => [...prev, newClub]);
+    setSelectedClubId(newClub.id);
+    setCreateClubForm({ name: '', capacity: 8 });
   };
 
   // Analyse scrubbing suitability
@@ -600,7 +643,7 @@ export default function TidalCalendarApp() {
       <main style={{ position: 'relative', zIndex: 10, padding: '0 24px 60px', maxWidth: '1400px', margin: '0 auto' }}>
         {error && <div style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#fca5a5' }}>⚠ {error}</div>}
 
-        <ModeSwitch mode={mode} onChange={setMode} clubName="Solent Cruising Club" />
+        <ModeSwitch mode={mode} onChange={setMode} clubName={selectedClub?.name || 'Club'} />
 
         <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '20px' }}>
           {['dashboard', 'account'].map(page => (
@@ -647,6 +690,13 @@ export default function TidalCalendarApp() {
                   </select>
                   <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Port</button>
                   {user.homePortName && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.homePortName}</strong></div>}
+                  <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600, marginTop: '8px' }}>Home Club</div>
+                  <select value={homeClub} onChange={(e) => setHomeClub(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }}>
+                    <option value="">Select a club</option>
+                    {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <button onClick={handleSaveHomeClub} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Club</button>
+                  {user.homeClubName && <div style={{ fontSize: '12px', color: '#334155' }}>Current home club: <strong style={{ color: '#0f172a' }}>{user.homeClubName}</strong></div>}
                   <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{new Date(subscriptionEnd).toLocaleDateString('en-GB')}</strong></div>
                   <div style={{ display: 'grid', gap: '8px', padding: '10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
@@ -716,7 +766,21 @@ export default function TidalCalendarApp() {
           </section>
         ) : mode === 'club' ? (
           <section style={{ animation: 'fadeInUp 0.8s ease-out 0.2s both', display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
-            <ClubDashboard clubName="Solent Cruising Club" windows={clubWindows} onJoinWindow={handleJoinWindow} />
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
+              <h4 style={{ margin: '0 0 10px', color: '#0f172a', fontWeight: 600 }}>Create a new club</h4>
+              <form onSubmit={handleCreateClub} style={{ display: 'grid', gap: '8px' }}>
+                <input type="text" value={createClubForm.name} onChange={(e) => setCreateClubForm(f => ({ ...f, name: e.target.value }))} placeholder="Club name" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
+                <input type="number" min="1" value={createClubForm.capacity} onChange={(e) => setCreateClubForm(f => ({ ...f, capacity: e.target.value }))} placeholder="Capacity per window" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
+                <button type="submit" style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700 }}>Create club</button>
+              </form>
+            </div>
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
+              <h4 style={{ margin: '0 0 10px', color: '#0f172a', fontWeight: 600 }}>Select club</h4>
+              <select value={selectedClubId} onChange={(e) => setSelectedClubId(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }}>
+                {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <ClubDashboard clubName={selectedClub?.name || 'Club'} windows={selectedClub?.windows || []} onJoinWindow={handleJoinWindow} />
           </section>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', alignItems: 'start' }}>
