@@ -1,7 +1,78 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 // UK Admiralty Tidal API Configuration
-const API_BASE_URL = 'https://admiraltyapi.azure-api.net/uktidalapi/api/V1';
+const API_BASE_URL = '/api';
+const DEFAULT_API_KEY = 'baec423358314e4e8f527980f959295d';
+
+// CLUB COMPONENTS
+const ScrubWindowCard = ({ window, onJoin }) => {
+  const isFull = window.booked >= window.capacity;
+  return (
+    <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid #cbd5e1', background: '#f8fafc', display: 'grid', gap: '6px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>{window.date}</div>
+          <div style={{ fontSize: '12px', color: '#334155' }}>Low water {window.lowWater} • Duration {window.duration}</div>
+        </div>
+        {window.booked > 5 && <span style={{ fontSize: '12px', color: '#b45309', fontWeight: 600 }}>Scrub day</span>}
+      </div>
+      <div style={{ fontSize: '12px', color: '#0f172a' }}>{window.booked} of {window.capacity} boats booked</div>
+      {window.booked > 5 && window.boats?.length > 0 && (
+        <div style={{ fontSize: '12px', color: '#334155' }}>
+          Boats: {window.boats.slice(0, 6).join(', ')}
+          {window.boats.length > 6 && '…'}
+        </div>
+      )}
+      <button disabled={isFull} onClick={onJoin} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #0ea5e9', background: isFull ? '#e2e8f0' : '#0ea5e9', color: isFull ? '#475569' : '#ffffff', cursor: isFull ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
+        {isFull ? 'Capacity reached' : 'Join this window'}
+      </button>
+    </div>
+  );
+};
+
+const ClubRulesPanel = () => (
+  <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid #cbd5e1', background: '#ffffff', display: 'grid', gap: '8px', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
+    <h4 style={{ margin: 0, fontSize: '14px', color: '#0f172a' }}>Club Rules</h4>
+    <div style={{ fontSize: '12px', color: '#334155' }}>
+      <strong style={{ color: '#0f172a' }}>Scrubbing area:</strong> Outer grid, west wall only.
+    </div>
+    <div style={{ fontSize: '12px', color: '#334155' }}>
+      <strong style={{ color: '#0f172a' }}>Permitted:</strong> Soft brush, hand tools, buckets of seawater.
+    </div>
+    <div style={{ fontSize: '12px', color: '#334155' }}>
+      <strong style={{ color: '#0f172a' }}>Prohibited:</strong> Pressure washers, detergents, scrubbing antifoul into the mud.
+    </div>
+  </div>
+);
+
+const ClubDashboard = ({ clubName, windows, onJoinWindow }) => {
+  const nextWindow = windows[0];
+  return (
+    <div style={{ display: 'grid', gap: '14px' }}>
+      <div style={{ padding: '16px', borderRadius: '14px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', boxShadow: '0 10px 30px rgba(15,23,42,0.06)' }}>
+        <div style={{ fontSize: '12px', letterSpacing: '1px', color: '#334155' }}>{clubName}</div>
+        {nextWindow ? (
+          <>
+            <div style={{ fontSize: '18px', margin: '6px 0', fontWeight: 600 }}>Next scrub window: {nextWindow.date}</div>
+            <div style={{ fontSize: '13px', color: '#334155' }}>Low water {nextWindow.lowWater} • Estimated {nextWindow.duration}</div>
+            <div style={{ fontSize: '13px', color: '#0f172a' }}>{nextWindow.booked} of {nextWindow.capacity} boats booked • {nextWindow.capacity - nextWindow.booked} remaining</div>
+          </>
+        ) : (
+          <div style={{ fontSize: '13px', color: '#334155' }}>No upcoming windows</div>
+        )}
+      </div>
+
+      <ClubRulesPanel />
+
+      <div style={{ display: 'grid', gap: '10px' }}>
+        <h4 style={{ margin: '8px 0', color: '#e2e8f0', fontSize: '14px' }}>Upcoming scrub windows</h4>
+        {windows.map(w => (
+          <ScrubWindowCard key={w.id} window={w} onJoin={() => onJoinWindow(w.id)} />
+        ))}
+      </div>
+    </div>
+  );
+};
 
 // Sample stations with tidal characteristics for prediction
 const DEMO_STATIONS = [
@@ -153,36 +224,107 @@ const ScrubbingBadge = ({ rating, small = false }) => {
 // ===========================================
 
 export default function TidalCalendarApp() {
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey] = useState(DEFAULT_API_KEY);
   const [stations, setStations] = useState(DEMO_STATIONS);
   const [selectedStation, setSelectedStation] = useState(null);
   const [tidalEvents, setTidalEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isDemo, setIsDemo] = useState(true);
-  const [showApiInput, setShowApiInput] = useState(false);
+  const [isDemo, setIsDemo] = useState(!DEFAULT_API_KEY);
   const [viewMode, setViewMode] = useState('monthly');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null);
+  const [user, setUser] = useState(null);
+  const [homePort, setHomePort] = useState('');
+  const [homeClub, setHomeClub] = useState('');
+  const [currentPage, setCurrentPage] = useState('calendar');
+  const [authMode, setAuthMode] = useState('signin');
+  const [authForm, setAuthForm] = useState({ email: '', password: '' });
+  const [authError, setAuthError] = useState('');
+  const [alerts, setAlerts] = useState([]);
+  const [alertForm, setAlertForm] = useState({ title: '', dueDate: '', notes: '' });
+  const [subscriptionEnd, setSubscriptionEnd] = useState('2025-12-31');
+  const SUBSCRIPTION_PRICE_GBP = 5;
+  const [clubs, setClubs] = useState([]);
+  const [selectedClubId, setSelectedClubId] = useState('');
+  const [createClubForm, setCreateClubForm] = useState({ name: '', capacity: 8 });
   
   const [scrubSettings, setScrubSettings] = useState({
     highWaterStart: '06:30',
     highWaterEnd: '09:00',
   });
 
+  const apiRequest = useCallback(async (url, options = {}) => {
+    const res = await fetch(url, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      ...options,
+    });
+    if (!res.ok) {
+      let message = 'Request failed';
+      try {
+        const data = await res.json();
+        message = data.error || message;
+      } catch { /* ignore */ }
+      throw new Error(message);
+    }
+    return res.status === 204 ? null : res.json();
+  }, []);
+
+  const loadSession = useCallback(async () => {
+    try {
+      const me = await apiRequest('/api/auth/me');
+      setUser(me);
+      setHomePort(me.home_port_id || '');
+      setHomeClub(me.home_club_id || '');
+    } catch {
+      setUser(null);
+    }
+  }, [apiRequest]);
+
+  const loadAlerts = useCallback(async () => {
+    if (!user) { setAlerts([]); return; }
+    try {
+      const data = await apiRequest('/api/alerts');
+      setAlerts(data);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [apiRequest, user]);
+
+  const loadClubs = useCallback(async () => {
+    try {
+      const data = await apiRequest('/api/clubs');
+      setClubs(data);
+      if (!selectedClubId && data[0]?.id) setSelectedClubId(data[0].id);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [apiRequest, selectedClubId]);
+
   const fetchStations = useCallback(async () => {
     if (!apiKey) { setStations(DEMO_STATIONS); setIsDemo(true); return; }
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/Stations`, { headers: { 'Ocp-Apim-Subscription-Key': apiKey } });
+      const response = await fetch(`${API_BASE_URL}/Stations`, { method: 'GET', cache: 'no-store' });
       if (!response.ok) throw new Error('Failed to fetch stations.');
       const data = await response.json();
-      const formatted = data.features?.map(f => ({
-        id: f.properties.Id, name: f.properties.Name, country: f.properties.Country,
-        lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
-        mhws: 4.5, mhwn: 3.5, mlwn: 1.5, mlws: 0.5,
-      })) || [];
+      const formatted = Array.isArray(data)
+        ? data.map(s => ({
+            id: s.Id || s.id,
+            name: s.Name || s.name,
+            country: s.Country || s.country || 'Unknown',
+            lat: s.Latitude || s.lat || s.geometry?.coordinates?.[1],
+            lon: s.Longitude || s.lon || s.geometry?.coordinates?.[0],
+            mhws: 4.5, mhwn: 3.5, mlwn: 1.5, mlws: 0.5,
+          }))
+        : data.features?.map(f => ({
+            id: f.properties.Id, name: f.properties.Name, country: f.properties.Country,
+            lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
+            mhws: 4.5, mhwn: 3.5, mlwn: 1.5, mlws: 0.5,
+          })) || [];
+      if (formatted.length === 0) throw new Error('No stations returned from API.');
       setStations(formatted); setIsDemo(false); setError(null);
     } catch (err) { setError(err.message); setStations(DEMO_STATIONS); setIsDemo(true); }
     finally { setLoading(false); }
@@ -198,8 +340,9 @@ export default function TidalCalendarApp() {
     let apiEvents = [];
     if (apiKey && !isDemo) {
       try {
-        const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=7`, { headers: { 'Ocp-Apim-Subscription-Key': apiKey } });
-        if (response.ok) apiEvents = await response.json();
+        const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=7`, { method: 'GET', cache: 'no-store' });
+        if (!response.ok) throw new Error(`TidalEvents fetch failed (${response.status})`);
+        apiEvents = await response.json();
       } catch (err) { console.warn('API fetch failed:', err); }
     }
     
@@ -213,10 +356,125 @@ export default function TidalCalendarApp() {
 
   useEffect(() => { fetchStations(); }, [fetchStations]);
   useEffect(() => { if (selectedStation) fetchTidalEvents(selectedStation); }, [selectedStation, fetchTidalEvents]);
+  useEffect(() => { loadSession(); }, [loadSession]);
+  useEffect(() => { loadClubs(); }, [loadClubs]);
+  useEffect(() => { loadAlerts(); }, [loadAlerts]);
+  useEffect(() => {
+    if (!user?.home_port_id || stations.length === 0) return;
+    const match = stations.find(s => s.id === user.home_port_id);
+    if (match) setSelectedStation(match);
+  }, [stations, user]);
 
   const filteredStations = stations.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.country.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const subscriptionActive = useMemo(() => {
+    const end = new Date(subscriptionEnd);
+    return end.getTime() > Date.now();
+  }, [subscriptionEnd]);
+  const selectedClub = useMemo(() => clubs.find(c => c.id === selectedClubId) || clubs[0], [clubs, selectedClubId]);
+
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    const { email, password } = authForm;
+    if (!email || !password) { setAuthError('Email and password are required.'); return; }
+    try {
+      const endpoint = authMode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
+      const account = await apiRequest(endpoint, { method: 'POST', body: JSON.stringify({ email, password }) });
+      setUser(account);
+      setHomePort(account.home_port_id || '');
+      setHomeClub(account.home_club_id || '');
+      await loadAlerts();
+    } catch (err) {
+      setAuthError(err.message);
+    }
+    setAuthForm({ email: '', password: '' });
+  };
+
+  const handleSignOut = async () => {
+    await apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    setUser(null);
+    setAlerts([]);
+  };
+
+  const handleAlertSubmit = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!alertForm.title || !alertForm.dueDate) return;
+    try {
+      const created = await apiRequest('/api/alerts', { method: 'POST', body: JSON.stringify(alertForm) });
+      setAlerts(prev => [...prev, created]);
+      setAlertForm({ title: '', dueDate: '', notes: '' });
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
+
+  const handleDeleteAlert = async (id) => {
+    if (!user) return;
+    await apiRequest(`/api/alerts/${id}`, { method: 'DELETE' }).catch(() => {});
+    setAlerts(prev => prev.filter(a => a.id !== id));
+  };
+
+  const handlePurchaseSubscription = () => {
+    const nextEnd = new Date();
+    nextEnd.setFullYear(nextEnd.getFullYear() + 1);
+    setSubscriptionEnd(nextEnd.toISOString().slice(0, 10));
+  };
+
+  const handleSaveHomePort = async () => {
+    if (!user) return;
+    const match = stations.find(s => s.id === homePort);
+    if (!match) return;
+    try {
+      const updated = await apiRequest('/api/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ homePortId: homePort, homePortName: match.name }),
+      });
+      setUser(updated);
+      setSelectedStation(match);
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
+
+  const handleSaveHomeClub = async () => {
+    if (!user) return;
+    const match = clubs.find(c => c.id === homeClub);
+    try {
+      const updated = await apiRequest('/api/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ homeClubId: homeClub, homeClubName: match?.name || '' }),
+      });
+      setUser(updated);
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
+
+  const handleJoinWindow = async (id) => {
+    if (!user || !selectedClubId) return;
+    try {
+      await apiRequest(`/api/clubs/${selectedClubId}/windows/${id}/book`, { method: 'POST' });
+      await loadClubs();
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
+
+  const handleCreateClub = async (e) => {
+    e.preventDefault();
+    if (!createClubForm.name || !user) return;
+    try {
+      const created = await apiRequest('/api/clubs', { method: 'POST', body: JSON.stringify(createClubForm) });
+      setClubs(prev => [...prev, { ...created, windows: [] }]);
+      setSelectedClubId(created.id);
+      setCreateClubForm({ name: '', capacity: 8 });
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
 
   // Analyse scrubbing suitability
   const scrubbingByDate = useMemo(() => {
@@ -323,10 +581,10 @@ export default function TidalCalendarApp() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #0c1929 0%, #0f2744 40%, #0a1f38 100%)', color: '#e2e8f0', fontFamily: "'Cormorant Garamond', serif", position: 'relative', overflow: 'hidden' }}>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #f7fafc 0%, #eef2f7 40%, #e5ecf5 100%)', color: '#0f172a', fontFamily: "'Outfit', sans-serif", position: 'relative', overflow: 'hidden' }}>
       
       {/* Background */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: `radial-gradient(2px 2px at 20% 30%, rgba(255,255,255,0.3) 0%, transparent 100%), radial-gradient(2px 2px at 40% 70%, rgba(255,255,255,0.2) 0%, transparent 100%), radial-gradient(1px 1px at 60% 20%, rgba(255,255,255,0.4) 0%, transparent 100%), radial-gradient(2px 2px at 80% 50%, rgba(255,255,255,0.2) 0%, transparent 100%)`, pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: `radial-gradient(800px 800px at 20% 20%, rgba(56, 189, 248, 0.08), transparent), radial-gradient(600px 600px at 80% 10%, rgba(34, 197, 94, 0.06), transparent)`, pointerEvents: 'none', zIndex: 0 }} />
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Outfit:wght@300;400;500&display=swap');
@@ -345,30 +603,14 @@ export default function TidalCalendarApp() {
         <div style={{ position: 'absolute', top: '20px', right: '24px' }}><CompassRose size={60} /></div>
         
         <div style={{ animation: 'fadeInUp 0.8s ease-out' }}>
-          <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '4px', textTransform: 'uppercase', color: '#38bdf8', marginBottom: '12px' }}>UK Admiralty Tidal API</p>
-          <h1 style={{ fontSize: 'clamp(36px, 8vw, 64px)', fontWeight: 300, letterSpacing: '3px', margin: '0 0 16px', background: 'linear-gradient(135deg, #f8fafc 0%, #94a3b8 50%, #f8fafc 100%)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', animation: 'shimmer 4s linear infinite' }}>Tidal Calendar</h1>
-          <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#64748b', maxWidth: '500px', margin: '0 auto 24px' }}>Monthly view • Harmonic predictions • Boat scrubbing planner</p>
+          <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '4px', textTransform: 'uppercase', color: '#0ea5e9', marginBottom: '12px' }}>UK Admiralty Tidal API</p>
+          <h1 style={{ fontSize: 'clamp(36px, 8vw, 64px)', fontWeight: 400, letterSpacing: '2px', margin: '0 0 16px', background: 'linear-gradient(135deg, #0f172a 0%, #0ea5e9 60%, #0f172a 100%)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', animation: 'shimmer 4s linear infinite' }}>Tidal Calendar</h1>
+          <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#475569', maxWidth: '500px', margin: '0 auto 24px' }}>Monthly view • Harmonic predictions • Boat scrubbing planner</p>
           
-          <button onClick={() => setShowApiInput(!showApiInput)} style={{ background: isDemo ? 'rgba(251, 191, 36, 0.2)' : 'rgba(34, 197, 94, 0.2)', border: `1px solid ${isDemo ? 'rgba(251, 191, 36, 0.4)' : 'rgba(34, 197, 94, 0.4)'}`, color: isDemo ? '#fbbf24' : '#22c55e', padding: '8px 16px', borderRadius: '20px', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '1px' }}>
-            {isDemo ? '⚠ Demo Mode — Add API Key' : '✓ Live API Connected'}
-          </button>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.25)', color: '#15803d', padding: '8px 16px', borderRadius: '20px', fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '1px' }}>
+            ✓ Live API Connected
+          </span>
         </div>
-
-        {showApiInput && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-            <div style={{ background: 'linear-gradient(180deg, #1e3a5f 0%, #0f2744 100%)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '16px', padding: '32px', maxWidth: '480px', width: '90%' }}>
-              <h3 style={{ margin: '0 0 8px', fontSize: '24px', fontWeight: 400 }}>Connect to Live API</h3>
-              <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#94a3b8', margin: '0 0 24px' }}>
-                Get your free API key from <a href="https://admiraltyapi.portal.azure-api.net" target="_blank" rel="noopener noreferrer" style={{ color: '#38bdf8' }}>Admiralty Developer Portal</a>
-              </p>
-              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Ocp-Apim-Subscription-Key" style={{ width: '100%', padding: '14px 18px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '8px', color: '#e2e8f0', fontSize: '14px', fontFamily: "'Outfit', sans-serif", marginBottom: '16px', boxSizing: 'border-box' }} />
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button onClick={() => setShowApiInput(false)} style={{ flex: 1, padding: '12px', background: 'transparent', border: '1px solid rgba(148, 163, 184, 0.3)', borderRadius: '8px', color: '#94a3b8', cursor: 'pointer', fontFamily: "'Outfit', sans-serif" }}>Cancel</button>
-                <button onClick={() => { fetchStations(); setShowApiInput(false); }} style={{ flex: 1, padding: '12px', background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontWeight: 500 }}>Connect</button>
-              </div>
-            </div>
-          </div>
-        )}
 
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}><TideWave height={80} /></div>
       </header>
@@ -377,56 +619,203 @@ export default function TidalCalendarApp() {
       <main style={{ position: 'relative', zIndex: 10, padding: '0 24px 60px', maxWidth: '1400px', margin: '0 auto' }}>
         {error && <div style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#fca5a5' }}>⚠ {error}</div>}
 
-        {/* Station Selection */}
-        <section style={{ marginBottom: '40px', animation: 'fadeInUp 0.8s ease-out 0.2s both' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 400, letterSpacing: '2px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ width: '40px', height: '1px', background: 'linear-gradient(90deg, transparent, #38bdf8)' }} />Select Tidal Station
-          </h2>
-          
-          <div style={{ position: 'relative', marginBottom: '20px' }}>
-            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search stations..." style={{ width: '100%', maxWidth: '400px', padding: '14px 18px 14px 48px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '12px', color: '#e2e8f0', fontSize: '15px', fontFamily: "'Outfit', sans-serif", boxSizing: 'border-box' }} />
-            <span style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', opacity: 0.5 }}>⚓</span>
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '20px' }}>
+          {['calendar', 'profile'].map(page => (
+            <button key={page} onClick={() => setCurrentPage(page)} style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(14,165,233,0.25)', background: currentPage === page ? '#e0f2fe' : '#ffffff', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }}>
+              {page === 'calendar' ? 'Calendar' : 'Profile'}
+            </button>
+          ))}
+        </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px', maxHeight: '160px', overflowY: 'auto', padding: '4px' }}>
-            {filteredStations.slice(0, 20).map((station, i) => (
-              <button key={station.id} className="station-card" onClick={() => setSelectedStation(station)} style={{ background: selectedStation?.id === station.id ? 'rgba(56, 189, 248, 0.2)' : 'rgba(30, 58, 95, 0.5)', border: `1px solid ${selectedStation?.id === station.id ? 'rgba(56, 189, 248, 0.5)' : 'rgba(56, 189, 248, 0.15)'}`, borderRadius: '12px', padding: '14px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease' }}>
-                <div style={{ fontSize: '15px', fontWeight: 500, color: '#f1f5f9', marginBottom: '2px' }}>{station.name}</div>
-                <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#64748b', letterSpacing: '1px', textTransform: 'uppercase' }}>{station.country}</div>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* Station Content */}
-        {selectedStation && (
-          <section style={{ animation: 'fadeInUp 0.6s ease-out' }}>
-            {/* Station Header */}
-            <div style={{ background: 'linear-gradient(135deg, rgba(30, 58, 95, 0.8) 0%, rgba(15, 39, 68, 0.9) 100%)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '20px', padding: '24px 28px', marginBottom: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                <div>
-                  <h2 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 400, margin: '0 0 4px' }}>{selectedStation.name}</h2>
-                  <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#94a3b8', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
-                </div>
-                
-                <div style={{ display: 'flex', gap: '8px', background: 'rgba(15, 23, 42, 0.5)', padding: '4px', borderRadius: '12px' }}>
-                  {['monthly', 'scrubbing'].map(mode => (
-                    <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? 'rgba(56, 189, 248, 0.3)' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#38bdf8' : '#64748b', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 500, transition: 'all 0.3s' }}>
-                      {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
-                    </button>
-                  ))}
+        {currentPage === 'profile' ? (
+          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Profile</h3>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button onClick={() => setAuthMode('signin')} style={{ padding: '6px 10px', background: authMode === 'signin' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign In</button>
+                  <button onClick={() => setAuthMode('signup')} style={{ padding: '6px 10px', background: authMode === 'signup' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign Up</button>
                 </div>
               </div>
+
+              {!user ? (
+                <form onSubmit={handleAuthSubmit} style={{ display: 'grid', gap: '10px' }}>
+                  <input type="email" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
+                  <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
+                  {authError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{authError}</div>}
+                  <button type="submit" style={{ padding: '12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>{authMode === 'signup' ? 'Create Account' : 'Sign In'}</button>
+                </form>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                  <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
+                  <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
+                </div>
+                <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
+              </div>
+              )}
+
+              {user && (
+                <div style={{ marginTop: '16px', padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'grid', gap: '10px', boxShadow: '0 4px 12px rgba(15,23,42,0.06)' }}>
+                  <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Home Port (default after sign-in)</div>
+                  <select value={homePort} onChange={(e) => setHomePort(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }}>
+                    <option value="">Select a station</option>
+                    {stations.map(s => <option key={s.id} value={s.id}>{s.name} — {s.country}</option>)}
+                  </select>
+                  <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Port</button>
+                  {user.home_port_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.home_port_name}</strong></div>}
+                  <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600, marginTop: '8px' }}>Home Club</div>
+                  <select value={homeClub} onChange={(e) => setHomeClub(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }}>
+                    <option value="">Select a club</option>
+                    {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <button onClick={handleSaveHomeClub} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Club</button>
+                  {user.home_club_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home club: <strong style={{ color: '#0f172a' }}>{user.home_club_name}</strong></div>}
+                  <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{new Date(subscriptionEnd).toLocaleDateString('en-GB')}</strong></div>
+                  <div style={{ display: 'grid', gap: '8px', padding: '10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                    <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
+                    <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • billed via Tide when enabled</div>
+                    <div style={{ fontSize: '11px', color: '#475569' }}>Tide payment integration will go here (client placeholder only).</div>
+                    <button onClick={handlePurchaseSubscription} style={{ padding: '10px', background: '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
+                      Pay £{SUBSCRIPTION_PRICE_GBP} via Tide (mock)
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Maintenance Alerts</h3>
+                <span style={{ fontSize: '12px', color: '#334155' }}>{alerts.length} scheduled</span>
+              </div>
+              {user ? (
+                <>
+                  <form onSubmit={handleAlertSubmit} style={{ display: 'grid', gap: '8px', marginBottom: '12px' }}>
+                    <input type="text" placeholder="Task (e.g., Scrub hull)" value={alertForm.title} onChange={(e) => setAlertForm(f => ({ ...f, title: e.target.value }))} style={{ padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
+                    <input type="datetime-local" value={alertForm.dueDate} onChange={(e) => setAlertForm(f => ({ ...f, dueDate: e.target.value }))} style={{ padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
+                    <textarea placeholder="Notes (tools, crew, conditions...)" value={alertForm.notes} onChange={(e) => setAlertForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px', resize: 'vertical', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
+                    <button type="submit" style={{ padding: '10px', background: '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>Add Alert</button>
+                  </form>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '260px', overflowY: 'auto' }}>
+                    {alerts.length === 0 && <div style={{ fontSize: '13px', color: '#334155' }}>No alerts yet. Create one to nudge yourself before scrubbing or maintenance.</div>}
+                    {alerts.map(a => (
+                      <div key={a.id} style={{ padding: '10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', gap: '10px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                        <div>
+                          <div style={{ fontSize: '13px', color: '#0f172a', marginBottom: '2px', fontWeight: 600 }}>{a.title}</div>
+                          <div style={{ fontSize: '12px', color: '#334155' }}>{a.dueDate ? new Date(a.dueDate).toLocaleString('en-GB') : ''}</div>
+                          {a.notes && <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>{a.notes}</div>}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+                          <button onClick={() => handleDeleteAlert(a.id)} style={{ alignSelf: 'flex-start', padding: '6px 8px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '6px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Remove</button>
+                          {a.dueDate && (
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <a
+                                href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(a.title || 'Maintenance')}&details=${encodeURIComponent(a.notes || '')}&dates=${new Date(a.dueDate).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}/${new Date(new Date(a.dueDate).getTime() + 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ padding: '6px 8px', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', fontSize: '11px', textDecoration: 'none', fontWeight: 600 }}
+                              >
+                                Add to Gmail
+                              </a>
+                              <a
+                                href={`https://outlook.live.com/calendar/0/action/compose?subject=${encodeURIComponent(a.title || 'Maintenance')}&body=${encodeURIComponent(a.notes || '')}&startdt=${encodeURIComponent(new Date(a.dueDate).toISOString())}&enddt=${encodeURIComponent(new Date(new Date(a.dueDate).getTime() + 60 * 60 * 1000).toISOString())}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ padding: '6px 8px', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', fontSize: '11px', textDecoration: 'none', fontWeight: 600 }}
+                              >
+                                Add to Outlook
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: '13px', color: '#334155' }}>Sign in to create scrubbing and maintenance alerts.</div>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gap: '12px' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <h4 style={{ margin: 0, color: '#0f172a', fontWeight: 600 }}>Clubs</h4>
+                  <span style={{ fontSize: '11px', color: '#475569' }}>Manage home club here</span>
+                </div>
+                <form onSubmit={handleCreateClub} style={{ display: 'grid', gap: '8px', marginBottom: '12px' }}>
+                  <input type="text" value={createClubForm.name} onChange={(e) => setCreateClubForm(f => ({ ...f, name: e.target.value }))} placeholder="Club name" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
+                  <input type="number" min="1" value={createClubForm.capacity} onChange={(e) => setCreateClubForm(f => ({ ...f, capacity: e.target.value }))} placeholder="Capacity per window" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
+                  <button type="submit" style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700 }}>Create club</button>
+                </form>
+                <label style={{ display: 'grid', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Select club</span>
+                  <select value={selectedClubId} onChange={(e) => setSelectedClubId(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }}>
+                    {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <ClubDashboard clubName={selectedClub?.name || 'Club'} windows={selectedClub?.windows || []} onJoinWindow={handleJoinWindow} />
+            </div>
+          </section>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', alignItems: 'start' }}>
+            {/* Left Column: Station selection */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <section style={{ animation: 'fadeInUp 0.8s ease-out 0.2s both' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 500, letterSpacing: '1px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', color: '#0f172a' }}>
+                  <span style={{ width: '40px', height: '1px', background: 'linear-gradient(90deg, transparent, #0ea5e9)' }} />Select Tidal Station
+                </h2>
+                
+                <div style={{ position: 'relative', marginBottom: '20px' }}>
+                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search stations..." style={{ width: '100%', padding: '14px 18px 14px 48px', background: '#ffffff', border: '1px solid rgba(15,23,42,0.08)', borderRadius: '12px', color: '#0f172a', fontSize: '15px', fontFamily: "'Outfit', sans-serif", boxSizing: 'border-box', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }} />
+                  <span style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', opacity: 0.35 }}>⚓</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px', maxHeight: '300px', overflowY: 'auto', padding: '4px' }}>
+                {filteredStations.slice(0, 20).map((station, i) => (
+                    <button key={station.id} className="station-card" onClick={() => setSelectedStation(station)} style={{ background: selectedStation?.id === station.id ? '#e0f2fe' : '#ffffff', border: `1px solid ${selectedStation?.id === station.id ? '#0ea5e9' : '#cbd5e1'}`, borderRadius: '12px', padding: '14px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a', marginBottom: '2px' }}>{station.name}</div>
+                      <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#475569', letterSpacing: '1px', textTransform: 'uppercase' }}>{station.country}</div>
+                    </button>
+                  ))}
+              </div>
+            </section>
+          </div>
+
+            {/* Right Column: Calendar & Detail */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Station Content */}
+              {selectedStation && (
+                <section style={{ animation: 'fadeInUp 0.6s ease-out' }}>
+                  {/* Station Header */}
+                  <div style={{ background: 'linear-gradient(135deg, #e0f2fe 0%, #f8fafc 100%)', border: '1px solid rgba(14,165,233,0.25)', borderRadius: '20px', padding: '24px 28px', marginBottom: '24px', boxShadow: '0 10px 30px rgba(15,23,42,0.06)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                      <div>
+                        <h2 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 500, margin: '0 0 4px', color: '#0f172a' }}>{selectedStation.name}</h2>
+                        <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#475569', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px' }}>
+                        {['monthly', 'scrubbing'].map(mode => (
+                          <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 600, transition: 'all 0.3s' }}>
+                            {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
             {/* Scrubbing Settings */}
-            <div style={{ background: 'rgba(30, 58, 95, 0.4)', border: '1px solid rgba(56, 189, 248, 0.1)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center' }}>
-              <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#64748b' }}>High Water Window:</span>
-              <input type="time" value={scrubSettings.highWaterStart} onChange={(e) => setScrubSettings(s => ({ ...s, highWaterStart: e.target.value }))} style={{ padding: '8px 12px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', color: '#e2e8f0', fontFamily: "'Outfit', sans-serif", fontSize: '13px' }} />
-              <span style={{ color: '#64748b' }}>to</span>
-              <input type="time" value={scrubSettings.highWaterEnd} onChange={(e) => setScrubSettings(s => ({ ...s, highWaterEnd: e.target.value }))} style={{ padding: '8px 12px', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '6px', color: '#e2e8f0', fontFamily: "'Outfit', sans-serif", fontSize: '13px' }} />
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
+              <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#0f172a' }}>High Water Window:</span>
+              <input type="time" value={scrubSettings.highWaterStart} onChange={(e) => setScrubSettings(s => ({ ...s, highWaterStart: e.target.value }))} style={{ padding: '8px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#0f172a', fontFamily: "'Outfit', sans-serif", fontSize: '13px' }} />
+              <span style={{ color: '#334155' }}>to</span>
+              <input type="time" value={scrubSettings.highWaterEnd} onChange={(e) => setScrubSettings(s => ({ ...s, highWaterEnd: e.target.value }))} style={{ padding: '8px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '6px', color: '#0f172a', fontFamily: "'Outfit', sans-serif", fontSize: '13px' }} />
               
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: '12px', alignItems: 'center', fontFamily: "'Outfit', sans-serif", fontSize: '11px' }}>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: '12px', alignItems: 'center', fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#0f172a' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e' }} />Excellent</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#84cc16' }} />Good</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#eab308' }} />Fair</span>
@@ -443,29 +832,29 @@ export default function TidalCalendarApp() {
 
             {/* MONTHLY VIEW */}
             {!loading && viewMode === 'monthly' && (
-              <div style={{ background: 'rgba(30, 58, 95, 0.3)', border: '1px solid rgba(56, 189, 248, 0.15)', borderRadius: '16px', padding: '24px', marginBottom: '24px' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', marginBottom: '24px', boxShadow: '0 10px 24px rgba(15,23,42,0.06)' }}>
                 {/* Month Navigation */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                  <button onClick={() => navigateMonth(-1)} style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', padding: '10px 20px', color: '#38bdf8', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px' }}>← Previous</button>
+                  <button onClick={() => navigateMonth(-1)} style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 20px', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600 }}>← Previous</button>
                   
                   <div style={{ textAlign: 'center' }}>
-                    <h3 style={{ fontSize: '28px', fontWeight: 400, margin: '0 0 4px' }}>{currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h3>
-                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#64748b', margin: 0 }}>
+                    <h3 style={{ fontSize: '28px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>{currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h3>
+                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155', margin: 0 }}>
                       {getMoonPhaseName(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 15)).icon} {getMoonPhaseName(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 15)).name} mid-month
                     </p>
                   </div>
                   
-                  <button onClick={() => navigateMonth(1)} style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', padding: '10px 20px', color: '#38bdf8', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px' }}>Next →</button>
+                  <button onClick={() => navigateMonth(1)} style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 20px', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600 }}>Next →</button>
                 </div>
 
                 {/* Calendar Grid */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', marginBottom: '8px' }}>
                   {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                    <div key={day} style={{ padding: '12px 8px', textAlign: 'center', fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: '#64748b' }}>{day}</div>
+                    <div key={day} style={{ padding: '12px 8px', textAlign: 'center', fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: '#475569' }}>{day}</div>
                   ))}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
                   {getMonthData().map(({ date, isCurrentMonth }, i) => {
                     const dateStr = date.toDateString();
                     const dayEvents = eventsByDay[dateStr] || [];
@@ -481,22 +870,23 @@ export default function TidalCalendarApp() {
                         className="day-cell"
                         onClick={() => setSelectedDay(isCurrentMonth ? date : null)}
                         style={{
-                          background: isSelected ? 'rgba(56, 189, 248, 0.2)' : scrubData?.rating === 'excellent' ? 'rgba(34, 197, 94, 0.15)' : scrubData?.rating === 'good' ? 'rgba(132, 204, 22, 0.1)' : 'rgba(15, 23, 42, 0.4)',
-                          border: `1px solid ${isSelected ? 'rgba(56, 189, 248, 0.5)' : isToday ? 'rgba(56, 189, 248, 0.4)' : scrubData?.rating === 'excellent' ? 'rgba(34, 197, 94, 0.3)' : scrubData?.rating === 'good' ? 'rgba(132, 204, 22, 0.2)' : 'rgba(56, 189, 248, 0.1)'}`,
+                          background: isSelected ? '#e0f2fe' : '#ffffff',
+                          border: `1px solid ${isSelected ? '#0ea5e9' : isToday ? '#94a3b8' : '#e2e8f0'}`,
                           borderRadius: '10px',
                           padding: '10px 8px',
                           minHeight: '90px',
-                          opacity: isCurrentMonth ? 1 : 0.3,
+                          opacity: isCurrentMonth ? 1 : 0.4,
                           cursor: isCurrentMonth ? 'pointer' : 'default',
                           transition: 'all 0.2s ease',
                           position: 'relative',
+                          boxShadow: '0 2px 10px rgba(15,23,42,0.05)',
                         }}
                       >
                         {/* Date Number */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-                          <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: isToday ? 600 : 400, color: isToday ? '#38bdf8' : '#e2e8f0' }}>{date.getDate()}</span>
+                          <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: isToday ? 700 : 500, color: isToday ? '#0ea5e9' : '#0f172a' }}>{date.getDate()}</span>
                           {(moonPhase.isSpring || moonPhase.name.includes('Quarter')) && (
-                            <span style={{ fontSize: '12px' }} title={moonPhase.name}>{moonPhase.icon}</span>
+                            <span style={{ fontSize: '12px', color: '#0f172a' }} title={moonPhase.name}>{moonPhase.icon}</span>
                           )}
                         </div>
 
@@ -509,7 +899,7 @@ export default function TidalCalendarApp() {
 
                         {/* Tide times */}
                         {isCurrentMonth && dayEvents.length > 0 && (
-                          <div style={{ fontSize: '10px', fontFamily: "'Outfit', sans-serif", color: '#94a3b8', lineHeight: 1.5 }}>
+                          <div style={{ fontSize: '10px', fontFamily: "'Outfit', sans-serif", color: '#334155', lineHeight: 1.5 }}>
                             {dayEvents.slice(0, 4).map((e, j) => (
                               <div key={j} style={{ display: 'flex', alignItems: 'center', gap: '4px', opacity: e.IsPredicted ? 0.7 : 1 }}>
                                 <span style={{ color: e.EventType === 'HighWater' ? '#0ea5e9' : '#64748b' }}>{e.EventType === 'HighWater' ? '▲' : '▼'}</span>
@@ -520,9 +910,11 @@ export default function TidalCalendarApp() {
                           </div>
                         )}
 
-                        {/* Predicted indicator */}
-                        {isPredicted && isCurrentMonth && (
-                          <div style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: '#fbbf24', opacity: 0.8 }}>pred</div>
+                        {/* Data source indicator */}
+                        {isCurrentMonth && (
+                          <div style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: subscriptionActive ? '#0ea5e9' : '#b45309', opacity: 0.9 }}>
+                            {subscriptionActive ? 'UKHO' : (isPredicted ? 'pred' : 'API')}
+                          </div>
                         )}
                       </div>
                     );
@@ -530,15 +922,15 @@ export default function TidalCalendarApp() {
                 </div>
 
                 {/* Legend */}
-                <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(15, 23, 42, 0.4)', borderRadius: '10px', display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'center' }}>
-                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ marginTop: '20px', padding: '16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'flex', flexWrap: 'wrap', gap: '20px', justifyContent: 'center' }}>
+                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#475569', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ color: '#0ea5e9' }}>▲</span> High Water
-                    <span style={{ color: '#64748b', marginLeft: '8px' }}>▼</span> Low Water
+                    <span style={{ color: '#475569', marginLeft: '8px' }}>▼</span> Low Water
                   </div>
-                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '8px', padding: '2px 6px', background: 'rgba(251, 191, 36, 0.2)', borderRadius: '4px' }}>pred</span> Algorithmically predicted (beyond 7-day API)
+                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#b45309', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '8px', padding: '2px 6px', background: '#fef3c7', borderRadius: '4px', color: '#b45309' }}>pred</span> Algorithmically predicted (beyond 7-day API)
                   </div>
-                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#94a3b8' }}>
+                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#334155' }}>
                     🌑🌕 = Spring tides (larger range) • 🌓🌗 = Neap tides (smaller range)
                   </div>
                 </div>
@@ -547,12 +939,12 @@ export default function TidalCalendarApp() {
 
             {/* Selected Day Detail */}
             {!loading && selectedDay && (
-              <div style={{ background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.1) 0%, rgba(30, 58, 95, 0.6) 100%)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '16px', padding: '24px', marginBottom: '24px' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', marginBottom: '24px', boxShadow: '0 10px 24px rgba(15,23,42,0.06)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
                   <div>
-                    <h3 style={{ fontSize: '24px', fontWeight: 400, margin: '0 0 4px' }}>{selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
-                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#94a3b8', margin: 0 }}>
-                      {getMoonPhaseName(selectedDay).icon} {getMoonPhaseName(selectedDay).name} • {eventsByDay[selectedDay.toDateString()]?.some(e => e.IsPredicted) ? 'Predicted' : 'API Data'}
+                    <h3 style={{ fontSize: '24px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>{selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
+                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#334155', margin: 0 }}>
+                      {getMoonPhaseName(selectedDay).icon} {getMoonPhaseName(selectedDay).name} • {subscriptionActive ? 'UKHO data' : (eventsByDay[selectedDay.toDateString()]?.some(e => e.IsPredicted) ? 'Predicted' : 'API Data')}
                     </p>
                   </div>
                   {scrubbingByDate[selectedDay.toDateString()] && <ScrubbingBadge rating={scrubbingByDate[selectedDay.toDateString()].rating} />}
@@ -563,11 +955,12 @@ export default function TidalCalendarApp() {
                   {(eventsByDay[selectedDay.toDateString()] || []).map((event, i) => {
                     const isHigh = event.EventType === 'HighWater';
                     return (
-                      <div key={i} style={{ background: 'rgba(15, 23, 42, 0.5)', borderRadius: '12px', padding: '16px', borderLeft: `3px solid ${isHigh ? '#0ea5e9' : '#64748b'}` }}>
-                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: isHigh ? '#0ea5e9' : '#64748b', marginBottom: '4px' }}>{isHigh ? '↑ High Water' : '↓ Low Water'}</div>
-                        <div style={{ fontSize: '28px', fontWeight: 400, marginBottom: '4px' }}>{formatTime(event.DateTime)}</div>
-                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#94a3b8' }}>{event.Height?.toFixed(2)}m</div>
-                        {event.IsPredicted && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#fbbf24', marginTop: '8px' }}>⚠ Predicted (harmonic algorithm)</div>}
+                      <div key={i} style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', borderLeft: `3px solid ${isHigh ? '#0ea5e9' : '#64748b'}`, border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: isHigh ? '#0ea5e9' : '#475569', marginBottom: '4px', fontWeight: 600 }}>{isHigh ? '↑ High Water' : '↓ Low Water'}</div>
+                        <div style={{ fontSize: '28px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{formatTime(event.DateTime)}</div>
+                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155' }}>{event.Height?.toFixed(2)}m</div>
+                        {event.IsPredicted && !subscriptionActive && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#b45309', marginTop: '8px' }}>⚠ Predicted (harmonic algorithm)</div>}
+                        {subscriptionActive && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '8px' }}>UKHO data (subscription)</div>}
                       </div>
                     );
                   })}
@@ -575,13 +968,31 @@ export default function TidalCalendarApp() {
 
                 {/* Scrubbing Info */}
                 {scrubbingByDate[selectedDay.toDateString()] && (
-                  <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(34, 197, 94, 0.1)', borderRadius: '12px', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
-                    <h4 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', fontWeight: 500, color: '#22c55e', margin: '0 0 12px' }}>🧽 Scrubbing Schedule</h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', fontFamily: "'Outfit', sans-serif", fontSize: '13px' }}>
-                      <div><span style={{ color: '#64748b' }}>Beach at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].hwTime)}</strong></div>
-                      <div><span style={{ color: '#64748b' }}>Work at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].lwTime)}</strong></div>
-                      {scrubbingByDate[selectedDay.toDateString()].refloatTime && <div><span style={{ color: '#64748b' }}>Refloat at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].refloatTime)}</strong></div>}
-                      <div><span style={{ color: '#64748b' }}>Tidal Range:</span> <strong>{scrubbingByDate[selectedDay.toDateString()].tidalRange.toFixed(1)}m</strong></div>
+                  <div style={{ marginTop: '20px', padding: '16px', background: '#ecfdf3', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
+                    <h4 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', fontWeight: 600, color: '#15803d', margin: '0 0 12px' }}>🧽 Scrubbing Schedule</h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#0f172a' }}>
+                      <div><span style={{ color: '#475569' }}>Beach at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].hwTime)}</strong></div>
+                      <div><span style={{ color: '#475569' }}>Work at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].lwTime)}</strong></div>
+                      {scrubbingByDate[selectedDay.toDateString()].refloatTime && <div><span style={{ color: '#475569' }}>Refloat at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].refloatTime)}</strong></div>}
+                      <div><span style={{ color: '#475569' }}>Tidal Range:</span> <strong>{scrubbingByDate[selectedDay.toDateString()].tidalRange.toFixed(1)}m</strong></div>
+                    </div>
+                    <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        disabled={!user}
+                        onClick={() => { if (!user) return; const nextAlerts = [...alerts, { id: Date.now(), title: `Scrub boat - ${selectedDay.toDateString()}`, dueDate: scrubbingByDate[selectedDay.toDateString()].lwTime?.toISOString?.() || '', notes: 'Added from scrubbing schedule' }]; setAlerts(nextAlerts); if (user?.email) persistAlerts(user.email, nextAlerts); }}
+                        style={{
+                          padding: '10px 14px',
+                          background: user ? '#22c55e' : '#e2e8f0',
+                          border: `1px solid ${user ? '#16a34a' : '#cbd5e1'}`,
+                          borderRadius: '8px',
+                          color: user ? '#ffffff' : '#94a3b8',
+                          cursor: user ? 'pointer' : 'not-allowed',
+                          fontWeight: 700,
+                          boxShadow: user ? '0 4px 12px rgba(34,197,94,0.3)' : 'none'
+                        }}
+                      >
+                        Add to maintenance log
+                      </button>
                     </div>
                   </div>
                 )}
@@ -591,14 +1002,14 @@ export default function TidalCalendarApp() {
             {/* SCRUBBING LIST VIEW */}
             {!loading && viewMode === 'scrubbing' && (
               <div>
-                <h3 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 500, color: '#94a3b8', marginBottom: '16px' }}>
+                <h3 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600, color: '#0f172a', marginBottom: '16px' }}>
                   Suitable Scrubbing Days in {currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
                 </h3>
                 
                 {Object.keys(scrubbingByDate).length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '60px', background: 'rgba(30, 58, 95, 0.3)', borderRadius: '16px' }}>
+                  <div style={{ textAlign: 'center', padding: '60px', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
                     <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
-                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#64748b' }}>No suitable dates found this month. Try adjusting the time window.</p>
+                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155' }}>No suitable dates found this month. Try adjusting the time window.</p>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -610,16 +1021,16 @@ export default function TidalCalendarApp() {
                         
                         return (
                           <div key={i} onClick={() => { setSelectedDay(date); setViewMode('monthly'); }} style={{
-                            background: data.rating === 'excellent' ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(30, 58, 95, 0.8) 100%)' : data.rating === 'good' ? 'linear-gradient(135deg, rgba(132, 204, 22, 0.1) 0%, rgba(30, 58, 95, 0.8) 100%)' : 'rgba(30, 58, 95, 0.6)',
-                            border: `1px solid ${data.rating === 'excellent' ? 'rgba(34, 197, 94, 0.3)' : data.rating === 'good' ? 'rgba(132, 204, 22, 0.2)' : 'rgba(56, 189, 248, 0.15)'}`,
-                            borderRadius: '12px', padding: '20px', cursor: 'pointer', transition: 'all 0.3s'
+                            background: '#ffffff',
+                            border: `1px solid ${data.rating === 'excellent' ? '#22c55e' : data.rating === 'good' ? '#84cc16' : '#cbd5e1'}`,
+                            borderRadius: '12px', padding: '20px', cursor: 'pointer', transition: 'all 0.3s', boxShadow: '0 4px 12px rgba(15,23,42,0.06)'
                           }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                               <div>
-                                <div style={{ fontSize: '20px', fontWeight: 400, marginBottom: '4px' }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
-                                <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#64748b' }}>
+                                <div style={{ fontSize: '20px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                                <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155' }}>
                                   HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m
-                                  {isPredicted && <span style={{ color: '#fbbf24', marginLeft: '8px' }}>• Predicted</span>}
+                                  {subscriptionActive ? <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>• UKHO</span> : (isPredicted && <span style={{ color: '#b45309', marginLeft: '8px' }}>• Predicted</span>)}
                                 </div>
                               </div>
                               <ScrubbingBadge rating={data.rating} />
