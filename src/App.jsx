@@ -4,40 +4,6 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 const API_BASE_URL = '/api';
 const DEFAULT_API_KEY = 'baec423358314e4e8f527980f959295d';
 
-const updateUserInStorage = (email, updater) => {
-  const users = loadUsers();
-  const idx = users.findIndex(u => u.email === email);
-  if (idx >= 0) {
-    const nextUser = updater(users[idx]);
-    const nextUsers = [...users];
-    nextUsers[idx] = nextUser;
-    persistUsers(nextUsers);
-    localStorage.setItem('tc_user', JSON.stringify(nextUser));
-    return nextUser;
-  }
-  return null;
-};
-
-const loadUsers = () => {
-  if (typeof localStorage === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem('tc_users') || '[]'); } catch { return []; }
-};
-
-const persistUsers = (users) => {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.setItem('tc_users', JSON.stringify(users));
-};
-
-const loadAlerts = (email) => {
-  if (!email || typeof localStorage === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(`tc_alerts_${email}`) || '[]'); } catch { return []; }
-};
-
-const persistAlerts = (email, alerts) => {
-  if (!email || typeof localStorage === 'undefined') return;
-  localStorage.setItem(`tc_alerts_${email}`, JSON.stringify(alerts));
-};
-
 // CLUB COMPONENTS
 const ScrubWindowCard = ({ window, onJoin }) => {
   const isFull = window.booked >= window.capacity;
@@ -280,25 +246,62 @@ export default function TidalCalendarApp() {
   const [alertForm, setAlertForm] = useState({ title: '', dueDate: '', notes: '' });
   const [subscriptionEnd, setSubscriptionEnd] = useState('2025-12-31');
   const SUBSCRIPTION_PRICE_GBP = 5;
-  const [clubs, setClubs] = useState([
-    {
-      id: 'club-1',
-      name: 'Solent Cruising Club',
-      capacity: 8,
-      windows: [
-        { id: 'w1', date: 'Thu 18 Sep', lowWater: '11:42', duration: '2h 20m', capacity: 8, booked: 5, boats: ['Aurora', 'Seaglass', 'Tern', 'Mistral', 'Swift'] },
-        { id: 'w2', date: 'Fri 19 Sep', lowWater: '12:28', duration: '2h 10m', capacity: 8, booked: 3, boats: ['Aurora', 'Bluefin', 'Wren'] },
-        { id: 'w3', date: 'Sat 20 Sep', lowWater: '13:10', duration: '2h 05m', capacity: 8, booked: 7, boats: ['Aurora', 'Tern', 'Bluefin', 'Solent Star', 'Sea Otter', 'Swift', 'Kittiwake'] },
-      ],
-    },
-  ]);
-  const [selectedClubId, setSelectedClubId] = useState('club-1');
+  const [clubs, setClubs] = useState([]);
+  const [selectedClubId, setSelectedClubId] = useState('');
   const [createClubForm, setCreateClubForm] = useState({ name: '', capacity: 8 });
   
   const [scrubSettings, setScrubSettings] = useState({
     highWaterStart: '06:30',
     highWaterEnd: '09:00',
   });
+
+  const apiRequest = useCallback(async (url, options = {}) => {
+    const res = await fetch(url, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      ...options,
+    });
+    if (!res.ok) {
+      let message = 'Request failed';
+      try {
+        const data = await res.json();
+        message = data.error || message;
+      } catch { /* ignore */ }
+      throw new Error(message);
+    }
+    return res.status === 204 ? null : res.json();
+  }, []);
+
+  const loadSession = useCallback(async () => {
+    try {
+      const me = await apiRequest('/api/auth/me');
+      setUser(me);
+      setHomePort(me.home_port_id || '');
+      setHomeClub(me.home_club_id || '');
+    } catch {
+      setUser(null);
+    }
+  }, [apiRequest]);
+
+  const loadAlerts = useCallback(async () => {
+    if (!user) { setAlerts([]); return; }
+    try {
+      const data = await apiRequest('/api/alerts');
+      setAlerts(data);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [apiRequest, user]);
+
+  const loadClubs = useCallback(async () => {
+    try {
+      const data = await apiRequest('/api/clubs');
+      setClubs(data);
+      if (!selectedClubId && data[0]?.id) setSelectedClubId(data[0].id);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [apiRequest, selectedClubId]);
 
   const fetchStations = useCallback(async () => {
     if (!apiKey) { setStations(DEMO_STATIONS); setIsDemo(true); return; }
@@ -353,21 +356,12 @@ export default function TidalCalendarApp() {
 
   useEffect(() => { fetchStations(); }, [fetchStations]);
   useEffect(() => { if (selectedStation) fetchTidalEvents(selectedStation); }, [selectedStation, fetchTidalEvents]);
+  useEffect(() => { loadSession(); }, [loadSession]);
+  useEffect(() => { loadClubs(); }, [loadClubs]);
+  useEffect(() => { loadAlerts(); }, [loadAlerts]);
   useEffect(() => {
-    try {
-      const savedUser = JSON.parse(localStorage.getItem('tc_user'));
-      if (savedUser?.email) {
-        setUser(savedUser);
-        setHomePort(savedUser.homePortId || '');
-        setHomeClub(savedUser.homeClubId || '');
-        if (savedUser.subscriptionEnd) setSubscriptionEnd(savedUser.subscriptionEnd);
-        setAlerts(loadAlerts(savedUser.email));
-      }
-    } catch { /* ignore */ }
-  }, []);
-  useEffect(() => {
-    if (!user?.homePortId || stations.length === 0) return;
-    const match = stations.find(s => s.id === user.homePortId);
+    if (!user?.home_port_id || stations.length === 0) return;
+    const match = stations.find(s => s.id === user.home_port_id);
     if (match) setSelectedStation(match);
   }, [stations, user]);
 
@@ -380,115 +374,106 @@ export default function TidalCalendarApp() {
   }, [subscriptionEnd]);
   const selectedClub = useMemo(() => clubs.find(c => c.id === selectedClubId) || clubs[0], [clubs, selectedClubId]);
 
-  const handleAuthSubmit = (e) => {
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
     const { email, password } = authForm;
     if (!email || !password) { setAuthError('Email and password are required.'); return; }
-    const users = loadUsers();
-    if (authMode === 'signup') {
-      if (users.find(u => u.email === email)) { setAuthError('An account already exists for this email.'); return; }
-      const nextUsers = [...users, { email, password, homePortId: '', homePortName: '', homeClubId: '', homeClubName: '', subscriptionEnd }];
-      persistUsers(nextUsers);
-      const newUser = { email, homePortId: '', homePortName: '', homeClubId: '', homeClubName: '', subscriptionEnd };
-      setUser(newUser);
-      setHomePort('');
-      setHomeClub('');
-      localStorage.setItem('tc_user', JSON.stringify(newUser));
-      setAlerts(loadAlerts(email));
-    } else {
-      const existing = users.find(u => u.email === email && u.password === password);
-      if (!existing) { setAuthError('Invalid email or password.'); return; }
-      setUser(existing);
-      setHomePort(existing.homePortId || '');
-      setHomeClub(existing.homeClubId || '');
-      if (existing.subscriptionEnd) setSubscriptionEnd(existing.subscriptionEnd);
-      localStorage.setItem('tc_user', JSON.stringify(existing));
-      setAlerts(loadAlerts(email));
+    try {
+      const endpoint = authMode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
+      const account = await apiRequest(endpoint, { method: 'POST', body: JSON.stringify({ email, password }) });
+      setUser(account);
+      setHomePort(account.home_port_id || '');
+      setHomeClub(account.home_club_id || '');
+      await loadAlerts();
+    } catch (err) {
+      setAuthError(err.message);
     }
     setAuthForm({ email: '', password: '' });
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => {});
     setUser(null);
     setAlerts([]);
-    localStorage.removeItem('tc_user');
   };
 
-  const handleAlertSubmit = (e) => {
+  const handleAlertSubmit = async (e) => {
     e.preventDefault();
     if (!user) return;
     if (!alertForm.title || !alertForm.dueDate) return;
-    const nextAlerts = [...alerts, { id: Date.now(), ...alertForm }];
-    setAlerts(nextAlerts);
-    persistAlerts(user.email, nextAlerts);
-    setAlertForm({ title: '', dueDate: '', notes: '' });
+    try {
+      const created = await apiRequest('/api/alerts', { method: 'POST', body: JSON.stringify(alertForm) });
+      setAlerts(prev => [...prev, created]);
+      setAlertForm({ title: '', dueDate: '', notes: '' });
+    } catch (err) {
+      setAuthError(err.message);
+    }
   };
 
-  const handleDeleteAlert = (id) => {
+  const handleDeleteAlert = async (id) => {
     if (!user) return;
-    const nextAlerts = alerts.filter(a => a.id !== id);
-    setAlerts(nextAlerts);
-    persistAlerts(user.email, nextAlerts);
+    await apiRequest(`/api/alerts/${id}`, { method: 'DELETE' }).catch(() => {});
+    setAlerts(prev => prev.filter(a => a.id !== id));
   };
 
   const handlePurchaseSubscription = () => {
-    // Placeholder for Tide payment integration; later replace with Tide API call + webhook confirmation.
     const nextEnd = new Date();
     nextEnd.setFullYear(nextEnd.getFullYear() + 1);
     setSubscriptionEnd(nextEnd.toISOString().slice(0, 10));
-    if (user?.email) {
-      const updated = updateUserInStorage(user.email, (u) => ({ ...u, subscriptionEnd: nextEnd.toISOString().slice(0, 10) }));
-      if (updated) setUser(updated);
-    }
   };
 
-  const handleSaveHomePort = () => {
+  const handleSaveHomePort = async () => {
     if (!user) return;
     const match = stations.find(s => s.id === homePort);
-    const updated = updateUserInStorage(user.email, (u) => ({ ...u, homePortId: homePort, homePortName: match?.name || '' }));
-    if (updated) {
+    if (!match) return;
+    try {
+      const updated = await apiRequest('/api/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ homePortId: homePort, homePortName: match.name }),
+      });
       setUser(updated);
-      if (match) setSelectedStation(match);
+      setSelectedStation(match);
+    } catch (err) {
+      setAuthError(err.message);
     }
   };
 
-  const handleSaveHomeClub = () => {
+  const handleSaveHomeClub = async () => {
     if (!user) return;
     const match = clubs.find(c => c.id === homeClub);
-    const updated = updateUserInStorage(user.email, (u) => ({ ...u, homeClubId: homeClub, homeClubName: match?.name || '' }));
-    if (updated) setUser(updated);
+    try {
+      const updated = await apiRequest('/api/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ homeClubId: homeClub, homeClubName: match?.name || '' }),
+      });
+      setUser(updated);
+    } catch (err) {
+      setAuthError(err.message);
+    }
   };
 
-  const handleJoinWindow = (id) => {
-    setClubs(prev => prev.map(club => {
-      if (club.id !== selectedClubId) return club;
-      return {
-        ...club,
-        windows: club.windows.map(w => {
-          if (w.id !== id || w.booked >= w.capacity) return w;
-          const boatName = user?.homePortName || 'My Boat';
-          if (w.boats.includes(boatName)) return w;
-          return { ...w, booked: w.booked + 1, boats: [...w.boats, boatName] };
-        }),
-      };
-    }));
+  const handleJoinWindow = async (id) => {
+    if (!user || !selectedClubId) return;
+    try {
+      await apiRequest(`/api/clubs/${selectedClubId}/windows/${id}/book`, { method: 'POST' });
+      await loadClubs();
+    } catch (err) {
+      setAuthError(err.message);
+    }
   };
 
-  const handleCreateClub = (e) => {
+  const handleCreateClub = async (e) => {
     e.preventDefault();
-    if (!createClubForm.name) return;
-    const newClub = {
-      id: `club-${Date.now()}`,
-      name: createClubForm.name,
-      capacity: Number(createClubForm.capacity) || 8,
-      windows: [
-        { id: `w-${Date.now()}-1`, date: 'Sun 21 Sep', lowWater: '10:55', duration: '2h 10m', capacity: Number(createClubForm.capacity) || 8, booked: 0, boats: [] },
-      ],
-    };
-    setClubs(prev => [...prev, newClub]);
-    setSelectedClubId(newClub.id);
-    setCreateClubForm({ name: '', capacity: 8 });
+    if (!createClubForm.name || !user) return;
+    try {
+      const created = await apiRequest('/api/clubs', { method: 'POST', body: JSON.stringify(createClubForm) });
+      setClubs(prev => [...prev, { ...created, windows: [] }]);
+      setSelectedClubId(created.id);
+      setCreateClubForm({ name: '', capacity: 8 });
+    } catch (err) {
+      setAuthError(err.message);
+    }
   };
 
   // Analyse scrubbing suitability
@@ -678,14 +663,14 @@ export default function TidalCalendarApp() {
                     {stations.map(s => <option key={s.id} value={s.id}>{s.name} — {s.country}</option>)}
                   </select>
                   <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Port</button>
-                  {user.homePortName && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.homePortName}</strong></div>}
+                  {user.home_port_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.home_port_name}</strong></div>}
                   <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600, marginTop: '8px' }}>Home Club</div>
                   <select value={homeClub} onChange={(e) => setHomeClub(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }}>
                     <option value="">Select a club</option>
                     {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                   <button onClick={handleSaveHomeClub} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Club</button>
-                  {user.homeClubName && <div style={{ fontSize: '12px', color: '#334155' }}>Current home club: <strong style={{ color: '#0f172a' }}>{user.homeClubName}</strong></div>}
+                  {user.home_club_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home club: <strong style={{ color: '#0f172a' }}>{user.home_club_name}</strong></div>}
                   <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{new Date(subscriptionEnd).toLocaleDateString('en-GB')}</strong></div>
                   <div style={{ display: 'grid', gap: '8px', padding: '10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
