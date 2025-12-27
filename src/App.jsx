@@ -723,7 +723,7 @@ export default function TidalCalendarApp() {
               )}
             </div>
           </section>
-        ) : (
+        
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {/* Calendar & Detail */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
