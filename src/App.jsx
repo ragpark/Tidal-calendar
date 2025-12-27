@@ -641,7 +641,7 @@ export default function TidalCalendarApp() {
           ))}
         </div>
 
-        {currentPage === 'profile' ? (
+        {currentPage === 'profile' && (
           <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -864,7 +864,9 @@ export default function TidalCalendarApp() {
               <ClubDashboard clubName={selectedClub?.name || 'Club'} windows={selectedClub?.windows || []} onJoinWindow={handleJoinWindow} />
             </div>
           </section>
-        ) : (
+        )}
+
+        {currentPage !== 'profile' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {/* Calendar & Detail */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
