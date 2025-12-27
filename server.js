@@ -46,6 +46,7 @@ const ensureSchema = async () => {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
       home_port_id TEXT,
       home_port_name TEXT,
       home_club_id UUID,
@@ -91,6 +92,8 @@ const ensureSchema = async () => {
     );
   `);
 
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';`);
+
   const { rows } = await pool.query(`SELECT id FROM clubs LIMIT 1`);
   if (rows.length === 0) {
     const { rows: clubRows } = await pool.query(
@@ -116,7 +119,7 @@ const getUserFromSession = async (req) => {
   const token = req.cookies?.[SESSION_COOKIE];
   if (!token) return null;
   const { rows } = await pool.query(
-    `SELECT u.id, u.email, u.home_port_id, u.home_port_name, u.home_club_id, u.home_club_name
+    `SELECT u.id, u.email, u.role, u.home_port_id, u.home_port_name, u.home_club_id, u.home_club_name
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token = $1 AND s.expires_at > now()`,
@@ -168,7 +171,7 @@ app.post('/api/auth/signup', async (req, res) => {
   const hash = await bcrypt.hash(password, 10);
   try {
     const { rows } = await pool.query(
-      `INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, home_port_id, home_port_name, home_club_id, home_club_name`,
+      `INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, role, home_port_id, home_port_name, home_club_id, home_club_name`,
       [email.toLowerCase(), hash],
     );
     const user = rows[0];
@@ -186,7 +189,7 @@ app.post('/api/auth/signup', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-  const { rows } = await pool.query(`SELECT id, email, password_hash, home_port_id, home_port_name, home_club_id, home_club_name FROM users WHERE email = $1`, [email.toLowerCase()]);
+  const { rows } = await pool.query(`SELECT id, email, role, password_hash, home_port_id, home_port_name, home_club_id, home_club_name FROM users WHERE email = $1`, [email.toLowerCase()]);
   const user = rows[0];
   if (!user) return res.status(401).json({ error: 'Invalid credentials' });
   const valid = await bcrypt.compare(password, user.password_hash);
@@ -194,7 +197,7 @@ app.post('/api/auth/login', async (req, res) => {
   const token = randomUUID();
   await pool.query(`INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, now() + interval '${SESSION_TTL_HOURS} hours')`, [user.id, token]);
   res.cookie(SESSION_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: SESSION_TTL_HOURS * 3600 * 1000 });
-  res.json({ id: user.id, email: user.email, home_port_id: user.home_port_id, home_port_name: user.home_port_name, home_club_id: user.home_club_id, home_club_name: user.home_club_name });
+  res.json({ id: user.id, email: user.email, role: user.role, home_port_id: user.home_port_id, home_port_name: user.home_port_name, home_club_id: user.home_club_id, home_club_name: user.home_club_name });
 });
 
 app.post('/api/auth/logout', async (req, res) => {
@@ -220,8 +223,18 @@ app.get('/api/profile', requireAuth, async (req, res) => {
 app.put('/api/profile', requireAuth, async (req, res) => {
   const { homePortId, homePortName, homeClubId, homeClubName } = req.body || {};
   const { rows } = await pool.query(
-    `UPDATE users SET home_port_id = $1, home_port_name = $2, home_club_id = $3, home_club_name = $4 WHERE id = $5 RETURNING id, email, home_port_id, home_port_name, home_club_id, home_club_name`,
+    `UPDATE users SET home_port_id = $1, home_port_name = $2, home_club_id = $3, home_club_name = $4 WHERE id = $5 RETURNING id, email, role, home_port_id, home_port_name, home_club_id, home_club_name`,
     [homePortId || null, homePortName || null, homeClubId || null, homeClubName || null, req.user.id],
+  );
+  res.json(rows[0]);
+});
+
+app.post('/api/profile/role', requireAuth, async (req, res) => {
+  const { role } = req.body || {};
+  if (!['user', 'subscriber', 'club_admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  const { rows } = await pool.query(
+    `UPDATE users SET role = $1 WHERE id = $2 RETURNING id, email, role, home_port_id, home_port_name, home_club_id, home_club_name`,
+    [role, req.user.id],
   );
   res.json(rows[0]);
 });
@@ -272,6 +285,7 @@ app.get('/api/clubs', async (_req, res) => {
 });
 
 app.post('/api/clubs', requireAuth, async (req, res) => {
+  if (req.user.role !== 'club_admin') return res.status(403).json({ error: 'Club admin role required' });
   const { name, capacity } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Name required' });
   const { rows } = await pool.query(

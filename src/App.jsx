@@ -336,23 +336,25 @@ export default function TidalCalendarApp() {
     
     const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
     const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+    const apiDuration = user?.role === 'subscriber' ? 30 : 7;
+    const predictionDays = user?.role === 'subscriber' ? daysInMonth + 7 : 14;
     
     let apiEvents = [];
     if (apiKey && !isDemo) {
       try {
-        const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=7`, { method: 'GET', cache: 'no-store' });
+        const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=${apiDuration}`, { method: 'GET', cache: 'no-store' });
         if (!response.ok) throw new Error(`TidalEvents fetch failed (${response.status})`);
         apiEvents = await response.json();
       } catch (err) { console.warn('API fetch failed:', err); }
     }
     
-    const predictedEvents = predictTidalEvents(station, monthStart, daysInMonth + 7);
+    const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
     const apiDateSet = new Set(apiEvents.map(e => new Date(e.DateTime).toDateString()));
     const merged = [...apiEvents, ...predictedEvents.filter(e => !apiDateSet.has(new Date(e.DateTime).toDateString()))];
     
     setTidalEvents(merged.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)));
     setLoading(false);
-  }, [apiKey, isDemo, currentMonth]);
+  }, [apiKey, isDemo, currentMonth, user]);
 
   useEffect(() => { fetchStations(); }, [fetchStations]);
   useEffect(() => { if (selectedStation) fetchTidalEvents(selectedStation); }, [selectedStation, fetchTidalEvents]);
@@ -368,11 +370,21 @@ export default function TidalCalendarApp() {
   const filteredStations = stations.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.country.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const role = user?.role || 'user';
   const subscriptionActive = useMemo(() => {
     const end = new Date(subscriptionEnd);
-    return end.getTime() > Date.now();
-  }, [subscriptionEnd]);
+    return role === 'subscriber' || end.getTime() > Date.now();
+  }, [subscriptionEnd, role]);
   const selectedClub = useMemo(() => clubs.find(c => c.id === selectedClubId) || clubs[0], [clubs, selectedClubId]);
+
+  const updateRole = async (nextRole) => {
+    try {
+      const updated = await apiRequest('/api/profile/role', { method: 'POST', body: JSON.stringify({ role: nextRole }) });
+      setUser(updated);
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -421,6 +433,7 @@ export default function TidalCalendarApp() {
     const nextEnd = new Date();
     nextEnd.setFullYear(nextEnd.getFullYear() + 1);
     setSubscriptionEnd(nextEnd.toISOString().slice(0, 10));
+    updateRole('subscriber');
   };
 
   const handleSaveHomePort = async () => {
@@ -466,6 +479,7 @@ export default function TidalCalendarApp() {
   const handleCreateClub = async (e) => {
     e.preventDefault();
     if (!createClubForm.name || !user) return;
+    if (role !== 'club_admin') { setAuthError('Club admin role required to create clubs.'); return; }
     try {
       const created = await apiRequest('/api/clubs', { method: 'POST', body: JSON.stringify(createClubForm) });
       setClubs(prev => [...prev, { ...created, windows: [] }]);
@@ -650,6 +664,9 @@ export default function TidalCalendarApp() {
                   <div>
                   <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
                   <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
+                  <div style={{ marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: '#ecfeff', border: '1px solid #bae6fd', borderRadius: '10px', color: '#0f172a', fontSize: '12px', fontWeight: 600 }}>
+                    Role: {role === 'subscriber' ? 'Subscriber (extended data)' : role === 'club_admin' ? 'Club Admin' : 'User (7-day view)'}
+                  </div>
                 </div>
                 <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
               </div>
@@ -676,9 +693,15 @@ export default function TidalCalendarApp() {
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
                     <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • billed via Tide when enabled</div>
                     <div style={{ fontSize: '11px', color: '#475569' }}>Tide payment integration will go here (client placeholder only).</div>
-                    <button onClick={handlePurchaseSubscription} style={{ padding: '10px', background: '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
-                      Pay £{SUBSCRIPTION_PRICE_GBP} via Tide (mock)
+                    <button onClick={handlePurchaseSubscription} disabled={role === 'subscriber'} style={{ padding: '10px', background: role === 'subscriber' ? '#dcfce7' : '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: role === 'subscriber' ? '#166534' : '#ffffff', cursor: role === 'subscriber' ? 'not-allowed' : 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
+                      {role === 'subscriber' ? 'Subscriber active' : `Pay £${SUBSCRIPTION_PRICE_GBP} via Tide (mock)`}
                     </button>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button onClick={() => updateRole('club_admin')} disabled={role === 'club_admin'} style={{ padding: '10px 14px', background: role === 'club_admin' ? '#e0f2fe' : '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: role === 'club_admin' ? '#075985' : '#ffffff', cursor: role === 'club_admin' ? 'not-allowed' : 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>
+                      {role === 'club_admin' ? 'Club admin enabled' : 'Enable club admin'}
+                    </button>
+                    <span style={{ fontSize: '12px', color: '#475569' }}>Club admins can create clubs and manage scrub windows.</span>
                   </div>
                 </div>
               )}
@@ -747,8 +770,9 @@ export default function TidalCalendarApp() {
                 <form onSubmit={handleCreateClub} style={{ display: 'grid', gap: '8px', marginBottom: '12px' }}>
                   <input type="text" value={createClubForm.name} onChange={(e) => setCreateClubForm(f => ({ ...f, name: e.target.value }))} placeholder="Club name" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
                   <input type="number" min="1" value={createClubForm.capacity} onChange={(e) => setCreateClubForm(f => ({ ...f, capacity: e.target.value }))} placeholder="Capacity per window" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
-                  <button type="submit" style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700 }}>Create club</button>
+                  <button type="submit" disabled={role !== 'club_admin'} style={{ padding: '10px', background: role === 'club_admin' ? '#0ea5e9' : '#e2e8f0', border: '1px solid #0284c7', borderRadius: '8px', color: role === 'club_admin' ? '#ffffff' : '#94a3b8', cursor: role === 'club_admin' ? 'pointer' : 'not-allowed', fontWeight: 700 }}>Create club (admin only)</button>
                 </form>
+                {role !== 'club_admin' && <div style={{ fontSize: '12px', color: '#b45309', fontWeight: 600 }}>Enable club admin in Profile to create clubs.</div>}
                 <label style={{ display: 'grid', gap: '8px' }}>
                   <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Select club</span>
                   <select value={selectedClubId} onChange={(e) => setSelectedClubId(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }}>
