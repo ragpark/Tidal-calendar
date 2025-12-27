@@ -4,40 +4,6 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 const API_BASE_URL = '/api';
 const DEFAULT_API_KEY = 'baec423358314e4e8f527980f959295d';
 
-const updateUserInStorage = (email, updater) => {
-  const users = loadUsers();
-  const idx = users.findIndex(u => u.email === email);
-  if (idx >= 0) {
-    const nextUser = updater(users[idx]);
-    const nextUsers = [...users];
-    nextUsers[idx] = nextUser;
-    persistUsers(nextUsers);
-    localStorage.setItem('tc_user', JSON.stringify(nextUser));
-    return nextUser;
-  }
-  return null;
-};
-
-const loadUsers = () => {
-  if (typeof localStorage === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem('tc_users') || '[]'); } catch { return []; }
-};
-
-const persistUsers = (users) => {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.setItem('tc_users', JSON.stringify(users));
-};
-
-const loadAlerts = (email) => {
-  if (!email || typeof localStorage === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(`tc_alerts_${email}`) || '[]'); } catch { return []; }
-};
-
-const persistAlerts = (email, alerts) => {
-  if (!email || typeof localStorage === 'undefined') return;
-  localStorage.setItem(`tc_alerts_${email}`, JSON.stringify(alerts));
-};
-
 // CLUB COMPONENTS
 const ScrubWindowCard = ({ window, onJoin }) => {
   const isFull = window.booked >= window.capacity;
@@ -280,25 +246,62 @@ export default function TidalCalendarApp() {
   const [alertForm, setAlertForm] = useState({ title: '', dueDate: '', notes: '' });
   const [subscriptionEnd, setSubscriptionEnd] = useState('2025-12-31');
   const SUBSCRIPTION_PRICE_GBP = 5;
-  const [clubs, setClubs] = useState([
-    {
-      id: 'club-1',
-      name: 'Solent Cruising Club',
-      capacity: 8,
-      windows: [
-        { id: 'w1', date: 'Thu 18 Sep', lowWater: '11:42', duration: '2h 20m', capacity: 8, booked: 5, boats: ['Aurora', 'Seaglass', 'Tern', 'Mistral', 'Swift'] },
-        { id: 'w2', date: 'Fri 19 Sep', lowWater: '12:28', duration: '2h 10m', capacity: 8, booked: 3, boats: ['Aurora', 'Bluefin', 'Wren'] },
-        { id: 'w3', date: 'Sat 20 Sep', lowWater: '13:10', duration: '2h 05m', capacity: 8, booked: 7, boats: ['Aurora', 'Tern', 'Bluefin', 'Solent Star', 'Sea Otter', 'Swift', 'Kittiwake'] },
-      ],
-    },
-  ]);
-  const [selectedClubId, setSelectedClubId] = useState('club-1');
+  const [clubs, setClubs] = useState([]);
+  const [selectedClubId, setSelectedClubId] = useState('');
   const [createClubForm, setCreateClubForm] = useState({ name: '', capacity: 8 });
   
   const [scrubSettings, setScrubSettings] = useState({
     highWaterStart: '06:30',
     highWaterEnd: '09:00',
   });
+
+  const apiRequest = useCallback(async (url, options = {}) => {
+    const res = await fetch(url, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      ...options,
+    });
+    if (!res.ok) {
+      let message = 'Request failed';
+      try {
+        const data = await res.json();
+        message = data.error || message;
+      } catch { /* ignore */ }
+      throw new Error(message);
+    }
+    return res.status === 204 ? null : res.json();
+  }, []);
+
+  const loadSession = useCallback(async () => {
+    try {
+      const me = await apiRequest('/api/auth/me');
+      setUser(me);
+      setHomePort(me.home_port_id || '');
+      setHomeClub(me.home_club_id || '');
+    } catch {
+      setUser(null);
+    }
+  }, [apiRequest]);
+
+  const loadAlerts = useCallback(async () => {
+    if (!user) { setAlerts([]); return; }
+    try {
+      const data = await apiRequest('/api/alerts');
+      setAlerts(data);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [apiRequest, user]);
+
+  const loadClubs = useCallback(async () => {
+    try {
+      const data = await apiRequest('/api/clubs');
+      setClubs(data);
+      if (!selectedClubId && data[0]?.id) setSelectedClubId(data[0].id);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [apiRequest, selectedClubId]);
 
   const fetchStations = useCallback(async () => {
     if (!apiKey) { setStations(DEMO_STATIONS); setIsDemo(true); return; }
@@ -353,21 +356,12 @@ export default function TidalCalendarApp() {
 
   useEffect(() => { fetchStations(); }, [fetchStations]);
   useEffect(() => { if (selectedStation) fetchTidalEvents(selectedStation); }, [selectedStation, fetchTidalEvents]);
+  useEffect(() => { loadSession(); }, [loadSession]);
+  useEffect(() => { loadClubs(); }, [loadClubs]);
+  useEffect(() => { loadAlerts(); }, [loadAlerts]);
   useEffect(() => {
-    try {
-      const savedUser = JSON.parse(localStorage.getItem('tc_user'));
-      if (savedUser?.email) {
-        setUser(savedUser);
-        setHomePort(savedUser.homePortId || '');
-        setHomeClub(savedUser.homeClubId || '');
-        if (savedUser.subscriptionEnd) setSubscriptionEnd(savedUser.subscriptionEnd);
-        setAlerts(loadAlerts(savedUser.email));
-      }
-    } catch { /* ignore */ }
-  }, []);
-  useEffect(() => {
-    if (!user?.homePortId || stations.length === 0) return;
-    const match = stations.find(s => s.id === user.homePortId);
+    if (!user?.home_port_id || stations.length === 0) return;
+    const match = stations.find(s => s.id === user.home_port_id);
     if (match) setSelectedStation(match);
   }, [stations, user]);
 
@@ -380,115 +374,106 @@ export default function TidalCalendarApp() {
   }, [subscriptionEnd]);
   const selectedClub = useMemo(() => clubs.find(c => c.id === selectedClubId) || clubs[0], [clubs, selectedClubId]);
 
-  const handleAuthSubmit = (e) => {
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
     const { email, password } = authForm;
     if (!email || !password) { setAuthError('Email and password are required.'); return; }
-    const users = loadUsers();
-    if (authMode === 'signup') {
-      if (users.find(u => u.email === email)) { setAuthError('An account already exists for this email.'); return; }
-      const nextUsers = [...users, { email, password, homePortId: '', homePortName: '', homeClubId: '', homeClubName: '', subscriptionEnd }];
-      persistUsers(nextUsers);
-      const newUser = { email, homePortId: '', homePortName: '', homeClubId: '', homeClubName: '', subscriptionEnd };
-      setUser(newUser);
-      setHomePort('');
-      setHomeClub('');
-      localStorage.setItem('tc_user', JSON.stringify(newUser));
-      setAlerts(loadAlerts(email));
-    } else {
-      const existing = users.find(u => u.email === email && u.password === password);
-      if (!existing) { setAuthError('Invalid email or password.'); return; }
-      setUser(existing);
-      setHomePort(existing.homePortId || '');
-      setHomeClub(existing.homeClubId || '');
-      if (existing.subscriptionEnd) setSubscriptionEnd(existing.subscriptionEnd);
-      localStorage.setItem('tc_user', JSON.stringify(existing));
-      setAlerts(loadAlerts(email));
+    try {
+      const endpoint = authMode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
+      const account = await apiRequest(endpoint, { method: 'POST', body: JSON.stringify({ email, password }) });
+      setUser(account);
+      setHomePort(account.home_port_id || '');
+      setHomeClub(account.home_club_id || '');
+      await loadAlerts();
+    } catch (err) {
+      setAuthError(err.message);
     }
     setAuthForm({ email: '', password: '' });
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => {});
     setUser(null);
     setAlerts([]);
-    localStorage.removeItem('tc_user');
   };
 
-  const handleAlertSubmit = (e) => {
+  const handleAlertSubmit = async (e) => {
     e.preventDefault();
     if (!user) return;
     if (!alertForm.title || !alertForm.dueDate) return;
-    const nextAlerts = [...alerts, { id: Date.now(), ...alertForm }];
-    setAlerts(nextAlerts);
-    persistAlerts(user.email, nextAlerts);
-    setAlertForm({ title: '', dueDate: '', notes: '' });
+    try {
+      const created = await apiRequest('/api/alerts', { method: 'POST', body: JSON.stringify(alertForm) });
+      setAlerts(prev => [...prev, created]);
+      setAlertForm({ title: '', dueDate: '', notes: '' });
+    } catch (err) {
+      setAuthError(err.message);
+    }
   };
 
-  const handleDeleteAlert = (id) => {
+  const handleDeleteAlert = async (id) => {
     if (!user) return;
-    const nextAlerts = alerts.filter(a => a.id !== id);
-    setAlerts(nextAlerts);
-    persistAlerts(user.email, nextAlerts);
+    await apiRequest(`/api/alerts/${id}`, { method: 'DELETE' }).catch(() => {});
+    setAlerts(prev => prev.filter(a => a.id !== id));
   };
 
   const handlePurchaseSubscription = () => {
-    // Placeholder for Tide payment integration; later replace with Tide API call + webhook confirmation.
     const nextEnd = new Date();
     nextEnd.setFullYear(nextEnd.getFullYear() + 1);
     setSubscriptionEnd(nextEnd.toISOString().slice(0, 10));
-    if (user?.email) {
-      const updated = updateUserInStorage(user.email, (u) => ({ ...u, subscriptionEnd: nextEnd.toISOString().slice(0, 10) }));
-      if (updated) setUser(updated);
-    }
   };
 
-  const handleSaveHomePort = () => {
+  const handleSaveHomePort = async () => {
     if (!user) return;
     const match = stations.find(s => s.id === homePort);
-    const updated = updateUserInStorage(user.email, (u) => ({ ...u, homePortId: homePort, homePortName: match?.name || '' }));
-    if (updated) {
+    if (!match) return;
+    try {
+      const updated = await apiRequest('/api/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ homePortId: homePort, homePortName: match.name }),
+      });
       setUser(updated);
-      if (match) setSelectedStation(match);
+      setSelectedStation(match);
+    } catch (err) {
+      setAuthError(err.message);
     }
   };
 
-  const handleSaveHomeClub = () => {
+  const handleSaveHomeClub = async () => {
     if (!user) return;
     const match = clubs.find(c => c.id === homeClub);
-    const updated = updateUserInStorage(user.email, (u) => ({ ...u, homeClubId: homeClub, homeClubName: match?.name || '' }));
-    if (updated) setUser(updated);
+    try {
+      const updated = await apiRequest('/api/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ homeClubId: homeClub, homeClubName: match?.name || '' }),
+      });
+      setUser(updated);
+    } catch (err) {
+      setAuthError(err.message);
+    }
   };
 
-  const handleJoinWindow = (id) => {
-    setClubs(prev => prev.map(club => {
-      if (club.id !== selectedClubId) return club;
-      return {
-        ...club,
-        windows: club.windows.map(w => {
-          if (w.id !== id || w.booked >= w.capacity) return w;
-          const boatName = user?.homePortName || 'My Boat';
-          if (w.boats.includes(boatName)) return w;
-          return { ...w, booked: w.booked + 1, boats: [...w.boats, boatName] };
-        }),
-      };
-    }));
+  const handleJoinWindow = async (id) => {
+    if (!user || !selectedClubId) return;
+    try {
+      await apiRequest(`/api/clubs/${selectedClubId}/windows/${id}/book`, { method: 'POST' });
+      await loadClubs();
+    } catch (err) {
+      setAuthError(err.message);
+    }
   };
 
-  const handleCreateClub = (e) => {
+  const handleCreateClub = async (e) => {
     e.preventDefault();
-    if (!createClubForm.name) return;
-    const newClub = {
-      id: `club-${Date.now()}`,
-      name: createClubForm.name,
-      capacity: Number(createClubForm.capacity) || 8,
-      windows: [
-        { id: `w-${Date.now()}-1`, date: 'Sun 21 Sep', lowWater: '10:55', duration: '2h 10m', capacity: Number(createClubForm.capacity) || 8, booked: 0, boats: [] },
-      ],
-    };
-    setClubs(prev => [...prev, newClub]);
-    setSelectedClubId(newClub.id);
-    setCreateClubForm({ name: '', capacity: 8 });
+    if (!createClubForm.name || !user) return;
+    try {
+      const created = await apiRequest('/api/clubs', { method: 'POST', body: JSON.stringify(createClubForm) });
+      setClubs(prev => [...prev, { ...created, windows: [] }]);
+      setSelectedClubId(created.id);
+      setCreateClubForm({ name: '', capacity: 8 });
+    } catch (err) {
+      setAuthError(err.message);
+    }
   };
 
   // Analyse scrubbing suitability
@@ -678,14 +663,14 @@ export default function TidalCalendarApp() {
                     {stations.map(s => <option key={s.id} value={s.id}>{s.name} — {s.country}</option>)}
                   </select>
                   <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Port</button>
-                  {user.homePortName && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.homePortName}</strong></div>}
+                  {user.home_port_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.home_port_name}</strong></div>}
                   <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600, marginTop: '8px' }}>Home Club</div>
                   <select value={homeClub} onChange={(e) => setHomeClub(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }}>
                     <option value="">Select a club</option>
                     {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                   <button onClick={handleSaveHomeClub} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Club</button>
-                  {user.homeClubName && <div style={{ fontSize: '12px', color: '#334155' }}>Current home club: <strong style={{ color: '#0f172a' }}>{user.homeClubName}</strong></div>}
+                  {user.home_club_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home club: <strong style={{ color: '#0f172a' }}>{user.home_club_name}</strong></div>}
                   <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{new Date(subscriptionEnd).toLocaleDateString('en-GB')}</strong></div>
                   <div style={{ display: 'grid', gap: '8px', padding: '10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
@@ -752,6 +737,76 @@ export default function TidalCalendarApp() {
                 <div style={{ fontSize: '13px', color: '#334155' }}>Sign in to create scrubbing and maintenance alerts.</div>
               )}
             </div>
+
+            <div style={{ display: 'grid', gap: '12px' }}>
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <h4 style={{ margin: 0, color: '#0f172a', fontWeight: 600 }}>Clubs</h4>
+                  <span style={{ fontSize: '11px', color: '#475569' }}>Manage home club here</span>
+                </div>
+                <form onSubmit={handleCreateClub} style={{ display: 'grid', gap: '8px', marginBottom: '12px' }}>
+                  <input type="text" value={createClubForm.name} onChange={(e) => setCreateClubForm(f => ({ ...f, name: e.target.value }))} placeholder="Club name" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
+                  <input type="number" min="1" value={createClubForm.capacity} onChange={(e) => setCreateClubForm(f => ({ ...f, capacity: e.target.value }))} placeholder="Capacity per window" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
+                  <button type="submit" style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700 }}>Create club</button>
+                </form>
+                <label style={{ display: 'grid', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Select club</span>
+                  <select value={selectedClubId} onChange={(e) => setSelectedClubId(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }}>
+                    {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <ClubDashboard clubName={selectedClub?.name || 'Club'} windows={selectedClub?.windows || []} onJoinWindow={handleJoinWindow} />
+            </div>
+          </section>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', alignItems: 'start' }}>
+            {/* Left Column: Station selection */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <section style={{ animation: 'fadeInUp 0.8s ease-out 0.2s both' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 500, letterSpacing: '1px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', color: '#0f172a' }}>
+                  <span style={{ width: '40px', height: '1px', background: 'linear-gradient(90deg, transparent, #0ea5e9)' }} />Select Tidal Station
+                </h2>
+                
+                <div style={{ position: 'relative', marginBottom: '20px' }}>
+                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search stations..." style={{ width: '100%', padding: '14px 18px 14px 48px', background: '#ffffff', border: '1px solid rgba(15,23,42,0.08)', borderRadius: '12px', color: '#0f172a', fontSize: '15px', fontFamily: "'Outfit', sans-serif", boxSizing: 'border-box', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }} />
+                  <span style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', opacity: 0.35 }}>⚓</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px', maxHeight: '300px', overflowY: 'auto', padding: '4px' }}>
+                {filteredStations.slice(0, 20).map((station, i) => (
+                    <button key={station.id} className="station-card" onClick={() => setSelectedStation(station)} style={{ background: selectedStation?.id === station.id ? '#e0f2fe' : '#ffffff', border: `1px solid ${selectedStation?.id === station.id ? '#0ea5e9' : '#cbd5e1'}`, borderRadius: '12px', padding: '14px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a', marginBottom: '2px' }}>{station.name}</div>
+                      <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#475569', letterSpacing: '1px', textTransform: 'uppercase' }}>{station.country}</div>
+                    </button>
+                  ))}
+              </div>
+            </section>
+          </div>
+
+            {/* Right Column: Calendar & Detail */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Station Content */}
+              {selectedStation && (
+                <section style={{ animation: 'fadeInUp 0.6s ease-out' }}>
+                  {/* Station Header */}
+                  <div style={{ background: 'linear-gradient(135deg, #e0f2fe 0%, #f8fafc 100%)', border: '1px solid rgba(14,165,233,0.25)', borderRadius: '20px', padding: '24px 28px', marginBottom: '24px', boxShadow: '0 10px 30px rgba(15,23,42,0.06)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                      <div>
+                        <h2 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 500, margin: '0 0 4px', color: '#0f172a' }}>{selectedStation.name}</h2>
+                        <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#475569', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px' }}>
+                        {['monthly', 'scrubbing'].map(mode => (
+                          <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 600, transition: 'all 0.3s' }}>
+                            {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
 
             <div style={{ display: 'grid', gap: '12px' }}>
               <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
