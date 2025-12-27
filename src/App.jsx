@@ -797,12 +797,12 @@ export default function TidalCalendarApp() {
                     ))}
                   </div>
                 </>
-              ) : (
+              
                 <div style={{ fontSize: '13px', color: '#334155' }}>Sign in to create scrubbing and maintenance alerts.</div>
               )}
             </div>
           </section>
-        ) : (
+        
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {/* Calendar & Detail */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
