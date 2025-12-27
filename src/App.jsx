@@ -1077,6 +1077,9 @@ export default function TidalCalendarApp() {
             <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '15px', color: '#64748b', maxWidth: '400px', margin: '0 auto' }}>Choose a station to view monthly tide times and find the best days for scrubbing your boat.</p>
           </div>
         )}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Footer */}
