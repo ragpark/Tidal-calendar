@@ -177,7 +177,7 @@ export default function TidalCalendarApp() {
   const SUBSCRIPTION_PRICE_GBP = 5;
   
   const [scrubSettings, setScrubSettings] = useState({
-    highWaterStart: '06:30',
+    highWaterStart: '04:30',
     highWaterEnd: '09:00',
   });
   const role = user?.role || 'user';
@@ -257,7 +257,7 @@ export default function TidalCalendarApp() {
     
     const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
     const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-    const apiDuration = hasUkhoAccess ? 30 : 7;
+    const apiDuration = hasUkhoAccess ? 7 : 7;
     const predictionDays = hasUkhoAccess ? daysInMonth + 7 : 14;
     
     let apiEvents = [];
