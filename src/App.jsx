@@ -638,47 +638,52 @@ export default function TidalCalendarApp() {
         )}
 
         {currentPage === 'profile' && (
-          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Profile</h3>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button onClick={() => setAuthMode('signin')} style={{ padding: '6px 10px', background: authMode === 'signin' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign In</button>
-                  <button onClick={() => setAuthMode('signup')} style={{ padding: '6px 10px', background: authMode === 'signup' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign Up</button>
+          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
+            <div style={{ display: 'grid', gap: '16px' }}>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)', display: 'grid', gap: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Profile</h3>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => setAuthMode('signin')} style={{ padding: '6px 10px', background: authMode === 'signin' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign In</button>
+                    <button onClick={() => setAuthMode('signup')} style={{ padding: '6px 10px', background: authMode === 'signup' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign Up</button>
+                  </div>
                 </div>
+
+                {!user ? (
+                  <form onSubmit={handleAuthSubmit} style={{ display: 'grid', gap: '10px' }}>
+                    <input type="email" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)' }} />
+                    <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)' }} />
+                    {authError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{authError}</div>}
+                    <button type="submit" style={{ padding: '12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>{authMode === 'signup' ? 'Create Account' : 'Sign In'}</button>
+                  </form>
+                ) : (
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
+                      <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
+                      <div style={{ marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: '#ecfeff', border: '1px solid #bae6fd', borderRadius: '10px', color: '#0f172a', fontSize: '12px', fontWeight: 600 }}>
+                        Role: {role === 'subscriber' ? 'Subscriber (extended data)' : 'User (7-day view)'}
+                      </div>
+                    </div>
+                    <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
+                  </div>
+                )}
               </div>
 
-              {!user ? (
-                <form onSubmit={handleAuthSubmit} style={{ display: 'grid', gap: '10px' }}>
-                  <input type="email" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
-                  <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
-                  {authError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{authError}</div>}
-                  <button type="submit" style={{ padding: '12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>{authMode === 'signup' ? 'Create Account' : 'Sign In'}</button>
-                </form>
-              ) : (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
-                    <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
-                    <div style={{ marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: '#ecfeff', border: '1px solid #bae6fd', borderRadius: '10px', color: '#0f172a', fontSize: '12px', fontWeight: 600 }}>
-                      Role: {role === 'subscriber' ? 'Subscriber (extended data)' : 'User (7-day view)'}
-                    </div>
-                  </div>
-                  <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
-                </div>
-              )}
-
               {user && (
-                <div style={{ marginTop: '16px', padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'grid', gap: '10px', boxShadow: '0 4px 12px rgba(15,23,42,0.06)' }}>
-                  <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Home Port (default after sign-in)</div>
-                  <select value={homePort} onChange={(e) => setHomePort(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }}>
-                    <option value="">Select a station</option>
-                    {stations.map(s => <option key={s.id} value={s.id}>{s.name} — {s.country}</option>)}
-                  </select>
-                  <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Port</button>
-                  {user.home_port_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.home_port_name}</strong></div>}
-                  <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{new Date(subscriptionEnd).toLocaleDateString('en-GB')}</strong></div>
-                  <div style={{ display: 'grid', gap: '8px', padding: '10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)', display: 'grid', gap: '12px' }}>
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 14px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)', display: 'grid', gap: '10px' }}>
+                    <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Home Port (default after sign-in)</div>
+                    <select value={homePort} onChange={(e) => setHomePort(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }}>
+                      <option value="">Select a station</option>
+                      {stations.map(s => <option key={s.id} value={s.id}>{s.name} — {s.country}</option>)}
+                    </select>
+                    <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>Save Home Port</button>
+                    {user.home_port_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.home_port_name}</strong></div>}
+                    <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{new Date(subscriptionEnd).toLocaleDateString('en-GB')}</strong></div>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
                     <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • billed via Tide when enabled</div>
                     <div style={{ fontSize: '11px', color: '#475569' }}>Tide payment integration will go here (client placeholder only).</div>
