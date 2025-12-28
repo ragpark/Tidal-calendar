@@ -174,6 +174,7 @@ export default function TidalCalendarApp() {
   const [authError, setAuthError] = useState('');
   const [alerts, setAlerts] = useState([]);
   const [alertForm, setAlertForm] = useState({ title: '', dueDate: '', notes: '' });
+  const [alertError, setAlertError] = useState('');
   const [subscriptionEnd, setSubscriptionEnd] = useState('2025-12-31');
   const SUBSCRIPTION_PRICE_GBP = 5;
   
@@ -181,6 +182,7 @@ export default function TidalCalendarApp() {
     highWaterStart: '04:30',
     highWaterEnd: '09:00',
   });
+  const [scrubModal, setScrubModal] = useState(null);
   const role = user?.role || 'user';
   const hasUkhoAccess = useMemo(() => {
     if (!user) return false;
@@ -350,17 +352,37 @@ export default function TidalCalendarApp() {
     setAlerts([]);
   };
 
+  const createAlert = useCallback(async (payload) => {
+    if (!user) {
+      setAlertError('Sign in to save alerts.');
+      return null;
+    }
+    setAlertError('');
+    try {
+      const created = await apiRequest('/api/alerts', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: payload.title,
+          dueDate: payload.dueDate ? new Date(payload.dueDate).toISOString() : null,
+          notes: payload.notes || '',
+        }),
+      });
+      setAlerts(prev => [...prev, created]);
+      return created;
+    } catch (err) {
+      setAlertError(err.message);
+      throw err;
+    }
+  }, [apiRequest, user]);
+
   const handleAlertSubmit = async (e) => {
     e.preventDefault();
-    if (!user) return;
-    if (!alertForm.title || !alertForm.dueDate) return;
+    if (!user) { setAlertError('Sign in to save alerts.'); return; }
+    if (!alertForm.title || !alertForm.dueDate) { setAlertError('Title and due date are required.'); return; }
     try {
-      const created = await apiRequest('/api/alerts', { method: 'POST', body: JSON.stringify(alertForm) });
-      setAlerts(prev => [...prev, created]);
+      await createAlert(alertForm);
       setAlertForm({ title: '', dueDate: '', notes: '' });
-    } catch (err) {
-      setAuthError(err.message);
-    }
+    } catch { /* handled in createAlert */ }
   };
 
   const handleDeleteAlert = async (id) => {
@@ -638,47 +660,52 @@ export default function TidalCalendarApp() {
         )}
 
         {currentPage === 'profile' && (
-          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Profile</h3>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button onClick={() => setAuthMode('signin')} style={{ padding: '6px 10px', background: authMode === 'signin' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign In</button>
-                  <button onClick={() => setAuthMode('signup')} style={{ padding: '6px 10px', background: authMode === 'signup' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign Up</button>
+          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
+            <div style={{ display: 'grid', gap: '16px' }}>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)', display: 'grid', gap: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Profile</h3>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => setAuthMode('signin')} style={{ padding: '6px 10px', background: authMode === 'signin' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign In</button>
+                    <button onClick={() => setAuthMode('signup')} style={{ padding: '6px 10px', background: authMode === 'signup' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign Up</button>
+                  </div>
                 </div>
+
+                {!user ? (
+                  <form onSubmit={handleAuthSubmit} style={{ display: 'grid', gap: '10px' }}>
+                    <input type="email" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)' }} />
+                    <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)' }} />
+                    {authError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{authError}</div>}
+                    <button type="submit" style={{ padding: '12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>{authMode === 'signup' ? 'Create Account' : 'Sign In'}</button>
+                  </form>
+                ) : (
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
+                      <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
+                      <div style={{ marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: '#ecfeff', border: '1px solid #bae6fd', borderRadius: '10px', color: '#0f172a', fontSize: '12px', fontWeight: 600 }}>
+                        Role: {role === 'subscriber' ? 'Subscriber (extended data)' : 'User (7-day view)'}
+                      </div>
+                    </div>
+                    <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
+                  </div>
+                )}
               </div>
 
-              {!user ? (
-                <form onSubmit={handleAuthSubmit} style={{ display: 'grid', gap: '10px' }}>
-                  <input type="email" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
-                  <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }} />
-                  {authError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{authError}</div>}
-                  <button type="submit" style={{ padding: '12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>{authMode === 'signup' ? 'Create Account' : 'Sign In'}</button>
-                </form>
-              ) : (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
-                    <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
-                    <div style={{ marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: '#ecfeff', border: '1px solid #bae6fd', borderRadius: '10px', color: '#0f172a', fontSize: '12px', fontWeight: 600 }}>
-                      Role: {role === 'subscriber' ? 'Subscriber (extended data)' : 'User (7-day view)'}
-                    </div>
-                  </div>
-                  <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
-                </div>
-              )}
-
               {user && (
-                <div style={{ marginTop: '16px', padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', display: 'grid', gap: '10px', boxShadow: '0 4px 12px rgba(15,23,42,0.06)' }}>
-                  <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Home Port (default after sign-in)</div>
-                  <select value={homePort} onChange={(e) => setHomePort(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }}>
-                    <option value="">Select a station</option>
-                    {stations.map(s => <option key={s.id} value={s.id}>{s.name} — {s.country}</option>)}
-                  </select>
-                  <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Port</button>
-                  {user.home_port_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.home_port_name}</strong></div>}
-                  <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{new Date(subscriptionEnd).toLocaleDateString('en-GB')}</strong></div>
-                  <div style={{ display: 'grid', gap: '8px', padding: '10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)', display: 'grid', gap: '12px' }}>
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 14px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)', display: 'grid', gap: '10px' }}>
+                    <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Home Port (default after sign-in)</div>
+                    <select value={homePort} onChange={(e) => setHomePort(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }}>
+                      <option value="">Select a station</option>
+                      {stations.map(s => <option key={s.id} value={s.id}>{s.name} — {s.country}</option>)}
+                    </select>
+                    <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>Save Home Port</button>
+                    {user.home_port_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.home_port_name}</strong></div>}
+                    <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{new Date(subscriptionEnd).toLocaleDateString('en-GB')}</strong></div>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
                     <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • billed via Tide when enabled</div>
                     <div style={{ fontSize: '11px', color: '#475569' }}>Tide payment integration will go here (client placeholder only).</div>
@@ -686,7 +713,58 @@ export default function TidalCalendarApp() {
                       {role === 'subscriber' ? 'Subscriber active' : `Pay £${SUBSCRIPTION_PRICE_GBP} via Tide (mock)`}
                     </button>
                   </div>
-                  {/*
+                  <div style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Maintenance alerts</div>
+                        <div style={{ fontSize: '11px', color: '#475569' }}>Plan haul-outs, scrubs, and reminders.</div>
+                      </div>
+                    </div>
+                    <form onSubmit={handleAlertSubmit} style={{ display: 'grid', gap: '8px' }}>
+                      <input
+                        type="text"
+                        placeholder="Alert title (e.g. Scrub hull)"
+                        value={alertForm.title}
+                        onChange={(e) => setAlertForm(f => ({ ...f, title: e.target.value }))}
+                        style={{ padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px' }}
+                      />
+                      <input
+                        type="date"
+                        value={alertForm.dueDate}
+                        onChange={(e) => setAlertForm(f => ({ ...f, dueDate: e.target.value }))}
+                        style={{ padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px' }}
+                      />
+                      <textarea
+                        placeholder="Notes (optional)"
+                        value={alertForm.notes}
+                        onChange={(e) => setAlertForm(f => ({ ...f, notes: e.target.value }))}
+                        rows={2}
+                        style={{ padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px', resize: 'vertical', minHeight: '60px' }}
+                      />
+                      {alertError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{alertError}</div>}
+                      <button type="submit" style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>
+                        Add alert
+                      </button>
+                    </form>
+                    <div style={{ display: 'grid', gap: '8px' }}>
+                      {alerts.length === 0 && <div style={{ fontSize: '12px', color: '#475569' }}>No alerts yet. Create your first reminder.</div>}
+                      {alerts.map(alert => (
+                        <div key={alert.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ display: 'grid', gap: '4px' }}>
+                            <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{alert.title}</div>
+                            <div style={{ fontSize: '11px', color: '#475569' }}>
+                              Due {alert.dueDate ? new Date(alert.dueDate).toLocaleDateString('en-GB') : '—'}
+                            </div>
+                            {alert.notes && <div style={{ fontSize: '11px', color: '#334155' }}>{alert.notes}</div>}
+                          </div>
+                          <button onClick={() => handleDeleteAlert(alert.id)} style={{ padding: '6px 8px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* 
                     <div style={{ display: 'grid', gap: '8px', padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Tidal station</div>
                     <div style={{ position: 'relative' }}>
@@ -958,7 +1036,16 @@ export default function TidalCalendarApp() {
                     <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
                       <button
                         disabled={!user}
-                        onClick={() => { if (!user) return; const nextAlerts = [...alerts, { id: Date.now(), title: `Scrub boat - ${selectedDay.toDateString()}`, dueDate: scrubbingByDate[selectedDay.toDateString()].lwTime?.toISOString?.() || '', notes: 'Added from scrubbing schedule' }]; setAlerts(nextAlerts); if (user?.email) persistAlerts(user.email, nextAlerts); }}
+                        onClick={async () => {
+                          if (!user) return;
+                          const lwTime = scrubbingByDate[selectedDay.toDateString()].lwTime;
+                          const lwIso = lwTime?.toISOString?.() || '';
+                          await createAlert({
+                            title: `Scrub boat - ${selectedDay.toDateString()}`,
+                            dueDate: lwIso,
+                            notes: 'Added from scrubbing schedule',
+                          });
+                        }}
                         style={{
                           padding: '10px 14px',
                           background: user ? '#22c55e' : '#e2e8f0',
@@ -999,7 +1086,7 @@ export default function TidalCalendarApp() {
                         const isPredicted = data.highWater.IsPredicted;
                         
                         return (
-                          <div key={i} onClick={() => { setSelectedDay(date); setViewMode('monthly'); }} style={{
+                          <div key={i} onClick={() => { setSelectedDay(date); setScrubModal({ date, data }); }} style={{
                             background: '#ffffff',
                             border: `1px solid ${data.rating === 'excellent' ? '#22c55e' : data.rating === 'good' ? '#84cc16' : '#cbd5e1'}`,
                             borderRadius: '12px', padding: '20px', cursor: 'pointer', transition: 'all 0.3s', boxShadow: '0 4px 12px rgba(15,23,42,0.06)'
@@ -1030,6 +1117,82 @@ export default function TidalCalendarApp() {
       </div>
     </div>
   )}
+
+      {/* Scrubbing modal detail */}
+      {scrubModal && selectedDay && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 1000 }}>
+          <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '720px', width: '100%', boxShadow: '0 20px 60px rgba(15,23,42,0.25)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+              <div>
+                <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 700 }}>
+                  {scrubModal.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                </div>
+                <div style={{ fontSize: '12px', color: '#475569' }}>Scrubbing window preview</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <ScrubbingBadge rating={scrubModal.data.rating} />
+                <button onClick={() => setScrubModal(null)} style={{ padding: '8px 10px', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '10px', color: '#0f172a', cursor: 'pointer', fontWeight: 600 }}>Close</button>
+              </div>
+            </div>
+            <div style={{ padding: '20px', display: 'grid', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>High Water</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{formatTime(scrubModal.data.hwTime)}</div>
+                </div>
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Low Water</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{formatTime(scrubModal.data.lwTime)}</div>
+                </div>
+                {scrubModal.data.refloatTime && (
+                  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Refloat</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{formatTime(scrubModal.data.refloatTime)}</div>
+                  </div>
+                )}
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Tidal Range</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{scrubModal.data.tidalRange.toFixed(1)}m</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ fontSize: '12px', color: '#334155' }}>
+                  Add this scrubbing window to your maintenance log.
+                </div>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  {alertError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{alertError}</div>}
+                  <button
+                    disabled={!user}
+                    onClick={async () => {
+                      if (!user) return;
+                      const lwIso = scrubModal.data.lwTime?.toISOString?.() || scrubModal.date.toISOString();
+                      await createAlert({
+                        title: `Scrub boat - ${scrubModal.date.toDateString()}`,
+                        dueDate: lwIso,
+                        notes: 'Added from scrubbing schedule',
+                      });
+                      setScrubModal(null);
+                    }}
+                    style={{
+                      padding: '10px 14px',
+                      background: user ? '#22c55e' : '#e2e8f0',
+                      border: `1px solid ${user ? '#16a34a' : '#cbd5e1'}`,
+                      borderRadius: '10px',
+                      color: user ? '#ffffff' : '#94a3b8',
+                      cursor: user ? 'pointer' : 'not-allowed',
+                      fontWeight: 700,
+                      boxShadow: user ? '0 4px 12px rgba(34,197,94,0.3)' : 'none'
+                    }}
+                  >
+                    Add to maintenance log
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
         {/* Empty State */}
         {currentPage === 'calendar' && !selectedStation && (
