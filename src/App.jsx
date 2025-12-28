@@ -254,6 +254,12 @@ export default function TidalCalendarApp() {
     highWaterStart: '06:30',
     highWaterEnd: '09:00',
   });
+  const role = user?.role || 'user';
+  const hasUkhoAccess = useMemo(() => {
+    if (!user) return false;
+    const end = new Date(subscriptionEnd);
+    return role === 'subscriber' && end.getTime() > Date.now();
+  }, [subscriptionEnd, role, user]);
 
   const apiRequest = useCallback(async (url, options = {}) => {
     const res = await fetch(url, {
@@ -336,8 +342,8 @@ export default function TidalCalendarApp() {
     
     const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
     const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-    const apiDuration = user?.role === 'subscriber' ? 30 : 7;
-    const predictionDays = user?.role === 'subscriber' ? daysInMonth + 7 : 14;
+    const apiDuration = hasUkhoAccess ? 30 : 7;
+    const predictionDays = hasUkhoAccess ? daysInMonth + 7 : 14;
     
     let apiEvents = [];
     if (apiKey && !isDemo) {
@@ -354,7 +360,7 @@ export default function TidalCalendarApp() {
     
     setTidalEvents(merged.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)));
     setLoading(false);
-  }, [apiKey, isDemo, currentMonth, user]);
+  }, [apiKey, isDemo, currentMonth, hasUkhoAccess]);
 
   useEffect(() => { fetchStations(); }, [fetchStations]);
   useEffect(() => { if (selectedStation) fetchTidalEvents(selectedStation); }, [selectedStation, fetchTidalEvents]);
@@ -370,11 +376,6 @@ export default function TidalCalendarApp() {
   const filteredStations = stations.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.country.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  const role = user?.role || 'user';
-  const subscriptionActive = useMemo(() => {
-    const end = new Date(subscriptionEnd);
-    return role === 'subscriber' || end.getTime() > Date.now();
-  }, [subscriptionEnd, role]);
   const selectedClub = useMemo(() => clubs.find(c => c.id === selectedClubId) || clubs[0], [clubs, selectedClubId]);
 
   const updateRole = async (nextRole) => {
@@ -588,6 +589,9 @@ export default function TidalCalendarApp() {
     });
     return grouped;
   }, [tidalEvents]);
+  const selectedDayEvents = selectedDay ? eventsByDay[selectedDay.toDateString()] || [] : [];
+  const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
+  const selectedDayHasPreviewApi = selectedDayEvents.some(e => !e.IsPredicted);
 
   const navigateMonth = (delta) => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + delta, 1));
@@ -837,6 +841,7 @@ export default function TidalCalendarApp() {
                     const isSelected = selectedDay?.toDateString() === dateStr;
                     const moonPhase = getMoonPhaseName(date);
                     const isPredicted = dayEvents.some(e => e.IsPredicted);
+                    const hasPreviewApiData = dayEvents.some(e => !e.IsPredicted);
                     
                     return (
                       <div
@@ -886,8 +891,8 @@ export default function TidalCalendarApp() {
 
                         {/* Data source indicator */}
                         {isCurrentMonth && (
-                          <div style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: subscriptionActive ? '#0ea5e9' : '#b45309', opacity: 0.9 }}>
-                            {subscriptionActive ? 'UKHO' : (isPredicted ? 'pred' : 'API')}
+                          <div style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: hasUkhoAccess || hasPreviewApiData ? '#0ea5e9' : '#b45309', opacity: 0.9 }}>
+                            {hasUkhoAccess ? 'UKHO' : (hasPreviewApiData ? 'UKHO 7d' : (isPredicted ? 'pred' : 'API'))}
                           </div>
                         )}
                       </div>
@@ -907,6 +912,9 @@ export default function TidalCalendarApp() {
                   <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#334155' }}>
                     🌑🌕 = Spring tides (larger range) • 🌓🌗 = Neap tides (smaller range)
                   </div>
+                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#0f172a', textAlign: 'center' }}>
+                    <strong style={{ color: '#0ea5e9' }}>UKHO 7d</strong> = open preview for everyone. Sign in & subscribe to unlock full UKHO times.
+                  </div>
                 </div>
               </div>
             )}
@@ -918,7 +926,7 @@ export default function TidalCalendarApp() {
                   <div>
                     <h3 style={{ fontSize: '24px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>{selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
                     <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#334155', margin: 0 }}>
-                      {getMoonPhaseName(selectedDay).icon} {getMoonPhaseName(selectedDay).name} • {subscriptionActive ? 'UKHO data' : (eventsByDay[selectedDay.toDateString()]?.some(e => e.IsPredicted) ? 'Predicted' : 'API Data')}
+                      {getMoonPhaseName(selectedDay).icon} {getMoonPhaseName(selectedDay).name} • {hasUkhoAccess ? 'UKHO data (subscriber)' : (selectedDayHasPreviewApi ? 'Admiralty preview (7 days)' : (selectedDayHasPredicted ? 'Predicted' : 'API Data'))}
                     </p>
                   </div>
                   {scrubbingByDate[selectedDay.toDateString()] && <ScrubbingBadge rating={scrubbingByDate[selectedDay.toDateString()].rating} />}
@@ -926,15 +934,16 @@ export default function TidalCalendarApp() {
 
                 {/* Tide Events */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                  {(eventsByDay[selectedDay.toDateString()] || []).map((event, i) => {
+                  {selectedDayEvents.map((event, i) => {
                     const isHigh = event.EventType === 'HighWater';
                     return (
                       <div key={i} style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', borderLeft: `3px solid ${isHigh ? '#0ea5e9' : '#64748b'}`, border: '1px solid #e2e8f0' }}>
                         <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: isHigh ? '#0ea5e9' : '#475569', marginBottom: '4px', fontWeight: 600 }}>{isHigh ? '↑ High Water' : '↓ Low Water'}</div>
                         <div style={{ fontSize: '28px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{formatTime(event.DateTime)}</div>
                         <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155' }}>{event.Height?.toFixed(2)}m</div>
-                        {event.IsPredicted && !subscriptionActive && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#b45309', marginTop: '8px' }}>⚠ Predicted (harmonic algorithm)</div>}
-                        {subscriptionActive && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '8px' }}>UKHO data (subscription)</div>}
+                        {event.IsPredicted && !hasUkhoAccess && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#b45309', marginTop: '8px' }}>⚠ Predicted (harmonic algorithm)</div>}
+                        {!event.IsPredicted && !hasUkhoAccess && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '8px' }}>Admiralty preview (7-day access)</div>}
+                        {hasUkhoAccess && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '8px' }}>UKHO data (subscriber)</div>}
                       </div>
                     );
                   })}
@@ -1004,7 +1013,11 @@ export default function TidalCalendarApp() {
                                 <div style={{ fontSize: '20px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
                                 <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155' }}>
                                   HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m
-                                  {subscriptionActive ? <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>• UKHO</span> : (isPredicted && <span style={{ color: '#b45309', marginLeft: '8px' }}>• Predicted</span>)}
+                                  {hasUkhoAccess
+                                    ? <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>• UKHO</span>
+                                    : (!isPredicted
+                                      ? <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>• UKHO 7d</span>
+                                      : (isPredicted && <span style={{ color: '#b45309', marginLeft: '8px' }}>• Predicted</span>))}
                                 </div>
                               </div>
                               <ScrubbingBadge rating={data.rating} />
