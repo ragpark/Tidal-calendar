@@ -568,7 +568,8 @@ export default function TidalCalendarApp() {
                       {role === 'subscriber' ? 'Subscriber active' : `Pay £${SUBSCRIPTION_PRICE_GBP} via Tide (mock)`}
                     </button>
                   </div>
-                  <div style={{ display: 'grid', gap: '8px', padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+                  <!--
+                    <div style={{ display: 'grid', gap: '8px', padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Tidal station</div>
                     <div style={{ position: 'relative' }}>
                       <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search stations..." style={{ width: '100%', padding: '12px 14px 12px 42px', background: '#ffffff', border: '1px solid rgba(15,23,42,0.1)', borderRadius: '10px', color: '#0f172a', fontSize: '14px', fontFamily: "'Outfit', sans-serif" }} />
@@ -583,7 +584,7 @@ export default function TidalCalendarApp() {
                       ))}
                     </div>
                     {!selectedStation && <div style={{ fontSize: '12px', color: '#475569' }}>Select a station to view the calendar.</div>}
-                  </div>
+                  </div>--!>
                 </div>
               )}
             </div>
