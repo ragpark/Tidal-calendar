@@ -723,6 +723,37 @@ export default function TidalCalendarApp() {
               )}
             </div>
 
+            <div style={{ display: 'grid', gap: '12px' }}>
+              <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#f8fafc', boxShadow: '0 4px 12px rgba(15,23,42,0.06)', display: 'grid', gap: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <div>
+                    <h3 style={{ fontSize: '16px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>Club maintenance</h3>
+                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#475569', margin: 0 }}>Manage scrub windows, create clubs, and handle bookings from here.</p>
+                  </div>
+                  {!user && <span style={{ fontSize: '12px', color: '#b45309', fontWeight: 600 }}>Sign in to manage clubs.</span>}
+                </div>
+
+                <label style={{ display: 'grid', gap: '6px' }}>
+                  <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Select club</span>
+                  <select value={selectedClubId} onChange={(e) => setSelectedClubId(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }}>
+                    {clubs.length === 0 && <option value="">No clubs available</option>}
+                    {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </label>
+
+                <form onSubmit={handleCreateClub} style={{ display: 'grid', gap: '8px' }}>
+                  <input type="text" value={createClubForm.name} onChange={(e) => setCreateClubForm(f => ({ ...f, name: e.target.value }))} placeholder="Club name" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
+                  <input type="number" min="1" value={createClubForm.capacity} onChange={(e) => setCreateClubForm(f => ({ ...f, capacity: e.target.value }))} placeholder="Capacity per window" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
+                  <button type="submit" disabled={role !== 'club_admin'} style={{ padding: '10px', background: role === 'club_admin' ? '#0ea5e9' : '#e2e8f0', border: '1px solid #0284c7', borderRadius: '8px', color: role === 'club_admin' ? '#ffffff' : '#94a3b8', cursor: role === 'club_admin' ? 'pointer' : 'not-allowed', fontWeight: 700 }}>
+                    Create club (admin only)
+                  </button>
+                  {role !== 'club_admin' && <div style={{ fontSize: '12px', color: '#b45309', fontWeight: 600 }}>Enable club admin to create clubs.</div>}
+                </form>
+              </div>
+
+              <ClubDashboard clubName={selectedClub?.name || 'Club'} windows={selectedClub?.windows || []} onJoinWindow={handleJoinWindow} />
+            </div>
+
           </section>
         )}
 
@@ -748,21 +779,7 @@ export default function TidalCalendarApp() {
                           </button>
                         ))}
                       </div>
-                      <form onSubmit={handleCreateClub} style={{ display: 'grid', gap: '8px', marginBottom: '12px' }}>
-                        <input type="text" value={createClubForm.name} onChange={(e) => setCreateClubForm(f => ({ ...f, name: e.target.value }))} placeholder="Club name" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
-                        <input type="number" min="1" value={createClubForm.capacity} onChange={(e) => setCreateClubForm(f => ({ ...f, capacity: e.target.value }))} placeholder="Capacity per window" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
-                        <button type="submit" disabled={role !== 'club_admin'} style={{ padding: '10px', background: role === 'club_admin' ? '#0ea5e9' : '#e2e8f0', border: '1px solid #0284c7', borderRadius: '8px', color: role === 'club_admin' ? '#ffffff' : '#94a3b8', cursor: role === 'club_admin' ? 'pointer' : 'not-allowed', fontWeight: 700 }}>Create club (admin only)</button>
-                      </form>
-                      {role !== 'club_admin' && <div style={{ fontSize: '12px', color: '#b45309', fontWeight: 600 }}>Enable club admin in Profile to create clubs.</div>}
-                      <label style={{ display: 'grid', gap: '8px' }}>
-                        <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Select club</span>
-                        <select value={selectedClubId} onChange={(e) => setSelectedClubId(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }}>
-                          {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                      </label>
                     </div>
-
-                    <ClubDashboard clubName={selectedClub?.name || 'Club'} windows={selectedClub?.windows || []} onJoinWindow={handleJoinWindow} />
                   </div>
 
                   {/* Scrubbing Settings */}
