@@ -554,12 +554,74 @@ export default function TidalCalendarApp() {
         {error && <div style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#fca5a5' }}>⚠ {error}</div>}
 
         <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '20px' }}>
-          {['calendar', 'profile'].map(page => (
-            <button key={page} onClick={() => setCurrentPage(page)} style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(14,165,233,0.25)', background: currentPage === page ? '#e0f2fe' : '#ffffff', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }}>
-              {page === 'calendar' ? 'Calendar' : 'Profile'}
+          {['calendar', 'profile', 'about'].map(page => (
+            <button
+              key={page}
+              onClick={() => setCurrentPage(page)}
+              style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(14,165,233,0.25)', background: currentPage === page ? '#e0f2fe' : '#ffffff', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }}
+            >
+              {page === 'calendar' ? 'Calendar' : page === 'profile' ? 'Profile' : 'About'}
             </button>
           ))}
         </div>
+
+        {currentPage === 'about' && (
+          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9', margin: 0 }}>About</p>
+              <h2 style={{ fontSize: '22px', margin: 0, color: '#0f172a', fontWeight: 600 }}>Why we built Tidal Calendar</h2>
+              <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155', margin: 0 }}>
+                Tidal Calendar keeps boaters informed with a monthly tide view, scrubbing guidance, and alerts for your chosen home port. We blend UKHO data where available with harmonic predictions so you can plan confidently—even when connectivity is limited.
+              </p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+              {[
+                {
+                  title: 'Guest users',
+                  emoji: '🌐',
+                  points: [
+                    'Browse stations and set a home port locally with no sign-in required.',
+                    'See 7 days of Admiralty API preview data when available.',
+                    'Beyond 7 days, tide times and heights are algorithmic predictions for guidance only.',
+                  ],
+                },
+                {
+                  title: 'Signed-in (free) users',
+                  emoji: '🧭',
+                  points: [
+                    'Sync your saved home port and maintenance reminders across devices.',
+                    'Receive the same 7-day Admiralty preview as guests.',
+                    'Longer range data remains predicted beyond the 7-day window.',
+                  ],
+                },
+                {
+                  title: 'Subscribers',
+                  emoji: '🌊',
+                  points: [
+                    'Unlock extended UKHO tidal events across the month for richer accuracy.',
+                    'Keep scrubbing guidance and alerts in sync with your subscription.',
+                    'Predictions supplement data only when UKHO coverage is unavailable.',
+                  ],
+                },
+              ].map((card, idx) => (
+                <div key={idx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxShadow: '0 4px 12px rgba(15,23,42,0.06)', display: 'grid', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '18px' }}>{card.emoji}</span>
+                    <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: 600 }}>{card.title}</h3>
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: '18px', display: 'grid', gap: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#334155' }}>
+                    {card.points.map((point, i) => <li key={i}>{point}</li>)}
+                  </ul>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ background: '#ecfdf3', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '14px', fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#166534' }}>
+              <strong style={{ color: '#15803d' }}>Data transparency:</strong> For guests and non-subscribed users, anything beyond the first 7 days is shown using predicted tide times and heights. Subscribe to replace those forecasts with official UKHO data wherever available.
+            </div>
+          </section>
+        )}
 
         {currentPage === 'profile' && (
           <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
@@ -635,7 +697,7 @@ export default function TidalCalendarApp() {
           </section>
         )}
 
-        {currentPage !== 'profile' && (
+        {currentPage === 'calendar' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <section style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', boxShadow: '0 8px 20px rgba(15,23,42,0.06)', display: 'grid', gap: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
