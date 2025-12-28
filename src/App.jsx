@@ -579,6 +579,12 @@ export default function TidalCalendarApp() {
   const selectedDayEvents = selectedDay ? eventsByDay[selectedDay.toDateString()] || [] : [];
   const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
   const selectedDayHasPreviewApi = selectedDayEvents.some(e => !e.IsPredicted);
+  const handleDaySelect = useCallback((date, allowSelection = true) => {
+    if (!allowSelection) return;
+    setSelectedDay(date);
+    const scrubData = scrubbingByDate[date.toDateString()] || null;
+    setScrubModal({ date, data: scrubData });
+  }, [scrubbingByDate]);
 
   const navigateMonth = (delta) => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + delta, 1));
@@ -983,7 +989,7 @@ export default function TidalCalendarApp() {
                       <div
                         key={i}
                         className="day-cell"
-                        onClick={() => setSelectedDay(isCurrentMonth ? date : null)}
+                        onClick={() => handleDaySelect(date, isCurrentMonth)}
                         style={{
                           background: isSelected ? '#e0f2fe' : '#ffffff',
                           border: `1px solid ${isSelected ? '#0ea5e9' : isToday ? '#94a3b8' : '#e2e8f0'}`,
@@ -1056,78 +1062,6 @@ export default function TidalCalendarApp() {
               </div>
             )}
 
-            {/* Selected Day Detail */}
-            {!loading && selectedDay && (
-              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', marginBottom: '24px', boxShadow: '0 10px 24px rgba(15,23,42,0.06)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-                  <div>
-                    <h3 style={{ fontSize: '24px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>{selectedDay.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
-                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#334155', margin: 0 }}>
-                      {getMoonPhaseName(selectedDay).icon} {getMoonPhaseName(selectedDay).name} • {hasUkhoAccess ? 'UKHO data (subscriber)' : (selectedDayHasPreviewApi ? 'Admiralty preview (7 days)' : (selectedDayHasPredicted ? 'Predicted' : 'API Data'))}
-                    </p>
-                  </div>
-                  {scrubbingByDate[selectedDay.toDateString()] && <ScrubbingBadge rating={scrubbingByDate[selectedDay.toDateString()].rating} />}
-                </div>
-
-                {/* Tide Events */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                  {selectedDayEvents.map((event, i) => {
-                    const isHigh = event.EventType === 'HighWater';
-                    return (
-                      <div key={i} style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', borderLeft: `3px solid ${isHigh ? '#0ea5e9' : '#64748b'}`, border: '1px solid #e2e8f0' }}>
-                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: isHigh ? '#0ea5e9' : '#475569', marginBottom: '4px', fontWeight: 600 }}>{isHigh ? '↑ High Water' : '↓ Low Water'}</div>
-                        <div style={{ fontSize: '28px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{formatTime(event.DateTime)}</div>
-                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155' }}>{event.Height?.toFixed(2)}m</div>
-                        {event.IsPredicted && !hasUkhoAccess && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#b45309', marginTop: '8px' }}>⚠ Predicted (harmonic algorithm)</div>}
-                        {!event.IsPredicted && !hasUkhoAccess && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '8px' }}>Admiralty preview (7-day access)</div>}
-                        {hasUkhoAccess && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '8px' }}>UKHO data (subscriber)</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Scrubbing Info */}
-                {scrubbingByDate[selectedDay.toDateString()] && (
-                  <div style={{ marginTop: '20px', padding: '16px', background: '#ecfdf3', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
-                    <h4 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', fontWeight: 600, color: '#15803d', margin: '0 0 12px' }}>🧽 Scrubbing Schedule</h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#0f172a' }}>
-                      <div><span style={{ color: '#475569' }}>Beach at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].hwTime)}</strong></div>
-                      <div><span style={{ color: '#475569' }}>Work at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].lwTime)}</strong></div>
-                      {scrubbingByDate[selectedDay.toDateString()].refloatTime && <div><span style={{ color: '#475569' }}>Refloat at:</span> <strong>{formatTime(scrubbingByDate[selectedDay.toDateString()].refloatTime)}</strong></div>}
-                      <div><span style={{ color: '#475569' }}>Tidal Range:</span> <strong>{scrubbingByDate[selectedDay.toDateString()].tidalRange.toFixed(1)}m</strong></div>
-                    </div>
-                    <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
-                      <button
-                        disabled={!user}
-                        onClick={async () => {
-                          if (!user) return;
-                          const lwTime = scrubbingByDate[selectedDay.toDateString()].lwTime;
-                          const lwIso = lwTime?.toISOString?.() || '';
-                          await createAlert({
-                            title: `Scrub boat - ${selectedDay.toDateString()}`,
-                            dueDate: lwIso,
-                            notes: 'Added from scrubbing schedule',
-                          });
-                        }}
-                        style={{
-                          padding: '10px 14px',
-                          background: user ? '#22c55e' : '#e2e8f0',
-                          border: `1px solid ${user ? '#16a34a' : '#cbd5e1'}`,
-                          borderRadius: '8px',
-                          color: user ? '#ffffff' : '#94a3b8',
-                          cursor: user ? 'pointer' : 'not-allowed',
-                          fontWeight: 700,
-                          boxShadow: user ? '0 4px 12px rgba(34,197,94,0.3)' : 'none'
-                        }}
-                      >
-                        Add to maintenance log
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* SCRUBBING LIST VIEW */}
             {!loading && viewMode === 'scrubbing' && (
               <div>
@@ -1149,7 +1083,7 @@ export default function TidalCalendarApp() {
                         const isPredicted = data.highWater.IsPredicted;
                         
                         return (
-                          <div key={i} onClick={() => { setSelectedDay(date); setScrubModal({ date, data }); }} style={{
+                          <div key={i} onClick={() => handleDaySelect(date, true)} style={{
                             background: '#ffffff',
                             border: `1px solid ${data.rating === 'excellent' ? '#22c55e' : data.rating === 'good' ? '#84cc16' : '#cbd5e1'}`,
                             borderRadius: '12px', padding: '20px', cursor: 'pointer', transition: 'all 0.3s', boxShadow: '0 4px 12px rgba(15,23,42,0.06)'
@@ -1184,51 +1118,84 @@ export default function TidalCalendarApp() {
       {/* Scrubbing modal detail */}
       {scrubModal && selectedDay && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 1000 }}>
-          <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '720px', width: '100%', boxShadow: '0 20px 60px rgba(15,23,42,0.25)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+          <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '880px', width: '100%', boxShadow: '0 20px 60px rgba(15,23,42,0.25)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', gap: '12px', flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 700 }}>
                   {scrubModal.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
                 </div>
-                <div style={{ fontSize: '12px', color: '#475569' }}>Scrubbing window preview</div>
+                <div style={{ fontSize: '12px', color: '#475569' }}>
+                  {getMoonPhaseName(scrubModal.date).icon} {getMoonPhaseName(scrubModal.date).name} • {hasUkhoAccess ? 'UKHO data (subscriber)' : (selectedDayHasPreviewApi ? 'Admiralty preview (7 days)' : (selectedDayHasPredicted ? 'Predicted' : 'API Data'))}
+                </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <ScrubbingBadge rating={scrubModal.data.rating} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {scrubModal.data && <ScrubbingBadge rating={scrubModal.data.rating} />}
                 <button onClick={() => setScrubModal(null)} style={{ padding: '8px 10px', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '10px', color: '#0f172a', cursor: 'pointer', fontWeight: 600 }}>Close</button>
               </div>
             </div>
-            <div style={{ padding: '20px', display: 'grid', gap: '12px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
-                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>High Water</div>
-                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{formatTime(scrubModal.data.hwTime)}</div>
+            <div style={{ padding: '20px', display: 'grid', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                  {selectedDayEvents.map((event, i) => {
+                    const isHigh = event.EventType === 'HighWater';
+                    return (
+                      <div key={i} style={{ background: '#f8fafc', borderRadius: '12px', padding: '14px', borderLeft: `3px solid ${isHigh ? '#0ea5e9' : '#64748b'}`, border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', letterSpacing: '1px', textTransform: 'uppercase', color: isHigh ? '#0ea5e9' : '#475569', marginBottom: '4px', fontWeight: 600 }}>{isHigh ? '↑ High Water' : '↓ Low Water'}</div>
+                        <div style={{ fontSize: '22px', fontWeight: 700, marginBottom: '4px', color: '#0f172a' }}>{formatTime(event.DateTime)}</div>
+                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#334155' }}>{event.Height?.toFixed(2)}m</div>
+                        {event.IsPredicted && !hasUkhoAccess && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#b45309', marginTop: '6px' }}>⚠ Predicted (harmonic algorithm)</div>}
+                        {!event.IsPredicted && !hasUkhoAccess && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '6px' }}>Admiralty preview (7-day access)</div>}
+                        {hasUkhoAccess && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '6px' }}>UKHO data (subscriber)</div>}
+                      </div>
+                    );
+                  })}
+                  {selectedDayEvents.length === 0 && (
+                    <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '14px', border: '1px solid #e2e8f0', color: '#475569', fontFamily: "'Outfit', sans-serif" }}>
+                      No tide events for this date.
+                    </div>
+                  )}
                 </div>
-                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Low Water</div>
-                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{formatTime(scrubModal.data.lwTime)}</div>
-                </div>
-                {scrubModal.data.refloatTime && (
-                  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Refloat</div>
-                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{formatTime(scrubModal.data.refloatTime)}</div>
-                  </div>
-                )}
-                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Tidal Range</div>
-                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{scrubModal.data.tidalRange.toFixed(1)}m</div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                  {scrubModal.data ? (
+                    <>
+                      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>High Water</div>
+                        <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{formatTime(scrubModal.data.hwTime)}</div>
+                      </div>
+                      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Low Water</div>
+                        <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{formatTime(scrubModal.data.lwTime)}</div>
+                      </div>
+                      {scrubModal.data.refloatTime && (
+                        <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Refloat</div>
+                          <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{formatTime(scrubModal.data.refloatTime)}</div>
+                        </div>
+                      )}
+                      <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Tidal Range</div>
+                        <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{scrubModal.data.tidalRange.toFixed(1)}m</div>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ background: '#fff7ed', borderRadius: '12px', padding: '14px', border: '1px solid #fed7aa', color: '#9a3412', fontFamily: "'Outfit', sans-serif" }}>
+                      Scrubbing window not available for this date based on the selected time window.
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <div style={{ fontSize: '12px', color: '#334155' }}>
-                  Add this scrubbing window to your maintenance log.
+                  {scrubModal.data ? 'Add this scrubbing window to your maintenance log.' : 'No scrubbing slot for this date. Adjust the high water window to see more options.'}
                 </div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                   {alertError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{alertError}</div>}
                   <button
-                    disabled={!user}
+                    disabled={!user || !scrubModal.data}
                     onClick={async () => {
-                      if (!user) return;
+                      if (!user || !scrubModal.data) return;
                       const lwIso = scrubModal.data.lwTime?.toISOString?.() || scrubModal.date.toISOString();
                       await createAlert({
                         title: `Scrub boat - ${scrubModal.date.toDateString()}`,
@@ -1239,13 +1206,13 @@ export default function TidalCalendarApp() {
                     }}
                     style={{
                       padding: '10px 14px',
-                      background: user ? '#22c55e' : '#e2e8f0',
-                      border: `1px solid ${user ? '#16a34a' : '#cbd5e1'}`,
+                      background: user && scrubModal.data ? '#22c55e' : '#e2e8f0',
+                      border: `1px solid ${user && scrubModal.data ? '#16a34a' : '#cbd5e1'}`,
                       borderRadius: '10px',
-                      color: user ? '#ffffff' : '#94a3b8',
-                      cursor: user ? 'pointer' : 'not-allowed',
+                      color: user && scrubModal.data ? '#ffffff' : '#94a3b8',
+                      cursor: user && scrubModal.data ? 'pointer' : 'not-allowed',
                       fontWeight: 700,
-                      boxShadow: user ? '0 4px 12px rgba(34,197,94,0.3)' : 'none'
+                      boxShadow: user && scrubModal.data ? '0 4px 12px rgba(34,197,94,0.3)' : 'none'
                     }}
                   >
                     Add to maintenance log
