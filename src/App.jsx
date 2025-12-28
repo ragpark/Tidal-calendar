@@ -889,10 +889,7 @@ export default function TidalCalendarApp() {
                     <option key={s.id} value={s.id}>{s.name} — {s.country}</option>
                   ))}
                 </select>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  <button onClick={() => applySelectedStation(homePort)} style={{ padding: '10px 14px', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', color: '#0f172a', cursor: 'pointer', fontWeight: 700 }}>
-                    Load calendar
-                  </button>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}
                   {!user && <span style={{ fontSize: '12px', color: '#475569', alignSelf: 'center' }}>Saved locally for guests. Sign in to sync across devices.</span>}
                 </div>
               </div>
