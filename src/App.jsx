@@ -53,6 +53,7 @@ const predictTidalEvents = (station, startDate, days) => {
   const events = [];
   const { mhws = 4.5, mhwn = 3.5, mlwn = 1.5, mlws = 0.5 } = station;
   const M2_PERIOD = 12.4206;
+  const isPredictedSource = true;
   
   const referenceDate = new Date(startDate);
   referenceDate.setHours(0, 0, 0, 0);
@@ -82,14 +83,16 @@ const predictTidalEvents = (station, startDate, days) => {
     const addEvent = (hour, type, baseHeight) => {
       if (hour >= 0 && hour < 24) {
         const time = new Date(currentDate);
+        const isLongRange = day > 6;
         time.setHours(Math.floor(hour), Math.round((hour % 1) * 60), 0, 0);
         events.push({
           EventType: type,
           DateTime: time.toISOString(),
           Height: Math.max(0, baseHeight + (Math.random() - 0.5) * 0.15),
-          IsApproximateTime: day > 6,
-          IsApproximateHeight: day > 6,
-          IsPredicted: day > 6,
+          IsApproximateTime: isLongRange,
+          IsApproximateHeight: isLongRange,
+          IsPredicted: isPredictedSource,
+          Source: 'Predicted',
         });
       }
     };
@@ -264,15 +267,21 @@ export default function TidalCalendarApp() {
     
     const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
     const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-    const apiDuration = hasUkhoAccess ? 7 : 7;
-    const predictionDays = hasUkhoAccess ? daysInMonth + 7 : 14;
+    const apiDuration = hasUkhoAccess ? daysInMonth + 7 : 7;
+    const predictionDays = daysInMonth + 7;
     
     let apiEvents = [];
     if (apiKey && !isDemo) {
       try {
         const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=${apiDuration}`, { method: 'GET', cache: 'no-store' });
         if (!response.ok) throw new Error(`TidalEvents fetch failed (${response.status})`);
-        apiEvents = await response.json();
+        const rawApiEvents = await response.json();
+        apiEvents = (Array.isArray(rawApiEvents) ? rawApiEvents : [])
+          .map(event => ({
+            ...event,
+            IsPredicted: false,
+            Source: 'UKHO',
+          }));
       } catch (err) { console.warn('API fetch failed:', err); }
     }
     
@@ -577,8 +586,8 @@ export default function TidalCalendarApp() {
     return grouped;
   }, [tidalEvents]);
   const selectedDayEvents = selectedDay ? eventsByDay[selectedDay.toDateString()] || [] : [];
+  const selectedDayHasUkhoApi = selectedDayEvents.some(e => e.Source === 'UKHO');
   const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
-  const selectedDayHasPreviewApi = selectedDayEvents.some(e => !e.IsPredicted);
   const handleDaySelect = useCallback((date, allowSelection = true) => {
     if (!allowSelection) return;
     setSelectedDay(date);
@@ -977,8 +986,8 @@ export default function TidalCalendarApp() {
                     const isToday = new Date().toDateString() === dateStr;
                     const isSelected = selectedDay?.toDateString() === dateStr;
                     const moonPhase = getMoonPhaseName(date);
-                    const isPredicted = dayEvents.some(e => e.IsPredicted);
-                    const hasPreviewApiData = dayEvents.some(e => !e.IsPredicted);
+                    const hasUkhoEvents = dayEvents.some(e => e.Source === 'UKHO');
+                    const hasPredictedEvents = dayEvents.some(e => e.IsPredicted);
                     
                     return (
                       <div
@@ -1028,8 +1037,8 @@ export default function TidalCalendarApp() {
 
                         {/* Data source indicator */}
                         {isCurrentMonth && (
-                          <div style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: hasUkhoAccess || hasPreviewApiData ? '#0ea5e9' : '#b45309', opacity: 0.9 }}>
-                            {hasUkhoAccess ? 'UKHO' : (hasPreviewApiData ? 'UKHO 7d' : (isPredicted ? 'pred' : 'API'))}
+                          <div style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: hasUkhoEvents ? '#0ea5e9' : '#b45309', opacity: 0.9 }}>
+                            {hasUkhoEvents ? (hasUkhoAccess ? 'UKHO' : 'UKHO 7d') : (hasPredictedEvents ? 'pred' : '—')}
                           </div>
                         )}
                       </div>
@@ -1076,6 +1085,7 @@ export default function TidalCalendarApp() {
                       .map(([dateStr, data], i) => {
                         const date = new Date(dateStr);
                         const isPredicted = data.highWater.IsPredicted;
+                        const isUkhoEvent = data.highWater.Source === 'UKHO';
                         
                         return (
                           <div key={i} onClick={() => handleDaySelect(date, true)} style={{
@@ -1088,11 +1098,8 @@ export default function TidalCalendarApp() {
                       <div style={{ fontSize: '20px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
                       <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155' }}>
                         HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m
-                        {hasUkhoAccess
-                                    ? <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>• UKHO</span>
-                                    : (!isPredicted
-                                      ? <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>• UKHO 7d</span>
-                                      : (isPredicted && <span style={{ color: '#b45309', marginLeft: '8px' }}>• Predicted</span>))}
+                        {!isPredicted && isUkhoEvent && <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>{hasUkhoAccess ? '• UKHO' : '• UKHO 7d'}</span>}
+                        {isPredicted && <span style={{ color: '#b45309', marginLeft: '8px' }}>• Predicted</span>}
                                 </div>
                               </div>
                               <ScrubbingBadge rating={data.rating} />
@@ -1120,7 +1127,7 @@ export default function TidalCalendarApp() {
                   {scrubModal.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
                 </div>
                 <div style={{ fontSize: '12px', color: '#475569' }}>
-                  {getMoonPhaseName(scrubModal.date).icon} {getMoonPhaseName(scrubModal.date).name} • {hasUkhoAccess ? 'UKHO data (subscriber)' : (selectedDayHasPreviewApi ? 'Admiralty preview (7 days)' : (selectedDayHasPredicted ? 'Predicted' : 'API Data'))}
+                  {getMoonPhaseName(scrubModal.date).icon} {getMoonPhaseName(scrubModal.date).name} • {selectedDayHasUkhoApi ? (hasUkhoAccess ? 'UKHO data (subscriber)' : 'Admiralty preview (7 days)') : (selectedDayHasPredicted ? 'Predicted' : 'API Data')}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -1133,14 +1140,14 @@ export default function TidalCalendarApp() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
                   {selectedDayEvents.map((event, i) => {
                     const isHigh = event.EventType === 'HighWater';
+                    const isUkhoEvent = event.Source === 'UKHO';
                     return (
                       <div key={i} style={{ background: '#f8fafc', borderRadius: '12px', padding: '14px', borderLeft: `3px solid ${isHigh ? '#0ea5e9' : '#64748b'}`, border: '1px solid #e2e8f0' }}>
                         <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', letterSpacing: '1px', textTransform: 'uppercase', color: isHigh ? '#0ea5e9' : '#475569', marginBottom: '4px', fontWeight: 600 }}>{isHigh ? '↑ High Water' : '↓ Low Water'}</div>
                         <div style={{ fontSize: '22px', fontWeight: 700, marginBottom: '4px', color: '#0f172a' }}>{formatTime(event.DateTime)}</div>
                         <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#334155' }}>{event.Height?.toFixed(2)}m</div>
-                        {event.IsPredicted && !hasUkhoAccess && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#b45309', marginTop: '6px' }}>⚠ Predicted (harmonic algorithm)</div>}
-                        {!event.IsPredicted && !hasUkhoAccess && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '6px' }}>Admiralty preview (7-day access)</div>}
-                        {hasUkhoAccess && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '6px' }}>UKHO data (subscriber)</div>}
+                        {event.IsPredicted && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#b45309', marginTop: '6px' }}>⚠ Predicted (harmonic algorithm)</div>}
+                        {!event.IsPredicted && isUkhoEvent && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '6px' }}>{hasUkhoAccess ? 'UKHO data (subscriber)' : 'Admiralty preview (7-day access)'}</div>}
                       </div>
                     );
                   })}
