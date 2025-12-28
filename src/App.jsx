@@ -402,6 +402,11 @@ export default function TidalCalendarApp() {
     }
   };
 
+  const homePortStation = useMemo(
+    () => stations.find(s => s.id === homePort) || selectedStation,
+    [stations, homePort, selectedStation]
+  );
+
   // Analyse scrubbing suitability
   const scrubbingByDate = useMemo(() => {
     if (tidalEvents.length === 0) return {};
@@ -682,12 +687,19 @@ export default function TidalCalendarApp() {
                         <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#475569', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
                       </div>
                       
-                      <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px' }}>
-                        {['monthly', 'scrubbing'].map(mode => (
-                          <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 600, transition: 'all 0.3s' }}>
-                            {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
-                          </button>
-                        ))}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        {homePortStation && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'rgba(14,165,233,0.08)', borderRadius: '12px', border: '1px solid rgba(14,165,233,0.18)', fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#0f172a' }}>
+                            🏠 Home port: <strong style={{ fontWeight: 700 }}>{homePortStation.name}</strong>
+                          </span>
+                        )}
+                        <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px' }}>
+                          {['monthly', 'scrubbing'].map(mode => (
+                            <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 600, transition: 'all 0.3s' }}>
+                              {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
