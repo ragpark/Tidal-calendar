@@ -707,11 +707,20 @@ export default function TidalCalendarApp() {
 
                   <div style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
-                    <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • billed via Tide when enabled</div>
-                    <div style={{ fontSize: '11px', color: '#475569' }}>Tide payment integration will go here (client placeholder only).</div>
-                    <button onClick={handlePurchaseSubscription} disabled={role === 'subscriber'} style={{ padding: '10px', background: role === 'subscriber' ? '#dcfce7' : '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: role === 'subscriber' ? '#166534' : '#ffffff', cursor: role === 'subscriber' ? 'not-allowed' : 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
-                      {role === 'subscriber' ? 'Subscriber active' : `Pay £${SUBSCRIPTION_PRICE_GBP} via Tide (mock)`}
-                    </button>
+                    <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • extended Admiralty API access</div>
+                    <div style={{ fontSize: '11px', color: '#475569' }}>Enable test checkout via Stripe Buy Button for extended API coverage. Use Stripe test cards during checkout.</div>
+                    <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px' }}>
+                      <stripe-buy-button
+                        buy-button-id="buy_btn_1SjOVhFjPX0L6hdeuSVzQkzK"
+                        publishable-key="pk_test_51SjOPuFjPX0L6hdeZcwi2HKamgScHj7kvkIgMugv7LGNdiCbFaJOCu3BQth2Vo5qgvZgGOcZxYO3xRrychXFn2UT00FcVr2nJ9"
+                      ></stripe-buy-button>
+                      <div style={{ fontSize: '11px', color: '#1e293b', lineHeight: 1.5 }}>
+                        After testing checkout, mark your account as active locally to preview subscriber-only UKHO data.
+                      </div>
+                      <button onClick={handlePurchaseSubscription} disabled={role === 'subscriber'} style={{ padding: '10px', background: role === 'subscriber' ? '#dcfce7' : '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: role === 'subscriber' ? '#166534' : '#ffffff', cursor: role === 'subscriber' ? 'not-allowed' : 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
+                        {role === 'subscriber' ? 'Subscriber active (local mock)' : 'Mark subscription active locally'}
+                      </button>
+                    </div>
                   </div>
                   <div style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
