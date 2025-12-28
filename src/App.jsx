@@ -890,7 +890,7 @@ export default function TidalCalendarApp() {
                   ))}
                 </select>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}
-                  {!user && <span style={{ fontSize: '12px', color: '#475569', alignSelf: 'center' }}>Saved locally for guests. Sign in to sync across devices.</span>}
+                  {!user && <span style={{ fontSize: '12px', color: '#475569', alignSelf: 'center' }}>Saved locally for guests. Sign in to sync across devices.</span>}>
                 </div>
               </div>
             </section>
