@@ -268,7 +268,7 @@ export default function TidalCalendarApp() {
     const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
     const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
     const apiDuration = hasUkhoAccess ? daysInMonth + 7 : 7;
-    const predictionDays = hasUkhoAccess ? daysInMonth + 7 : 14;
+    const predictionDays = daysInMonth + 7;
     
     let apiEvents = [];
     if (apiKey && !isDemo) {
