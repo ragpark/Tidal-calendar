@@ -627,7 +627,7 @@ export default function TidalCalendarApp() {
           <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#475569', maxWidth: '500px', margin: '0 auto 24px' }}>Monthly view • Harmonic predictions • Boat scrubbing planner</p>
           
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.25)', color: '#15803d', padding: '8px 16px', borderRadius: '20px', fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '1px' }}>
-            ✓ Live API Connected
+           Admiralty data connected
           </span>
         </div>
 
@@ -676,7 +676,7 @@ export default function TidalCalendarApp() {
                   emoji: '🧭',
                   points: [
                     'Sync your saved home port and maintenance reminders across devices.',
-                    'Receive the same 7-day Admiralty preview as guests.',
+                    'Removal of Ads. Receive the same 7-day Admiralty preview as guests.',
                     'Longer range data remains predicted beyond the 7-day window.',
                   ],
                 },
@@ -684,7 +684,7 @@ export default function TidalCalendarApp() {
                   title: 'Subscribers',
                   emoji: '🌊',
                   points: [
-                    'Unlock extended UKHO tidal events across the month for richer accuracy.',
+                    'Unlock extended UKHO tidal events across the year.',
                     'Keep scrubbing guidance and alerts in sync with your subscription.',
                     'Predictions supplement data only when UKHO coverage is unavailable.',
                   ],
