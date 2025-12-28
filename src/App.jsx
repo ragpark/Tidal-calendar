@@ -175,7 +175,8 @@ export default function TidalCalendarApp() {
   const [alerts, setAlerts] = useState([]);
   const [alertForm, setAlertForm] = useState({ title: '', dueDate: '', notes: '' });
   const [alertError, setAlertError] = useState('');
-  const [subscriptionEnd, setSubscriptionEnd] = useState('2025-12-31');
+  const [subscriptionEnd, setSubscriptionEnd] = useState('');
+  const [subscriptionNotice, setSubscriptionNotice] = useState('');
   const SUBSCRIPTION_PRICE_GBP = 5;
   
   const [scrubSettings, setScrubSettings] = useState({
@@ -184,10 +185,13 @@ export default function TidalCalendarApp() {
   });
   const [scrubModal, setScrubModal] = useState(null);
   const role = user?.role || 'user';
+  const subscriptionEndLabel = subscriptionEnd && !Number.isNaN(new Date(subscriptionEnd).getTime())
+    ? new Date(subscriptionEnd).toLocaleDateString('en-GB')
+    : 'Not set';
   const hasUkhoAccess = useMemo(() => {
     if (!user) return false;
-    const end = new Date(subscriptionEnd);
-    return role === 'subscriber' && end.getTime() > Date.now();
+    const end = subscriptionEnd ? new Date(subscriptionEnd) : null;
+    return role === 'subscriber' && end && !Number.isNaN(end.getTime()) && end.getTime() > Date.now();
   }, [subscriptionEnd, role, user]);
 
   const apiRequest = useCallback(async (url, options = {}) => {
@@ -320,14 +324,56 @@ export default function TidalCalendarApp() {
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.country.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  useEffect(() => {
+    if (user?.subscription_period_end) {
+      setSubscriptionEnd(user.subscription_period_end);
+    } else if (!user) {
+      setSubscriptionEnd('');
+    }
+  }, [user]);
+
   const updateRole = async (nextRole) => {
     try {
       const updated = await apiRequest('/api/profile/role', { method: 'POST', body: JSON.stringify({ role: nextRole }) });
       setUser(updated);
+      if (updated?.subscription_period_end) setSubscriptionEnd(updated.subscription_period_end);
     } catch (err) {
       setAuthError(err.message);
     }
   };
+
+  const confirmStripeSession = useCallback(async (sessionId) => {
+    setSubscriptionNotice('Confirming payment with Stripe…');
+    setAuthError('');
+    try {
+      const confirmation = await apiRequest('/api/payments/stripe/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId }),
+      });
+      const nextUser = confirmation?.user || confirmation;
+      if (nextUser) {
+        setUser(nextUser);
+        if (nextUser.subscription_period_end) setSubscriptionEnd(nextUser.subscription_period_end);
+      }
+      setSubscriptionNotice('Subscription activated via Stripe checkout.');
+    } catch (err) {
+      setAuthError(err.message);
+      setSubscriptionNotice('Could not confirm Stripe checkout. Please retry.');
+    }
+  }, [apiRequest]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('session_id') || params.get('stripe_session_id');
+    if (!sessionId || !user) return;
+    confirmStripeSession(sessionId).finally(() => {
+      params.delete('session_id');
+      params.delete('stripe_session_id');
+      const newSearch = params.toString();
+      const nextUrl = `${window.location.pathname}${newSearch ? `?${newSearch}` : ''}${window.location.hash}`;
+      window.history.replaceState({}, document.title, nextUrl);
+    });
+  }, [confirmStripeSession, user]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -350,6 +396,8 @@ export default function TidalCalendarApp() {
     await apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => {});
     setUser(null);
     setAlerts([]);
+    setSubscriptionNotice('');
+    setSubscriptionEnd('');
   };
 
   const createAlert = useCallback(async (payload) => {
@@ -394,7 +442,8 @@ export default function TidalCalendarApp() {
   const handlePurchaseSubscription = () => {
     const nextEnd = new Date();
     nextEnd.setFullYear(nextEnd.getFullYear() + 1);
-    setSubscriptionEnd(nextEnd.toISOString().slice(0, 10));
+    setSubscriptionEnd(nextEnd.toISOString());
+    setSubscriptionNotice('Subscription marked active locally for testing.');
     updateRole('subscriber');
   };
 
@@ -702,16 +751,30 @@ export default function TidalCalendarApp() {
                     </select>
                     <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>Save Home Port</button>
                     {user.home_port_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.home_port_name}</strong></div>}
-                    <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{new Date(subscriptionEnd).toLocaleDateString('en-GB')}</strong></div>
+                    <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{subscriptionEndLabel}</strong></div>
                   </div>
 
                   <div style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
-                    <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • billed via Tide when enabled</div>
-                    <div style={{ fontSize: '11px', color: '#475569' }}>Tide payment integration will go here (client placeholder only).</div>
-                    <button onClick={handlePurchaseSubscription} disabled={role === 'subscriber'} style={{ padding: '10px', background: role === 'subscriber' ? '#dcfce7' : '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: role === 'subscriber' ? '#166534' : '#ffffff', cursor: role === 'subscriber' ? 'not-allowed' : 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
-                      {role === 'subscriber' ? 'Subscriber active' : `Pay £${SUBSCRIPTION_PRICE_GBP} via Tide (mock)`}
-                    </button>
+                    <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • extended Admiralty API access</div>
+                    <div style={{ fontSize: '11px', color: '#475569' }}>Enable test checkout via Stripe Buy Button for extended API coverage. Use Stripe test cards during checkout—successful payment will activate your subscriber role automatically.</div>
+                    <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px' }}>
+                      <stripe-buy-button
+                        buy-button-id="buy_btn_1SjOVhFjPX0L6hdeuSVzQkzK"
+                        publishable-key="pk_test_51SjOPuFjPX0L6hdeZcwi2HKamgScHj7kvkIgMugv7LGNdiCbFaJOCu3BQth2Vo5qgvZgGOcZxYO3xRrychXFn2UT00FcVr2nJ9"
+                        client-reference-id={user?.id || undefined}
+                      ></stripe-buy-button>
+                      <div style={{ fontSize: '11px', color: '#1e293b', lineHeight: 1.5 }}>
+                        Completed Stripe checkouts are verified on return and your subscriber status is stored server-side. If you need a manual override for demos, use the local activation button.
+                      </div>
+                      {subscriptionNotice && <div style={{ fontSize: '11px', color: '#0f172a', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '8px', fontWeight: 600 }}>{subscriptionNotice}</div>}
+                      <div style={{ fontSize: '11px', color: '#475569' }}>
+                        Status: <strong style={{ color: '#0f172a' }}>{user.subscription_status || 'inactive'}</strong> • Renewed through: <strong style={{ color: '#0f172a' }}>{subscriptionEndLabel}</strong>
+                      </div>
+                      <button onClick={handlePurchaseSubscription} disabled={role === 'subscriber'} style={{ padding: '10px', background: role === 'subscriber' ? '#dcfce7' : '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: role === 'subscriber' ? '#166534' : '#ffffff', cursor: role === 'subscriber' ? 'not-allowed' : 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
+                        {role === 'subscriber' ? 'Subscriber active (local mock)' : 'Mark subscription active locally'}
+                      </button>
+                    </div>
                   </div>
                   <div style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
