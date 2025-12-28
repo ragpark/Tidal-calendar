@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Tidal Calendar social preview</title>
+  <desc id="desc">Gradient background with wave shapes and the Tidal Calendar logotype.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#164e63"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.8)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0.35)"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" rx="32"/>
+  <g fill="url(#wave)">
+    <path d="M0,480 Q240,440 480,480 T960,480 T1440,480 L1440,630 L0,630 Z" opacity="0.4"/>
+    <path d="M0,510 Q220,470 440,510 T880,510 T1320,510 L1320,630 L0,630 Z" opacity="0.6"/>
+    <path d="M0,540 Q240,500 480,540 T960,540 T1440,540 L1440,630 L0,630 Z" opacity="0.9"/>
+  </g>
+  <g transform="translate(120,170)" fill="white">
+    <circle cx="48" cy="48" r="48" fill="rgba(255,255,255,0.12)"/>
+    <path d="M20 70 Q48 40 76 70" fill="none" stroke="white" stroke-width="8" stroke-linecap="round"/>
+    <path d="M36 60 Q48 48 60 60" fill="none" stroke="white" stroke-width="8" stroke-linecap="round"/>
+  </g>
+  <text x="200" y="250" fill="white" font-family="'Outfit', 'Inter', system-ui, -apple-system, sans-serif" font-size="64" font-weight="600">Tidal Calendar</text>
+  <text x="200" y="320" fill="rgba(255,255,255,0.85)" font-family="'Outfit', 'Inter', system-ui, -apple-system, sans-serif" font-size="30" font-weight="400">
+    Plan boat scrubbing days with Admiralty-backed tidal predictions
+  </text>
+</svg>

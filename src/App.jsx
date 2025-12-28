@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 // UK Admiralty Tidal API Configuration
 const API_BASE_URL = '/api';
 const DEFAULT_API_KEY = 'baec423358314e4e8f527980f959295d';
+const LOCAL_HOME_PORT_KEY = 'tidal-calendar-home-port';
 
 // Sample stations with tidal characteristics for prediction
 const DEMO_STATIONS = [
@@ -277,15 +278,41 @@ export default function TidalCalendarApp() {
     setLoading(false);
   }, [apiKey, isDemo, currentMonth, hasUkhoAccess]);
 
+  const persistHomePortSelection = useCallback((portId) => {
+    if (typeof window === 'undefined') return;
+    if (!portId) {
+      window.localStorage.removeItem(LOCAL_HOME_PORT_KEY);
+      return;
+    }
+    window.localStorage.setItem(LOCAL_HOME_PORT_KEY, portId);
+  }, []);
+
   useEffect(() => { fetchStations(); }, [fetchStations]);
   useEffect(() => { if (selectedStation) fetchTidalEvents(selectedStation); }, [selectedStation, fetchTidalEvents]);
   useEffect(() => { loadSession(); }, [loadSession]);
   useEffect(() => { loadAlerts(); }, [loadAlerts]);
   useEffect(() => {
-    if (!user?.home_port_id || stations.length === 0) return;
-    const match = stations.find(s => s.id === user.home_port_id);
-    if (match) setSelectedStation(match);
-  }, [stations, user]);
+    if (typeof window === 'undefined' || stations.length === 0) return;
+    if (user?.home_port_id) {
+      setHomePort(user.home_port_id);
+      const match = stations.find(s => s.id === user.home_port_id);
+      if (match) setSelectedStation(match);
+      persistHomePortSelection(user.home_port_id);
+      return;
+    }
+    const stored = window.localStorage.getItem(LOCAL_HOME_PORT_KEY);
+    if (stored) {
+      setHomePort(stored);
+      const match = stations.find(s => s.id === stored);
+      if (match) setSelectedStation(match);
+    } else if (!selectedStation && stations.length > 0) {
+      setSelectedStation(stations[0]);
+    }
+  }, [stations, user, selectedStation, persistHomePortSelection]);
+
+  useEffect(() => {
+    if (homePort) persistHomePortSelection(homePort);
+  }, [homePort, persistHomePortSelection]);
 
   const filteredStations = stations.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.country.toLowerCase().includes(searchQuery.toLowerCase())
@@ -350,20 +377,35 @@ export default function TidalCalendarApp() {
   };
 
   const handleSaveHomePort = async () => {
-    if (!user) return;
     const match = stations.find(s => s.id === homePort);
     if (!match) return;
+    setSelectedStation(match);
+    persistHomePortSelection(match.id);
+    if (!user) return;
     try {
       const updated = await apiRequest('/api/profile', {
         method: 'PUT',
         body: JSON.stringify({ homePortId: homePort, homePortName: match.name }),
       });
       setUser(updated);
-      setSelectedStation(match);
     } catch (err) {
       setAuthError(err.message);
     }
   };
+
+  const applySelectedStation = (stationId) => {
+    setHomePort(stationId);
+    const match = stations.find(s => s.id === stationId);
+    if (match) {
+      setSelectedStation(match);
+      persistHomePortSelection(match.id);
+    }
+  };
+
+  const homePortStation = useMemo(
+    () => stations.find(s => s.id === homePort) || selectedStation,
+    [stations, homePort, selectedStation]
+  );
 
   // Analyse scrubbing suitability
   const scrubbingByDate = useMemo(() => {
@@ -595,6 +637,43 @@ export default function TidalCalendarApp() {
 
         {currentPage !== 'profile' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <section style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', boxShadow: '0 8px 20px rgba(15,23,42,0.06)', display: 'grid', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Choose your home port</h3>
+                  <p style={{ margin: '4px 0 0', fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#475569' }}>
+                    Pick a station to load the calendar. Save it locally for quick access — no sign in required.
+                  </p>
+                </div>
+                <button onClick={handleSaveHomePort} style={{ padding: '10px 14px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>
+                  Save home port
+                </button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', alignItems: 'center' }}>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search stations..."
+                    style={{ width: '100%', padding: '12px 14px 12px 42px', background: '#ffffff', border: '1px solid rgba(15,23,42,0.1)', borderRadius: '10px', color: '#0f172a', fontSize: '14px', fontFamily: "'Outfit', sans-serif" }}
+                  />
+                  <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px', opacity: 0.35 }}>⚓</span>
+                </div>
+                <select value={homePort} onChange={(e) => applySelectedStation(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '10px', color: '#0f172a', fontFamily: "'Outfit', sans-serif", boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                  <option value="">Select a station</option>
+                  {filteredStations.slice(0, 40).map(s => (
+                    <option key={s.id} value={s.id}>{s.name} — {s.country}</option>
+                  ))}
+                </select>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <button onClick={() => applySelectedStation(homePort)} style={{ padding: '10px 14px', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', color: '#0f172a', cursor: 'pointer', fontWeight: 700 }}>
+                    Load calendar
+                  </button>
+                  {!user && <span style={{ fontSize: '12px', color: '#475569', alignSelf: 'center' }}>Saved locally for guests. Sign in to sync across devices.</span>}
+                </div>
+              </div>
+            </section>
             {/* Calendar & Detail */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {/* Station Content */}
@@ -608,12 +687,19 @@ export default function TidalCalendarApp() {
                         <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#475569', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
                       </div>
                       
-                      <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px' }}>
-                        {['monthly', 'scrubbing'].map(mode => (
-                          <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 600, transition: 'all 0.3s' }}>
-                            {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
-                          </button>
-                        ))}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        {homePortStation && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'rgba(14,165,233,0.08)', borderRadius: '12px', border: '1px solid rgba(14,165,233,0.18)', fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#0f172a' }}>
+                            🏠 Home port: <strong style={{ fontWeight: 700 }}>{homePortStation.name}</strong>
+                          </span>
+                        )}
+                        <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px' }}>
+                          {['monthly', 'scrubbing'].map(mode => (
+                            <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 600, transition: 'all 0.3s' }}>
+                              {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>

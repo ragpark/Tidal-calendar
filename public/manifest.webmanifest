@@ -1,0 +1,17 @@
+{
+  "name": "Tidal Calendar",
+  "short_name": "TidalCalendar",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#0f172a",
+  "description": "UK tidal predictions with a boat scrubbing calendar, harmonic forecasts, and subscriber-only Admiralty API data.",
+  "icons": [
+    {
+      "src": "/social-card.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
