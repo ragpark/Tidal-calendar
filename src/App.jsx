@@ -4,76 +4,6 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 const API_BASE_URL = '/api';
 const DEFAULT_API_KEY = 'baec423358314e4e8f527980f959295d';
 
-// CLUB COMPONENTS
-const ScrubWindowCard = ({ window, onJoin }) => {
-  const isFull = window.booked >= window.capacity;
-  return (
-    <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid #cbd5e1', background: '#f8fafc', display: 'grid', gap: '6px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>{window.date}</div>
-          <div style={{ fontSize: '12px', color: '#334155' }}>Low water {window.lowWater} • Duration {window.duration}</div>
-        </div>
-        {window.booked > 5 && <span style={{ fontSize: '12px', color: '#b45309', fontWeight: 600 }}>Scrub day</span>}
-      </div>
-      <div style={{ fontSize: '12px', color: '#0f172a' }}>{window.booked} of {window.capacity} boats booked</div>
-      {window.booked > 5 && window.boats?.length > 0 && (
-        <div style={{ fontSize: '12px', color: '#334155' }}>
-          Boats: {window.boats.slice(0, 6).join(', ')}
-          {window.boats.length > 6 && '…'}
-        </div>
-      )}
-      <button disabled={isFull} onClick={onJoin} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #0ea5e9', background: isFull ? '#e2e8f0' : '#0ea5e9', color: isFull ? '#475569' : '#ffffff', cursor: isFull ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
-        {isFull ? 'Capacity reached' : 'Join this window'}
-      </button>
-    </div>
-  );
-};
-
-const ClubRulesPanel = () => (
-  <div style={{ padding: '14px', borderRadius: '12px', border: '1px solid #cbd5e1', background: '#ffffff', display: 'grid', gap: '8px', boxShadow: '0 6px 16px rgba(15,23,42,0.06)' }}>
-    <h4 style={{ margin: 0, fontSize: '14px', color: '#0f172a' }}>Club Rules</h4>
-    <div style={{ fontSize: '12px', color: '#334155' }}>
-      <strong style={{ color: '#0f172a' }}>Scrubbing area:</strong> Outer grid, west wall only.
-    </div>
-    <div style={{ fontSize: '12px', color: '#334155' }}>
-      <strong style={{ color: '#0f172a' }}>Permitted:</strong> Soft brush, hand tools, buckets of seawater.
-    </div>
-    <div style={{ fontSize: '12px', color: '#334155' }}>
-      <strong style={{ color: '#0f172a' }}>Prohibited:</strong> Pressure washers, detergents, scrubbing antifoul into the mud.
-    </div>
-  </div>
-);
-
-const ClubDashboard = ({ clubName, windows, onJoinWindow }) => {
-  const nextWindow = windows[0];
-  return (
-    <div style={{ display: 'grid', gap: '14px' }}>
-      <div style={{ padding: '16px', borderRadius: '14px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', boxShadow: '0 10px 30px rgba(15,23,42,0.06)' }}>
-        <div style={{ fontSize: '12px', letterSpacing: '1px', color: '#334155' }}>{clubName}</div>
-        {nextWindow ? (
-          <>
-            <div style={{ fontSize: '18px', margin: '6px 0', fontWeight: 600 }}>Next scrub window: {nextWindow.date}</div>
-            <div style={{ fontSize: '13px', color: '#334155' }}>Low water {nextWindow.lowWater} • Estimated {nextWindow.duration}</div>
-            <div style={{ fontSize: '13px', color: '#0f172a' }}>{nextWindow.booked} of {nextWindow.capacity} boats booked • {nextWindow.capacity - nextWindow.booked} remaining</div>
-          </>
-        ) : (
-          <div style={{ fontSize: '13px', color: '#334155' }}>No upcoming windows</div>
-        )}
-      </div>
-
-      <ClubRulesPanel />
-
-      <div style={{ display: 'grid', gap: '10px' }}>
-        <h4 style={{ margin: '8px 0', color: '#e2e8f0', fontSize: '14px' }}>Upcoming scrub windows</h4>
-        {windows.map(w => (
-          <ScrubWindowCard key={w.id} window={w} onJoin={() => onJoinWindow(w.id)} />
-        ))}
-      </div>
-    </div>
-  );
-};
-
 // Sample stations with tidal characteristics for prediction
 const DEMO_STATIONS = [
   { id: '0001', name: 'Aberdeen', country: 'Scotland', lat: 57.143, lon: -2.079, mhws: 4.3, mhwn: 3.4, mlwn: 1.3, mlws: 0.5 },
@@ -237,7 +167,6 @@ export default function TidalCalendarApp() {
   const [selectedDay, setSelectedDay] = useState(null);
   const [user, setUser] = useState(null);
   const [homePort, setHomePort] = useState('');
-  const [homeClub, setHomeClub] = useState('');
   const [currentPage, setCurrentPage] = useState('calendar');
   const [authMode, setAuthMode] = useState('signin');
   const [authForm, setAuthForm] = useState({ email: '', password: '' });
@@ -246,9 +175,6 @@ export default function TidalCalendarApp() {
   const [alertForm, setAlertForm] = useState({ title: '', dueDate: '', notes: '' });
   const [subscriptionEnd, setSubscriptionEnd] = useState('2025-12-31');
   const SUBSCRIPTION_PRICE_GBP = 5;
-  const [clubs, setClubs] = useState([]);
-  const [selectedClubId, setSelectedClubId] = useState('');
-  const [createClubForm, setCreateClubForm] = useState({ name: '', capacity: 8 });
   
   const [scrubSettings, setScrubSettings] = useState({
     highWaterStart: '06:30',
@@ -283,7 +209,6 @@ export default function TidalCalendarApp() {
       const me = await apiRequest('/api/auth/me');
       setUser(me);
       setHomePort(me.home_port_id || '');
-      setHomeClub(me.home_club_id || '');
     } catch {
       setUser(null);
     }
@@ -298,16 +223,6 @@ export default function TidalCalendarApp() {
       console.error(err);
     }
   }, [apiRequest, user]);
-
-  const loadClubs = useCallback(async () => {
-    try {
-      const data = await apiRequest('/api/clubs');
-      setClubs(data);
-      if (!selectedClubId && data[0]?.id) setSelectedClubId(data[0].id);
-    } catch (err) {
-      console.error(err);
-    }
-  }, [apiRequest, selectedClubId]);
 
   const fetchStations = useCallback(async () => {
     if (!apiKey) { setStations(DEMO_STATIONS); setIsDemo(true); return; }
@@ -365,7 +280,6 @@ export default function TidalCalendarApp() {
   useEffect(() => { fetchStations(); }, [fetchStations]);
   useEffect(() => { if (selectedStation) fetchTidalEvents(selectedStation); }, [selectedStation, fetchTidalEvents]);
   useEffect(() => { loadSession(); }, [loadSession]);
-  useEffect(() => { loadClubs(); }, [loadClubs]);
   useEffect(() => { loadAlerts(); }, [loadAlerts]);
   useEffect(() => {
     if (!user?.home_port_id || stations.length === 0) return;
@@ -376,7 +290,6 @@ export default function TidalCalendarApp() {
   const filteredStations = stations.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.country.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  const selectedClub = useMemo(() => clubs.find(c => c.id === selectedClubId) || clubs[0], [clubs, selectedClubId]);
 
   const updateRole = async (nextRole) => {
     try {
@@ -397,7 +310,6 @@ export default function TidalCalendarApp() {
       const account = await apiRequest(endpoint, { method: 'POST', body: JSON.stringify({ email, password }) });
       setUser(account);
       setHomePort(account.home_port_id || '');
-      setHomeClub(account.home_club_id || '');
       await loadAlerts();
     } catch (err) {
       setAuthError(err.message);
@@ -448,44 +360,6 @@ export default function TidalCalendarApp() {
       });
       setUser(updated);
       setSelectedStation(match);
-    } catch (err) {
-      setAuthError(err.message);
-    }
-  };
-
-  const handleSaveHomeClub = async () => {
-    if (!user) return;
-    const match = clubs.find(c => c.id === homeClub);
-    try {
-      const updated = await apiRequest('/api/profile', {
-        method: 'PUT',
-        body: JSON.stringify({ homeClubId: homeClub, homeClubName: match?.name || '' }),
-      });
-      setUser(updated);
-    } catch (err) {
-      setAuthError(err.message);
-    }
-  };
-
-  const handleJoinWindow = async (id) => {
-    if (!user || !selectedClubId) return;
-    try {
-      await apiRequest(`/api/clubs/${selectedClubId}/windows/${id}/book`, { method: 'POST' });
-      await loadClubs();
-    } catch (err) {
-      setAuthError(err.message);
-    }
-  };
-
-  const handleCreateClub = async (e) => {
-    e.preventDefault();
-    if (!createClubForm.name || !user) return;
-    if (role !== 'club_admin') { setAuthError('Club admin role required to create clubs.'); return; }
-    try {
-      const created = await apiRequest('/api/clubs', { method: 'POST', body: JSON.stringify(createClubForm) });
-      setClubs(prev => [...prev, { ...created, windows: [] }]);
-      setSelectedClubId(created.id);
-      setCreateClubForm({ name: '', capacity: 8 });
     } catch (err) {
       setAuthError(err.message);
     }
@@ -666,14 +540,14 @@ export default function TidalCalendarApp() {
               ) : (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                  <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
-                  <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
-                  <div style={{ marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: '#ecfeff', border: '1px solid #bae6fd', borderRadius: '10px', color: '#0f172a', fontSize: '12px', fontWeight: 600 }}>
-                    Role: {role === 'subscriber' ? 'Subscriber (extended data)' : role === 'club_admin' ? 'Club Admin' : 'User (7-day view)'}
+                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
+                    <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
+                    <div style={{ marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: '#ecfeff', border: '1px solid #bae6fd', borderRadius: '10px', color: '#0f172a', fontSize: '12px', fontWeight: 600 }}>
+                      Role: {role === 'subscriber' ? 'Subscriber (extended data)' : 'User (7-day view)'}
+                    </div>
                   </div>
+                  <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
                 </div>
-                <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
-              </div>
               )}
 
               {user && (
@@ -685,13 +559,6 @@ export default function TidalCalendarApp() {
                   </select>
                   <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Port</button>
                   {user.home_port_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.home_port_name}</strong></div>}
-                  <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600, marginTop: '8px' }}>Home Club</div>
-                  <select value={homeClub} onChange={(e) => setHomeClub(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }}>
-                    <option value="">Select a club</option>
-                    {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                  <button onClick={handleSaveHomeClub} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>Save Home Club</button>
-                  {user.home_club_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home club: <strong style={{ color: '#0f172a' }}>{user.home_club_name}</strong></div>}
                   <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{new Date(subscriptionEnd).toLocaleDateString('en-GB')}</strong></div>
                   <div style={{ display: 'grid', gap: '8px', padding: '10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
@@ -717,45 +584,8 @@ export default function TidalCalendarApp() {
                     </div>
                     {!selectedStation && <div style={{ fontSize: '12px', color: '#475569' }}>Select a station to view the calendar.</div>}
                   </div>
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <button onClick={() => updateRole('club_admin')} disabled={role === 'club_admin'} style={{ padding: '10px 14px', background: role === 'club_admin' ? '#e0f2fe' : '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: role === 'club_admin' ? '#075985' : '#ffffff', cursor: role === 'club_admin' ? 'not-allowed' : 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>
-                      {role === 'club_admin' ? 'Club admin enabled' : 'Enable club admin'}
-                    </button>
-                    <span style={{ fontSize: '12px', color: '#475569' }}>Club admins can create clubs and manage scrub windows.</span>
-                  </div>
                 </div>
               )}
-            </div>
-
-            <div style={{ display: 'grid', gap: '12px' }}>
-              <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#f8fafc', boxShadow: '0 4px 12px rgba(15,23,42,0.06)', display: 'grid', gap: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                  <div>
-                    <h3 style={{ fontSize: '16px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>Club maintenance</h3>
-                    <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#475569', margin: 0 }}>Manage scrub windows, create clubs, and handle bookings from here.</p>
-                  </div>
-                  {!user && <span style={{ fontSize: '12px', color: '#b45309', fontWeight: 600 }}>Sign in to manage clubs.</span>}
-                </div>
-
-                <label style={{ display: 'grid', gap: '6px' }}>
-                  <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Select club</span>
-                  <select value={selectedClubId} onChange={(e) => setSelectedClubId(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }}>
-                    {clubs.length === 0 && <option value="">No clubs available</option>}
-                    {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </label>
-
-                <form onSubmit={handleCreateClub} style={{ display: 'grid', gap: '8px' }}>
-                  <input type="text" value={createClubForm.name} onChange={(e) => setCreateClubForm(f => ({ ...f, name: e.target.value }))} placeholder="Club name" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
-                  <input type="number" min="1" value={createClubForm.capacity} onChange={(e) => setCreateClubForm(f => ({ ...f, capacity: e.target.value }))} placeholder="Capacity per window" style={{ padding: '10px', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', background: '#ffffff' }} />
-                  <button type="submit" disabled={role !== 'club_admin'} style={{ padding: '10px', background: role === 'club_admin' ? '#0ea5e9' : '#e2e8f0', border: '1px solid #0284c7', borderRadius: '8px', color: role === 'club_admin' ? '#ffffff' : '#94a3b8', cursor: role === 'club_admin' ? 'pointer' : 'not-allowed', fontWeight: 700 }}>
-                    Create club (admin only)
-                  </button>
-                  {role !== 'club_admin' && <div style={{ fontSize: '12px', color: '#b45309', fontWeight: 600 }}>Enable club admin to create clubs.</div>}
-                </form>
-              </div>
-
-              <ClubDashboard clubName={selectedClub?.name || 'Club'} windows={selectedClub?.windows || []} onJoinWindow={handleJoinWindow} />
             </div>
 
           </section>
