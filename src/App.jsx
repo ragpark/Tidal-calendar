@@ -529,6 +529,20 @@ export default function TidalCalendarApp() {
         .day-cell:hover { background: rgba(56, 189, 248, 0.1) !important; }
         .view-btn:hover { background: rgba(56, 189, 248, 0.2) !important; }
         input::placeholder { color: rgba(148, 163, 184, 0.6); }
+        .calendar-shell { overflow: hidden; }
+        .calendar-grid-wrapper { overflow-x: auto; padding-bottom: 10px; }
+        .calendar-grid { min-width: 680px; display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+        .calendar-weekdays { min-width: 680px; display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+        @media (max-width: 768px) {
+          .calendar-shell { padding: 16px; }
+          .calendar-grid { min-width: 620px; }
+          .calendar-weekdays { min-width: 620px; }
+          .station-header { flex-direction: column; align-items: flex-start; }
+          .station-header-actions { width: 100%; justify-content: flex-start; }
+          .calendar-nav { flex-direction: column; gap: 10px; }
+          .calendar-nav button { width: 100%; }
+          .scrub-card { flex-direction: column; align-items: flex-start; gap: 10px !important; }
+        }
         ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); } ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 4px; }
       `}</style>
 
@@ -743,13 +757,13 @@ export default function TidalCalendarApp() {
                 <section style={{ animation: 'fadeInUp 0.6s ease-out' }}>
                   {/* Station Header */}
                   <div style={{ background: 'linear-gradient(135deg, #e0f2fe 0%, #f8fafc 100%)', border: '1px solid rgba(14,165,233,0.25)', borderRadius: '20px', padding: '24px 28px', marginBottom: '24px', boxShadow: '0 10px 30px rgba(15,23,42,0.06)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                    <div className="station-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                       <div>
                         <h2 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 500, margin: '0 0 4px', color: '#0f172a' }}>{selectedStation.name}</h2>
                         <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#475569', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
                       </div>
                       
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <div className="station-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                         {homePortStation && (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'rgba(14,165,233,0.08)', borderRadius: '12px', border: '1px solid rgba(14,165,233,0.18)', fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#0f172a' }}>
                             🏠 Home port: <strong style={{ fontWeight: 700 }}>{homePortStation.name}</strong>
@@ -792,8 +806,8 @@ export default function TidalCalendarApp() {
             {!loading && viewMode === 'monthly' && (
               <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', marginBottom: '24px', boxShadow: '0 10px 24px rgba(15,23,42,0.06)' }}>
                 {/* Month Navigation */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                  <button onClick={() => navigateMonth(-1)} style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 20px', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600 }}>← Previous</button>
+              <div className="calendar-nav" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', gap: '12px' }}>
+                  <button onClick={() => navigateMonth(-1)} style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 20px', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600, flex: '1 1 160px' }}>← Previous</button>
                   
                   <div style={{ textAlign: 'center' }}>
                     <h3 style={{ fontSize: '28px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>{currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h3>
@@ -802,17 +816,18 @@ export default function TidalCalendarApp() {
                     </p>
                   </div>
                   
-                  <button onClick={() => navigateMonth(1)} style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 20px', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600 }}>Next →</button>
+                  <button onClick={() => navigateMonth(1)} style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 20px', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600, flex: '1 1 160px' }}>Next →</button>
                 </div>
 
                 {/* Calendar Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', marginBottom: '8px' }}>
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                    <div key={day} style={{ padding: '12px 8px', textAlign: 'center', fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: '#475569' }}>{day}</div>
-                  ))}
-                </div>
+              <div className="calendar-weekdays" style={{ marginBottom: '8px' }}>
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                  <div key={day} style={{ padding: '12px 8px', textAlign: 'center', fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: '#475569' }}>{day}</div>
+                ))}
+              </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
+                <div className="calendar-grid-wrapper">
+                <div className="calendar-grid">
                   {getMonthData().map(({ date, isCurrentMonth }, i) => {
                     const dateStr = date.toDateString();
                     const dayEvents = eventsByDay[dateStr] || [];
@@ -878,6 +893,7 @@ export default function TidalCalendarApp() {
                       </div>
                     );
                   })}
+                </div>
                 </div>
 
                 {/* Legend */}
@@ -988,12 +1004,12 @@ export default function TidalCalendarApp() {
                             border: `1px solid ${data.rating === 'excellent' ? '#22c55e' : data.rating === 'good' ? '#84cc16' : '#cbd5e1'}`,
                             borderRadius: '12px', padding: '20px', cursor: 'pointer', transition: 'all 0.3s', boxShadow: '0 4px 12px rgba(15,23,42,0.06)'
                           }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                              <div>
-                                <div style={{ fontSize: '20px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
-                                <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155' }}>
-                                  HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m
-                                  {hasUkhoAccess
+                  <div className="scrub-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div>
+                      <div style={{ fontSize: '20px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                      <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155' }}>
+                        HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m
+                        {hasUkhoAccess
                                     ? <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>• UKHO</span>
                                     : (!isPredicted
                                       ? <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>• UKHO 7d</span>
