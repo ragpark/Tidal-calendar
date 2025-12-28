@@ -182,6 +182,7 @@ export default function TidalCalendarApp() {
     highWaterStart: '04:30',
     highWaterEnd: '09:00',
   });
+  const [scrubModal, setScrubModal] = useState(null);
   const role = user?.role || 'user';
   const hasUkhoAccess = useMemo(() => {
     if (!user) return false;
@@ -1085,7 +1086,7 @@ export default function TidalCalendarApp() {
                         const isPredicted = data.highWater.IsPredicted;
                         
                         return (
-                          <div key={i} onClick={() => { setSelectedDay(date); setViewMode('monthly'); }} style={{
+                          <div key={i} onClick={() => { setSelectedDay(date); setScrubModal({ date, data }); }} style={{
                             background: '#ffffff',
                             border: `1px solid ${data.rating === 'excellent' ? '#22c55e' : data.rating === 'good' ? '#84cc16' : '#cbd5e1'}`,
                             borderRadius: '12px', padding: '20px', cursor: 'pointer', transition: 'all 0.3s', boxShadow: '0 4px 12px rgba(15,23,42,0.06)'
@@ -1116,6 +1117,82 @@ export default function TidalCalendarApp() {
       </div>
     </div>
   )}
+
+      {/* Scrubbing modal detail */}
+      {scrubModal && selectedDay && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 1000 }}>
+          <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '720px', width: '100%', boxShadow: '0 20px 60px rgba(15,23,42,0.25)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+              <div>
+                <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 700 }}>
+                  {scrubModal.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                </div>
+                <div style={{ fontSize: '12px', color: '#475569' }}>Scrubbing window preview</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <ScrubbingBadge rating={scrubModal.data.rating} />
+                <button onClick={() => setScrubModal(null)} style={{ padding: '8px 10px', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '10px', color: '#0f172a', cursor: 'pointer', fontWeight: 600 }}>Close</button>
+              </div>
+            </div>
+            <div style={{ padding: '20px', display: 'grid', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>High Water</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{formatTime(scrubModal.data.hwTime)}</div>
+                </div>
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Low Water</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{formatTime(scrubModal.data.lwTime)}</div>
+                </div>
+                {scrubModal.data.refloatTime && (
+                  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Refloat</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{formatTime(scrubModal.data.refloatTime)}</div>
+                  </div>
+                )}
+                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Tidal Range</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{scrubModal.data.tidalRange.toFixed(1)}m</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ fontSize: '12px', color: '#334155' }}>
+                  Add this scrubbing window to your maintenance log.
+                </div>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  {alertError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{alertError}</div>}
+                  <button
+                    disabled={!user}
+                    onClick={async () => {
+                      if (!user) return;
+                      const lwIso = scrubModal.data.lwTime?.toISOString?.() || scrubModal.date.toISOString();
+                      await createAlert({
+                        title: `Scrub boat - ${scrubModal.date.toDateString()}`,
+                        dueDate: lwIso,
+                        notes: 'Added from scrubbing schedule',
+                      });
+                      setScrubModal(null);
+                    }}
+                    style={{
+                      padding: '10px 14px',
+                      background: user ? '#22c55e' : '#e2e8f0',
+                      border: `1px solid ${user ? '#16a34a' : '#cbd5e1'}`,
+                      borderRadius: '10px',
+                      color: user ? '#ffffff' : '#94a3b8',
+                      cursor: user ? 'pointer' : 'not-allowed',
+                      fontWeight: 700,
+                      boxShadow: user ? '0 4px 12px rgba(34,197,94,0.3)' : 'none'
+                    }}
+                  >
+                    Add to maintenance log
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
         {/* Empty State */}
         {currentPage === 'calendar' && !selectedStation && (
