@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs';
 import { Pool } from 'pg';
 import { createReadStream, existsSync } from 'fs';
 import { stat } from 'fs/promises';
+import { Readable } from 'stream';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -151,16 +152,26 @@ app.use(async (req, res, next) => {
 app.use('/api/Stations', async (req, res) => {
   const targetPath = req.originalUrl.replace('/api/', '');
   const url = new URL(`${API_BASE_URL}/${targetPath}`);
-  if (!url.searchParams.has('subscription-key')) {
-    url.searchParams.append('subscription-key', API_KEY);
-  }
   try {
-    const upstream = await fetch(url, { headers: { Accept: 'application/json' } });
+    const upstream = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        'Ocp-Apim-Subscription-Key': API_KEY,
+      },
+    });
+
     res.status(upstream.status);
-    upstream.body.pipe(res);
+    res.set('Content-Type', upstream.headers.get('content-type') || 'application/json');
+
+    if (!upstream.body) {
+      res.end();
+      return;
+    }
+
+    Readable.fromWeb(upstream.body).pipe(res);
   } catch (err) {
     console.error('Proxy error', err);
-    res.status(500).json({ error: 'Proxy request failed' });
+    res.status(502).json({ error: 'Proxy request failed' });
   }
 });
 
