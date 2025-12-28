@@ -18,6 +18,7 @@ const API_BASE_URL = 'https://admiraltyapi.azure-api.net/uktidalapi/api/V1';
 const API_KEY = process.env.ADMIRALTY_API_KEY || 'baec423358314e4e8f527980f959295d';
 const SESSION_COOKIE = 'tc_session';
 const SESSION_TTL_HOURS = 24;
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -48,6 +49,10 @@ const ensureSchema = async () => {
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'user',
+      subscription_status TEXT NOT NULL DEFAULT 'inactive',
+      subscription_period_end TIMESTAMPTZ,
+      stripe_customer_id TEXT,
+      stripe_last_session_id TEXT,
       home_port_id TEXT,
       home_port_name TEXT,
       home_club_id UUID,
@@ -94,6 +99,10 @@ const ensureSchema = async () => {
   `);
 
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT NOT NULL DEFAULT 'inactive';`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_period_end TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_last_session_id TEXT;`);
 
   const { rows } = await pool.query(`SELECT id FROM clubs LIMIT 1`);
   if (rows.length === 0) {
@@ -120,7 +129,7 @@ const getUserFromSession = async (req) => {
   const token = req.cookies?.[SESSION_COOKIE];
   if (!token) return null;
   const { rows } = await pool.query(
-    `SELECT u.id, u.email, u.role, u.home_port_id, u.home_port_name, u.home_club_id, u.home_club_name
+    `SELECT u.id, u.email, u.role, u.subscription_status, u.subscription_period_end, u.stripe_customer_id, u.stripe_last_session_id, u.home_port_id, u.home_port_name, u.home_club_id, u.home_club_name
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token = $1 AND s.expires_at > now()`,
@@ -182,7 +191,7 @@ app.post('/api/auth/signup', async (req, res) => {
   const hash = await bcrypt.hash(password, 10);
   try {
     const { rows } = await pool.query(
-      `INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, role, home_port_id, home_port_name, home_club_id, home_club_name`,
+      `INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, home_port_id, home_port_name, home_club_id, home_club_name`,
       [email.toLowerCase(), hash],
     );
     const user = rows[0];
@@ -200,7 +209,10 @@ app.post('/api/auth/signup', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-  const { rows } = await pool.query(`SELECT id, email, role, password_hash, home_port_id, home_port_name, home_club_id, home_club_name FROM users WHERE email = $1`, [email.toLowerCase()]);
+  const { rows } = await pool.query(
+    `SELECT id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, password_hash, home_port_id, home_port_name, home_club_id, home_club_name FROM users WHERE email = $1`,
+    [email.toLowerCase()],
+  );
   const user = rows[0];
   if (!user) return res.status(401).json({ error: 'Invalid credentials' });
   const valid = await bcrypt.compare(password, user.password_hash);
@@ -208,7 +220,19 @@ app.post('/api/auth/login', async (req, res) => {
   const token = randomUUID();
   await pool.query(`INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, now() + interval '${SESSION_TTL_HOURS} hours')`, [user.id, token]);
   res.cookie(SESSION_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: SESSION_TTL_HOURS * 3600 * 1000 });
-  res.json({ id: user.id, email: user.email, role: user.role, home_port_id: user.home_port_id, home_port_name: user.home_port_name, home_club_id: user.home_club_id, home_club_name: user.home_club_name });
+  res.json({
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    subscription_status: user.subscription_status,
+    subscription_period_end: user.subscription_period_end,
+    stripe_customer_id: user.stripe_customer_id,
+    stripe_last_session_id: user.stripe_last_session_id,
+    home_port_id: user.home_port_id,
+    home_port_name: user.home_port_name,
+    home_club_id: user.home_club_id,
+    home_club_name: user.home_club_name,
+  });
 });
 
 app.post('/api/auth/logout', async (req, res) => {
@@ -234,7 +258,7 @@ app.get('/api/profile', requireAuth, async (req, res) => {
 app.put('/api/profile', requireAuth, async (req, res) => {
   const { homePortId, homePortName, homeClubId, homeClubName } = req.body || {};
   const { rows } = await pool.query(
-    `UPDATE users SET home_port_id = $1, home_port_name = $2, home_club_id = $3, home_club_name = $4 WHERE id = $5 RETURNING id, email, role, home_port_id, home_port_name, home_club_id, home_club_name`,
+    `UPDATE users SET home_port_id = $1, home_port_name = $2, home_club_id = $3, home_club_name = $4 WHERE id = $5 RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, home_port_id, home_port_name, home_club_id, home_club_name`,
     [homePortId || null, homePortName || null, homeClubId || null, homeClubName || null, req.user.id],
   );
   res.json(rows[0]);
@@ -244,7 +268,12 @@ app.post('/api/profile/role', requireAuth, async (req, res) => {
   const { role } = req.body || {};
   if (!['user', 'subscriber', 'club_admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const { rows } = await pool.query(
-    `UPDATE users SET role = $1 WHERE id = $2 RETURNING id, email, role, home_port_id, home_port_name, home_club_id, home_club_name`,
+    `UPDATE users
+     SET role = $1,
+         subscription_status = CASE WHEN $1 = 'subscriber' THEN 'active' ELSE subscription_status END,
+         subscription_period_end = CASE WHEN $1 = 'subscriber' AND subscription_period_end IS NULL THEN now() + interval '1 year' ELSE subscription_period_end END
+     WHERE id = $2
+     RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, home_port_id, home_port_name, home_club_id, home_club_name`,
     [role, req.user.id],
   );
   res.json(rows[0]);
@@ -272,6 +301,59 @@ app.post('/api/alerts', requireAuth, async (req, res) => {
 app.delete('/api/alerts/:id', requireAuth, async (req, res) => {
   await pool.query(`DELETE FROM alerts WHERE id = $1 AND user_id = $2`, [req.params.id, req.user.id]);
   res.json({ ok: true });
+});
+
+const retrieveStripeSession = async (sessionId) => {
+  const params = new URLSearchParams();
+  params.append('expand[]', 'subscription');
+  const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Stripe responded with ${res.status}: ${text}`);
+  }
+  return res.json();
+};
+
+app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
+  if (!STRIPE_SECRET_KEY) return res.status(501).json({ error: 'Stripe not configured' });
+  const { sessionId } = req.body || {};
+  if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
+  try {
+    const session = await retrieveStripeSession(sessionId);
+    const isPaid = session.payment_status === 'paid' || session.status === 'complete';
+    if (!isPaid) return res.status(402).json({ error: 'Payment not completed' });
+    if (session.client_reference_id && session.client_reference_id !== req.user.id) {
+      return res.status(409).json({ error: 'Session does not match user' });
+    }
+    if (session.customer_details?.email && session.customer_details.email.toLowerCase() !== req.user.email.toLowerCase()) {
+      return res.status(409).json({ error: 'Session email does not match user' });
+    }
+
+    const periodEndMs = session.subscription?.current_period_end
+      ? session.subscription.current_period_end * 1000
+      : Date.now() + 365 * 24 * 60 * 60 * 1000;
+    const periodEndIso = new Date(periodEndMs).toISOString();
+    const { rows } = await pool.query(
+      `UPDATE users
+       SET role = 'subscriber',
+           subscription_status = 'active',
+           subscription_period_end = $1,
+           stripe_customer_id = COALESCE($2, stripe_customer_id),
+           stripe_last_session_id = $3
+       WHERE id = $4
+       RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, home_port_id, home_port_name, home_club_id, home_club_name`,
+      [periodEndIso, session.customer || null, session.id, req.user.id],
+    );
+    res.status(200).json({ ok: true, user: rows[0] });
+  } catch (err) {
+    console.error('Stripe confirmation failed', err);
+    res.status(502).json({ error: 'Stripe confirmation failed' });
+  }
 });
 
 // Clubs and scrub windows
