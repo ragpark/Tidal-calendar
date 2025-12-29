@@ -669,9 +669,9 @@ export default function TidalCalendarApp() {
           <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9', margin: 0 }}>About</p>
-              <h2 style={{ fontSize: '22px', margin: 0, color: '#0f172a', fontWeight: 600 }}>Why we built Tidal Calendar</h2>
+              <h2 style={{ fontSize: '22px', margin: 0, color: '#0f172a', fontWeight: 600 }}>Why we built the Scrubbing off Calendar</h2>
               <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155', margin: 0 }}>
-                Tidal Calendar keeps boaters informed with a monthly tide view, scrubbing guidance, and alerts for your chosen home port. We blend UKHO data where available with harmonic predictions so you can plan confidently—even when connectivity is limited.
+                This Calendar keeps boaters informed with a monthly tide view, scrubbing guidance, and alerts for your chosen home port. We blend UKHO data where available with harmonic predictions so you can plan confidently—even when connectivity is limited.
               </p>
             </div>
 
