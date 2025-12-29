@@ -923,7 +923,7 @@ export default function TidalCalendarApp() {
                         <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px' }}>
                           {['monthly', 'scrubbing'].map(mode => (
                             <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 600, transition: 'all 0.3s' }}>
-                              {mode === 'monthly' ? '📅 Monthly' : '🧽 Scrubbing'}
+                              {mode === 'monthly' ? '📅 Month view' : '🧽 Scrubbing Day Finder'}
                             </button>
                           ))}
                         </div>
