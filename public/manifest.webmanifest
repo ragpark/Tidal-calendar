@@ -1,11 +1,11 @@
 {
-  "name": "Tidal Calendar",
-  "short_name": "TidalCalendar",
+  "name": "Boat Scruboff Calendar",
+  "short_name": "ScruboffCalendar",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f5f7fb",
   "theme_color": "#0f172a",
-  "description": "UK tidal predictions with a boat scrubbing calendar, harmonic forecasts, and subscriber-only Admiralty API data.",
+  "description": "UK tidal predictions with a dedicated boat scrubbing calendar, harmonic forecasts, and subscriber-only Admiralty API data.",
   "icons": [
     {
       "src": "/social-card.svg",
