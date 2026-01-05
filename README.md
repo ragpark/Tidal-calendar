@@ -54,14 +54,39 @@ Once deployed, embed in your Wix site:
 2. Paste this code:
    ```html
    <iframe 
-     src="https://your-app.up.railway.app" 
+     src="https://your-app.up.railway.app/?embed=1&station=0240&view=scrubbing" 
      width="100%" 
      height="900" 
      frameborder="0"
      style="border-radius: 12px; border: none;">
    </iframe>
    ```
-3. Adjust the height as needed (900px recommended minimum)
+3. The widget automatically posts its height via `postMessage` with `{ type: 'tidal-calendar:resize', height }`. You can listen for it in Wix to adjust the iframe height dynamically, or start with 900px as a safe default.
+
+### Embeddable widget options
+
+Add query parameters to customise the widget:
+
+| Parameter | Example | Purpose |
+|-----------|---------|---------|
+| `embed` or `widget` | `1` | Enables the compact embed UI |
+| `station` | `0240` | Station ID (or name) to load automatically |
+| `view` | `scrubbing` | `monthly` (tide times) or `scrubbing` (suitability list) |
+| `theme` | `dark` | `light` (default) or `dark` |
+| `accent` | `%230ea5e9` | Hex colour for highlights (URL-encoded `#`) |
+| `compact` | `1` | Trims padding for tighter embeds |
+
+Example:
+
+```html
+<iframe
+  src="https://your-app.up.railway.app/?embed=1&station=0452&view=monthly&accent=%2322c55e&compact=1"
+  width="100%"
+  height="760"
+  frameborder="0"
+  style="border: none; border-radius: 12px;">
+</iframe>
+```
 
 ## Configuration
 
