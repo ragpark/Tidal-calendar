@@ -5,6 +5,23 @@ const API_BASE_URL = '/api';
 const DEFAULT_API_KEY = 'baec423358314e4e8f527980f959295d';
 const LOCAL_HOME_PORT_KEY = 'tidal-calendar-home-port';
 
+const parseEmbedConfig = () => {
+  if (typeof window === 'undefined') {
+    return { enabled: false, stationId: '', view: 'monthly', theme: 'light', accent: '#0ea5e9', compact: false };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const flag = (params.get('embed') || params.get('widget') || '').toLowerCase();
+  const enabled = ['1', 'true', 'yes', 'y'].includes(flag);
+  const stationId = params.get('station') || params.get('stationId') || '';
+  const view = params.get('view') === 'scrubbing' ? 'scrubbing' : 'monthly';
+  const theme = params.get('theme') === 'dark' ? 'dark' : 'light';
+  const accent = params.get('accent') || '#0ea5e9';
+  const compact = ['1', 'true', 'yes', 'y'].includes((params.get('compact') || '').toLowerCase());
+
+  return { enabled, stationId, view, theme, accent, compact };
+};
+
 // Sample stations with tidal characteristics for prediction
 const DEMO_STATIONS = [
   { id: '0001', name: 'Aberdeen', country: 'Scotland', lat: 57.143, lon: -2.079, mhws: 4.3, mhwn: 3.4, mlwn: 1.3, mlws: 0.5 },
@@ -158,6 +175,14 @@ const ScrubbingBadge = ({ rating, small = false }) => {
 // ===========================================
 
 export default function TidalCalendarApp() {
+  const [embedConfig] = useState(() => parseEmbedConfig());
+  const isEmbed = embedConfig.enabled;
+  const accentColor = embedConfig.accent || '#0ea5e9';
+  const primaryText = embedConfig.theme === 'dark' ? '#e2e8f0' : '#0f172a';
+  const secondaryText = embedConfig.theme === 'dark' ? '#cbd5e1' : '#475569';
+  const surfaceColor = embedConfig.theme === 'dark' ? '#0b1220' : '#ffffff';
+  const backgroundColor = embedConfig.theme === 'dark' ? '#0b1220' : 'linear-gradient(180deg, #f7fafc 0%, #eef2f7 40%, #e5ecf5 100%)';
+
   const [apiKey] = useState(DEFAULT_API_KEY);
   const [stations, setStations] = useState(DEMO_STATIONS);
   const [selectedStation, setSelectedStation] = useState(null);
@@ -166,7 +191,7 @@ export default function TidalCalendarApp() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isDemo, setIsDemo] = useState(!DEFAULT_API_KEY);
-  const [viewMode, setViewMode] = useState('monthly');
+  const [viewMode, setViewMode] = useState(embedConfig.view || 'monthly');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null);
   const [user, setUser] = useState(null);
@@ -307,7 +332,7 @@ export default function TidalCalendarApp() {
   useEffect(() => { loadSession(); }, [loadSession]);
   useEffect(() => { loadAlerts(); }, [loadAlerts]);
   useEffect(() => {
-    if (typeof window === 'undefined' || stations.length === 0) return;
+    if (isEmbed || typeof window === 'undefined' || stations.length === 0) return;
     if (user?.home_port_id) {
       setHomePort(user.home_port_id);
       const match = stations.find(s => s.id === user.home_port_id);
@@ -323,11 +348,30 @@ export default function TidalCalendarApp() {
     } else if (!selectedStation && stations.length > 0) {
       setSelectedStation(stations[0]);
     }
-  }, [stations, user, selectedStation, persistHomePortSelection]);
+  }, [stations, user, selectedStation, persistHomePortSelection, isEmbed]);
 
   useEffect(() => {
+    if (isEmbed) return;
     if (homePort) persistHomePortSelection(homePort);
-  }, [homePort, persistHomePortSelection]);
+  }, [homePort, persistHomePortSelection, isEmbed]);
+
+  useEffect(() => {
+    if (!isEmbed || stations.length === 0) return;
+    const match = stations.find(s => s.id === embedConfig.stationId) || stations.find(s => s.name.toLowerCase() === embedConfig.stationId.toLowerCase());
+    const fallback = match || stations[0];
+    if (fallback) {
+      setHomePort(fallback.id);
+      setSelectedStation(fallback);
+    }
+  }, [embedConfig.stationId, isEmbed, stations]);
+
+  useEffect(() => {
+    if (isEmbed) setCurrentPage('calendar');
+  }, [isEmbed]);
+
+  useEffect(() => {
+    if (isEmbed && embedConfig.view) setViewMode(embedConfig.view);
+  }, [embedConfig.view, isEmbed]);
 
   const filteredStations = stations.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.country.toLowerCase().includes(searchQuery.toLowerCase())
@@ -595,10 +639,173 @@ export default function TidalCalendarApp() {
     setScrubModal({ date, data: scrubData });
   }, [scrubbingByDate]);
 
+  const upcomingDays = useMemo(() => {
+    const now = new Date();
+    const limit = new Date();
+    limit.setDate(now.getDate() + 21);
+
+    return Object.entries(eventsByDay)
+      .map(([dateStr, dayEvents]) => ({
+        date: new Date(dateStr),
+        events: [...dayEvents].sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)),
+      }))
+      .filter(({ date }) => date >= now && date <= limit)
+      .sort((a, b) => a.date - b.date)
+      .slice(0, embedConfig.compact ? 6 : 10);
+  }, [embedConfig.compact, eventsByDay]);
+
+  const scrubbingEntries = useMemo(() => {
+    return Object.entries(scrubbingByDate)
+      .map(([dateStr, data]) => ({ date: new Date(dateStr), data }))
+      .sort((a, b) => {
+        const order = { excellent: 0, good: 1, fair: 2 };
+        return (order[a.data.rating] - order[b.data.rating]) || (a.date - b.date);
+      })
+      .slice(0, embedConfig.compact ? 4 : 8);
+  }, [embedConfig.compact, scrubbingByDate]);
+
+  useEffect(() => {
+    if (!isEmbed || typeof window === 'undefined') return;
+    const sendHeight = () => {
+      const height = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+      window.parent?.postMessage({ type: 'tidal-calendar:resize', height }, '*');
+    };
+    sendHeight();
+    const observer = new ResizeObserver(sendHeight);
+    observer.observe(document.body);
+    window.addEventListener('resize', sendHeight);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', sendHeight);
+    };
+  }, [isEmbed, viewMode, currentMonth, tidalEvents, scrubbingByDate, selectedStation]);
+
   const navigateMonth = (delta) => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + delta, 1));
     setSelectedDay(null);
   };
+
+  if (isEmbed) {
+    const widgetPadding = embedConfig.compact ? '12px' : '20px';
+    const widgetGap = embedConfig.compact ? '10px' : '16px';
+    const widgetLink = typeof window !== 'undefined' ? `${window.location.origin}?station=${selectedStation?.id || ''}` : '#';
+    const cardSurface = embedConfig.theme === 'dark' ? '#0f172a' : '#f8fafc';
+
+    return (
+      <div style={{ minHeight: '100%', background: backgroundColor, color: primaryText, fontFamily: "'Outfit', sans-serif", position: 'relative', overflow: 'hidden', padding: widgetPadding }}>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Outfit:wght@300;400;500&display=swap');
+          :root { --tc-accent: ${accentColor}; }
+        `}</style>
+        <div style={{ maxWidth: '960px', margin: '0 auto', background: surfaceColor, borderRadius: '16px', border: `1px solid ${accentColor}30`, boxShadow: '0 12px 30px rgba(0,0,0,0.14)', padding: widgetPadding, display: 'grid', gap: widgetGap }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'grid', gap: '4px' }}>
+              <div style={{ fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: accentColor }}>Tidal Calendar Widget</div>
+              <div style={{ fontSize: '18px', fontWeight: 600, color: primaryText }}>Scrubbing off Calendar</div>
+            </div>
+            {selectedStation && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: `${accentColor}14`, borderRadius: '12px', border: `1px solid ${accentColor}30`, color: primaryText, fontWeight: 600 }}>
+                ⚓ {selectedStation.name}
+              </span>
+            )}
+          </div>
+
+          {!selectedStation && (
+            <div style={{ padding: '14px', background: `${accentColor}10`, borderRadius: '12px', color: secondaryText }}>
+              Provide a station via <code style={{ color: primaryText }}>?embed=1&station=ID</code> to render the widget. Default demo data is available if no station is supplied.
+            </div>
+          )}
+
+          {selectedStation && (
+            <>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                <div style={{ fontSize: '13px', color: secondaryText }}>
+                  {viewMode === 'monthly' ? 'Next 3 weeks of tide times' : 'Scrubbing day suitability this month'}
+                </div>
+                <div style={{ display: 'inline-flex', gap: '6px', background: `${accentColor}12`, padding: '4px', borderRadius: '12px', border: `1px solid ${accentColor}26` }}>
+                  {['monthly', 'scrubbing'].map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => setViewMode(mode)}
+                      style={{
+                        padding: '8px 12px',
+                        background: viewMode === mode ? accentColor : 'transparent',
+                        color: viewMode === mode ? '#ffffff' : secondaryText,
+                        border: 'none',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {mode === 'monthly' ? 'Tide times' : 'Scrubbing'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {viewMode === 'monthly' && (
+                <div style={{ display: 'grid', gap: '10px' }}>
+                  {upcomingDays.length === 0 && (
+                    <div style={{ background: `${accentColor}08`, border: `1px solid ${accentColor}26`, borderRadius: '12px', padding: '14px', color: secondaryText }}>
+                      No events available for the next 21 days.
+                    </div>
+                  )}
+                  {upcomingDays.map(({ date, events }) => (
+                    <div key={date.toISOString()} style={{ background: cardSurface, border: `1px solid ${accentColor}26`, borderRadius: '12px', padding: '12px', color: primaryText, boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px' }}>
+                        <div style={{ fontWeight: 700 }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                        <div style={{ fontSize: '11px', color: secondaryText }}>{getMoonPhaseName(date).icon} {getMoonPhaseName(date).name}</div>
+                      </div>
+                      <div style={{ display: 'grid', gap: '6px' }}>
+                        {events.slice(0, 4).map((event, idx) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: secondaryText }}>
+                            <span style={{ color: event.EventType === 'HighWater' ? accentColor : '#64748b' }}>{event.EventType === 'HighWater' ? '▲' : '▼'}</span>
+                            <span style={{ color: primaryText, fontWeight: 600 }}>{formatTime(event.DateTime)}</span>
+                            <span>{event.Height?.toFixed(1)}m</span>
+                            {event.IsPredicted && <span style={{ fontSize: '11px', color: '#b45309' }}>Predicted</span>}
+                            {!event.IsPredicted && event.Source === 'UKHO' && <span style={{ fontSize: '11px', color: accentColor }}>{hasUkhoAccess ? 'UKHO' : 'UKHO 7d'}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {viewMode === 'scrubbing' && (
+                <div style={{ display: 'grid', gap: '10px' }}>
+                  {scrubbingEntries.length === 0 && (
+                    <div style={{ background: `${accentColor}08`, border: `1px solid ${accentColor}26`, borderRadius: '12px', padding: '14px', color: secondaryText }}>
+                      No scrubbing windows found for this month.
+                    </div>
+                  )}
+                  {scrubbingEntries.map(({ date, data }, i) => (
+                    <div key={i} style={{ background: cardSurface, border: `1px solid ${accentColor}26`, borderRadius: '12px', padding: '12px', display: 'grid', gap: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.06)', color: primaryText }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ display: 'grid', gap: '4px' }}>
+                          <div style={{ fontWeight: 700 }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                          <div style={{ fontSize: '12px', color: secondaryText }}>HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m</div>
+                        </div>
+                        <ScrubbingBadge rating={data.rating} />
+                      </div>
+                      <div style={{ fontSize: '11px', color: secondaryText }}>
+                        {data.highWater.IsPredicted ? 'Predicted window' : data.highWater.Source === 'UKHO' ? (hasUkhoAccess ? 'UKHO data' : 'UKHO preview (7d)') : 'Predicted'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', color: secondaryText, fontSize: '12px' }}>
+                <span>Embed mode: keeps backgrounds light and trims UI for iframes.</span>
+                <a href={widgetLink} target="_blank" rel="noreferrer" style={{ color: accentColor, fontWeight: 700 }}>Open full calendar →</a>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #f7fafc 0%, #eef2f7 40%, #e5ecf5 100%)', color: '#0f172a', fontFamily: "'Outfit', sans-serif", position: 'relative', overflow: 'hidden' }}>
