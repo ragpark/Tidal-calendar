@@ -206,6 +206,12 @@ export default function TidalCalendarApp() {
   const [subscriptionEnd, setSubscriptionEnd] = useState('');
   const [subscriptionNotice, setSubscriptionNotice] = useState('');
   const SUBSCRIPTION_PRICE_GBP = 5;
+
+  const [maintenanceLogs, setMaintenanceLogs] = useState([]);
+  const [maintenanceForm, setMaintenanceForm] = useState({ date: '', activityType: 'planned', title: '', notes: '', completed: false });
+  const [maintenanceError, setMaintenanceError] = useState('');
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [editingMaintenance, setEditingMaintenance] = useState(null);
   
   const [scrubSettings, setScrubSettings] = useState({
     highWaterStart: '04:30',
@@ -331,6 +337,7 @@ export default function TidalCalendarApp() {
   useEffect(() => { if (selectedStation) fetchTidalEvents(selectedStation); }, [selectedStation, fetchTidalEvents]);
   useEffect(() => { loadSession(); }, [loadSession]);
   useEffect(() => { loadAlerts(); }, [loadAlerts]);
+  useEffect(() => { loadMaintenanceLogs(); }, [loadMaintenanceLogs]);
   useEffect(() => {
     if (isEmbed || typeof window === 'undefined' || stations.length === 0) return;
     if (user?.home_port_id) {
@@ -492,6 +499,100 @@ export default function TidalCalendarApp() {
     setAlerts(prev => prev.filter(a => a.id !== id));
   };
 
+  const loadMaintenanceLogs = useCallback(async () => {
+    if (!user) { setMaintenanceLogs([]); return; }
+    try {
+      const data = await apiRequest('/api/maintenance-logs');
+      setMaintenanceLogs(data);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [apiRequest, user]);
+
+  const createMaintenanceLog = async (payload) => {
+    if (!user) {
+      setMaintenanceError('Sign in to save maintenance logs.');
+      return null;
+    }
+    setMaintenanceError('');
+    try {
+      const created = await apiRequest('/api/maintenance-logs', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      setMaintenanceLogs(prev => [...prev, created]);
+      return created;
+    } catch (err) {
+      setMaintenanceError(err.message);
+      throw err;
+    }
+  };
+
+  const updateMaintenanceLog = async (id, payload) => {
+    if (!user) return;
+    try {
+      const updated = await apiRequest(`/api/maintenance-logs/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      setMaintenanceLogs(prev => prev.map(m => m.id === id ? updated : m));
+      return updated;
+    } catch (err) {
+      setMaintenanceError(err.message);
+      throw err;
+    }
+  };
+
+  const handleDeleteMaintenanceLog = async (id) => {
+    if (!user) return;
+    await apiRequest(`/api/maintenance-logs/${id}`, { method: 'DELETE' }).catch(() => {});
+    setMaintenanceLogs(prev => prev.filter(m => m.id !== id));
+  };
+
+  const handleMaintenanceSubmit = async (e) => {
+    e.preventDefault();
+    if (!user) { setMaintenanceError('Sign in to save maintenance logs.'); return; }
+    if (!maintenanceForm.date || !maintenanceForm.title) {
+      setMaintenanceError('Date and title are required.');
+      return;
+    }
+    try {
+      if (editingMaintenance) {
+        await updateMaintenanceLog(editingMaintenance.id, maintenanceForm);
+        setEditingMaintenance(null);
+      } else {
+        await createMaintenanceLog(maintenanceForm);
+      }
+      setMaintenanceForm({ date: '', activityType: 'planned', title: '', notes: '', completed: false });
+      setShowMaintenanceModal(false);
+    } catch { /* handled in create/update */ }
+  };
+
+  const openMaintenanceModal = (date = null) => {
+    if (!user) {
+      setMaintenanceError('Sign in to save maintenance logs.');
+      return;
+    }
+    const dateStr = date ? date.toISOString().split('T')[0] : '';
+    setMaintenanceForm({ date: dateStr, activityType: 'planned', title: '', notes: '', completed: false });
+    setEditingMaintenance(null);
+    setMaintenanceError('');
+    setShowMaintenanceModal(true);
+  };
+
+  const editMaintenanceLog = (log) => {
+    setEditingMaintenance(log);
+    setMaintenanceForm({
+      date: log.date ? new Date(log.date).toISOString().split('T')[0] : '',
+      activityType: log.activityType || 'planned',
+      title: log.title,
+      notes: log.notes || '',
+      completed: log.completed || false,
+    });
+    setMaintenanceError('');
+    setShowMaintenanceModal(true);
+  };
+
   const handlePurchaseSubscription = () => {
     const nextEnd = new Date();
     nextEnd.setFullYear(nextEnd.getFullYear() + 1);
@@ -590,6 +691,17 @@ export default function TidalCalendarApp() {
     
     return results;
   }, [tidalEvents, scrubSettings]);
+
+  // Group maintenance logs by date
+  const maintenanceByDate = useMemo(() => {
+    const grouped = {};
+    maintenanceLogs.forEach(log => {
+      const dateKey = new Date(log.date).toDateString();
+      if (!grouped[dateKey]) grouped[dateKey] = [];
+      grouped[dateKey].push(log);
+    });
+    return grouped;
+  }, [maintenanceLogs]);
 
   // Calendar helpers
   const getMonthData = () => {
@@ -1049,7 +1161,46 @@ export default function TidalCalendarApp() {
                       ))}
                     </div>
                   </div>
-                  {/* 
+
+                  <div style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                      <div>
+                        <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Maintenance Logs</div>
+                        <div style={{ fontSize: '11px', color: '#475569' }}>Track scrubbing days and boat maintenance.</div>
+                      </div>
+                      <button onClick={() => openMaintenanceModal()} style={{ padding: '8px 12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
+                        Add Log
+                      </button>
+                    </div>
+                    <div style={{ display: 'grid', gap: '8px' }}>
+                      {maintenanceLogs.length === 0 && <div style={{ fontSize: '12px', color: '#475569' }}>No maintenance logs yet. Create your first entry.</div>}
+                      {maintenanceLogs.map(log => (
+                        <div key={log.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px', display: 'grid', gap: '6px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '10px' }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                                <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{log.title}</span>
+                                {log.completed && <span style={{ fontSize: '10px', padding: '2px 6px', background: '#dcfce7', color: '#166534', borderRadius: '6px', fontWeight: 600 }}>✓ Done</span>}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#475569' }}>
+                                {new Date(log.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} • {log.activityType}
+                              </div>
+                              {log.notes && <div style={{ fontSize: '11px', color: '#334155', marginTop: '4px' }}>{log.notes}</div>}
+                            </div>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button onClick={() => editMaintenanceLog(log)} style={{ padding: '4px 8px', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, fontSize: '11px' }}>
+                                Edit
+                              </button>
+                              <button onClick={() => handleDeleteMaintenanceLog(log.id)} style={{ padding: '4px 8px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '6px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600, fontSize: '11px' }}>
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/*
                     <div style={{ display: 'grid', gap: '8px', padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Tidal station</div>
                     <div style={{ position: 'relative' }}>
@@ -1190,12 +1341,13 @@ export default function TidalCalendarApp() {
                     const dateStr = date.toDateString();
                     const dayEvents = eventsByDay[dateStr] || [];
                     const scrubData = scrubbingByDate[dateStr];
+                    const dayMaintenanceLogs = maintenanceByDate[dateStr] || [];
                     const isToday = new Date().toDateString() === dateStr;
                     const isSelected = selectedDay?.toDateString() === dateStr;
                     const moonPhase = getMoonPhaseName(date);
                     const hasUkhoEvents = dayEvents.some(e => e.Source === 'UKHO');
                     const hasPredictedEvents = dayEvents.some(e => e.IsPredicted);
-                    
+
                     return (
                       <div
                         key={i}
@@ -1226,6 +1378,15 @@ export default function TidalCalendarApp() {
                         {scrubData && (
                           <div style={{ position: 'absolute', top: '8px', right: '8px' }}>
                             <ScrubbingBadge rating={scrubData.rating} small />
+                          </div>
+                        )}
+
+                        {/* Maintenance log indicator */}
+                        {dayMaintenanceLogs.length > 0 && (
+                          <div style={{ position: 'absolute', top: scrubData ? '20px' : '8px', right: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '12px', cursor: 'pointer' }} title={`${dayMaintenanceLogs.length} maintenance log(s)`}>
+                              🔧
+                            </span>
                           </div>
                         )}
 
@@ -1400,16 +1561,17 @@ export default function TidalCalendarApp() {
                   {scrubModal.data ? 'Add this scrubbing window to your maintenance log.' : 'No scrubbing slot for this date. Adjust the high water window to see more options.'}
                 </div>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  {alertError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{alertError}</div>}
+                  {maintenanceError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{maintenanceError}</div>}
                   <button
                     disabled={!user || !scrubModal.data}
                     onClick={async () => {
                       if (!user || !scrubModal.data) return;
-                      const lwIso = scrubModal.data.lwTime?.toISOString?.() || scrubModal.date.toISOString();
-                      await createAlert({
-                        title: `Scrub boat - ${scrubModal.date.toDateString()}`,
-                        dueDate: lwIso,
-                        notes: 'Added from scrubbing schedule',
+                      await createMaintenanceLog({
+                        date: scrubModal.date.toISOString(),
+                        activityType: 'planned',
+                        title: `Scrub boat - ${scrubModal.data.rating} scrubbing day`,
+                        notes: `HW: ${formatTime(scrubModal.data.hwTime)}, LW: ${formatTime(scrubModal.data.lwTime)}, Range: ${scrubModal.data.tidalRange.toFixed(1)}m`,
+                        completed: false,
                       });
                       setScrubModal(null);
                     }}
@@ -1428,6 +1590,89 @@ export default function TidalCalendarApp() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Maintenance Log Modal */}
+      {showMaintenanceModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 1000 }} onClick={() => setShowMaintenanceModal(false)}>
+          <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '500px', width: '100%', boxShadow: '0 20px 60px rgba(15,23,42,0.25)', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', gap: '12px' }}>
+              <div style={{ fontSize: '16px', color: '#0f172a', fontWeight: 700 }}>
+                {editingMaintenance ? 'Edit Maintenance Log' : 'Add Maintenance Log'}
+              </div>
+              <button onClick={() => setShowMaintenanceModal(false)} style={{ padding: '6px 10px', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', cursor: 'pointer', fontWeight: 600 }}>Close</button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              <form onSubmit={handleMaintenanceSubmit} style={{ display: 'grid', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', color: '#0f172a', fontWeight: 600, marginBottom: '6px' }}>Date</label>
+                  <input
+                    type="date"
+                    value={maintenanceForm.date}
+                    onChange={(e) => setMaintenanceForm(f => ({ ...f, date: e.target.value }))}
+                    required
+                    style={{ width: '100%', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', color: '#0f172a', fontWeight: 600, marginBottom: '6px' }}>Activity Type</label>
+                  <select
+                    value={maintenanceForm.activityType}
+                    onChange={(e) => setMaintenanceForm(f => ({ ...f, activityType: e.target.value }))}
+                    style={{ width: '100%', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px' }}
+                  >
+                    <option value="planned">Planned</option>
+                    <option value="scrubbing">Scrubbing</option>
+                    <option value="antifouling">Antifouling</option>
+                    <option value="inspection">Inspection</option>
+                    <option value="repairs">Repairs</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', color: '#0f172a', fontWeight: 600, marginBottom: '6px' }}>Title</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Scrub hull and check anodes"
+                    value={maintenanceForm.title}
+                    onChange={(e) => setMaintenanceForm(f => ({ ...f, title: e.target.value }))}
+                    required
+                    style={{ width: '100%', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', color: '#0f172a', fontWeight: 600, marginBottom: '6px' }}>Notes (optional)</label>
+                  <textarea
+                    placeholder="Additional details..."
+                    value={maintenanceForm.notes}
+                    onChange={(e) => setMaintenanceForm(f => ({ ...f, notes: e.target.value }))}
+                    rows={3}
+                    style={{ width: '100%', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px', resize: 'vertical' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    id="maintenanceCompleted"
+                    checked={maintenanceForm.completed}
+                    onChange={(e) => setMaintenanceForm(f => ({ ...f, completed: e.target.checked }))}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="maintenanceCompleted" style={{ fontSize: '13px', color: '#0f172a', cursor: 'pointer' }}>Mark as completed</label>
+                </div>
+                {maintenanceError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{maintenanceError}</div>}
+                <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                  <button type="submit" style={{ flex: 1, padding: '12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>
+                    {editingMaintenance ? 'Update Log' : 'Add Log'}
+                  </button>
+                  <button type="button" onClick={() => setShowMaintenanceModal(false)} style={{ padding: '12px 16px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', cursor: 'pointer', fontWeight: 600 }}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
