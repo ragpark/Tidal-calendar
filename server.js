@@ -26,9 +26,39 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+const resolveSslConfig = () => {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) return undefined;
+
+  if (process.env.PGSSLMODE === 'disable') return undefined;
+  if (process.env.PGSSLMODE === 'require') return { rejectUnauthorized: false };
+
+  try {
+    const parsedUrl = new URL(databaseUrl);
+    const sslmode = parsedUrl.searchParams.get('sslmode');
+    if (sslmode === 'disable') return undefined;
+    if (sslmode) return { rejectUnauthorized: false };
+    if (parsedUrl.hostname?.includes('railway.app')) {
+      return { rejectUnauthorized: false };
+    }
+  } catch {
+    // Ignore URL parsing errors and fall back to environment checks.
+  }
+
+  if (process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID) {
+    return { rejectUnauthorized: false };
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return { rejectUnauthorized: false };
+  }
+
+  return undefined;
+};
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('railway') ? { rejectUnauthorized: false } : undefined,
+  ssl: resolveSslConfig(),
   connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000,
   max: 20,
