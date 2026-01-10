@@ -96,6 +96,16 @@ const ensureSchema = async () => {
       notes TEXT,
       created_at TIMESTAMPTZ DEFAULT now()
     );
+    CREATE TABLE IF NOT EXISTS maintenance_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      date DATE NOT NULL,
+      activity_type TEXT NOT NULL DEFAULT 'planned',
+      title TEXT NOT NULL,
+      notes TEXT,
+      completed BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT now()
+    );
   `);
 
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';`);
@@ -300,6 +310,52 @@ app.post('/api/alerts', requireAuth, async (req, res) => {
 
 app.delete('/api/alerts/:id', requireAuth, async (req, res) => {
   await pool.query(`DELETE FROM alerts WHERE id = $1 AND user_id = $2`, [req.params.id, req.user.id]);
+  res.json({ ok: true });
+});
+
+// Maintenance logs
+app.get('/api/maintenance-logs', requireAuth, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, date, activity_type as "activityType", title, notes, completed
+     FROM maintenance_logs
+     WHERE user_id = $1
+     ORDER BY date DESC, created_at DESC`,
+    [req.user.id],
+  );
+  res.json(rows);
+});
+
+app.post('/api/maintenance-logs', requireAuth, async (req, res) => {
+  const { date, activityType, title, notes, completed } = req.body || {};
+  if (!date || !title) return res.status(400).json({ error: 'Date and title required' });
+  const { rows } = await pool.query(
+    `INSERT INTO maintenance_logs (user_id, date, activity_type, title, notes, completed)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, date, activity_type as "activityType", title, notes, completed`,
+    [req.user.id, new Date(date), activityType || 'planned', title, notes || null, completed || false],
+  );
+  res.status(201).json(rows[0]);
+});
+
+app.put('/api/maintenance-logs/:id', requireAuth, async (req, res) => {
+  const { date, activityType, title, notes, completed } = req.body || {};
+  const { rows } = await pool.query(
+    `UPDATE maintenance_logs
+     SET date = COALESCE($1, date),
+         activity_type = COALESCE($2, activity_type),
+         title = COALESCE($3, title),
+         notes = $4,
+         completed = COALESCE($5, completed)
+     WHERE id = $6 AND user_id = $7
+     RETURNING id, date, activity_type as "activityType", title, notes, completed`,
+    [date ? new Date(date) : null, activityType, title, notes, completed, req.params.id, req.user.id],
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'Maintenance log not found' });
+  res.json(rows[0]);
+});
+
+app.delete('/api/maintenance-logs/:id', requireAuth, async (req, res) => {
+  await pool.query(`DELETE FROM maintenance_logs WHERE id = $1 AND user_id = $2`, [req.params.id, req.user.id]);
   res.json({ ok: true });
 });
 
