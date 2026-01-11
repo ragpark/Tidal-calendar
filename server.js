@@ -20,14 +20,17 @@ const SESSION_COOKIE = 'tc_session';
 const SESSION_TTL_HOURS = 24;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 
-// Validate DATABASE_URL
+// Warn if DATABASE_URL missing but don't exit - let connection retry handle it
 if (!process.env.DATABASE_URL) {
-  console.error('FATAL: DATABASE_URL environment variable is not set');
-  process.exit(1);
+  console.warn('WARNING: DATABASE_URL environment variable is not set');
+  console.warn('Server will start but database operations will fail until DATABASE_URL is configured');
+  console.warn('Ensure Railway Postgres plugin is linked to this service');
 }
 
 // Configure SSL for production databases
-const isProduction = process.env.NODE_ENV === 'production' || process.env.DATABASE_URL?.includes('railway') || process.env.DATABASE_URL?.includes('postgres://');
+const isProduction = process.env.NODE_ENV === 'production' ||
+                     process.env.DATABASE_URL?.includes('railway') ||
+                     process.env.DATABASE_URL?.includes('postgres://');
 const sslConfig = isProduction ? { rejectUnauthorized: false } : undefined;
 
 console.log('Database configuration:', {
@@ -38,7 +41,7 @@ console.log('Database configuration:', {
 });
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL || 'postgres://localhost/temp',
   ssl: sslConfig,
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
