@@ -26,10 +26,21 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+// Configure SSL for production databases
+const isProduction = process.env.NODE_ENV === 'production' || process.env.DATABASE_URL?.includes('railway') || process.env.DATABASE_URL?.includes('postgres://');
+const sslConfig = isProduction ? { rejectUnauthorized: false } : undefined;
+
+console.log('Database configuration:', {
+  hasUrl: !!process.env.DATABASE_URL,
+  isProduction,
+  sslEnabled: !!sslConfig,
+  environment: process.env.NODE_ENV || 'development'
+});
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('railway') ? { rejectUnauthorized: false } : undefined,
-  connectionTimeoutMillis: 5000,
+  ssl: sslConfig,
+  connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
   max: 20,
 });
