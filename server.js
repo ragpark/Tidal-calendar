@@ -66,6 +66,9 @@ const mimeTypes = {
   '.ico': 'image/x-icon',
 };
 
+let dbReady = false;
+let dbInitInProgress = false;
+
 // Test database connection with retry logic
 const testDatabaseConnection = async (maxRetries = 5, delayMs = 2000) => {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -189,6 +192,28 @@ const ensureSchema = async () => {
   }
 };
 
+const initializeDatabase = async () => {
+  if (dbInitInProgress) return;
+  dbInitInProgress = true;
+  try {
+    await testDatabaseConnection();
+    await ensureSchema();
+    dbReady = true;
+    console.log('Database initialization complete');
+  } catch (err) {
+    dbReady = false;
+    console.error('Database initialization failed:', err.message);
+    const retryDelayMs = Number(process.env.DB_INIT_RETRY_MS) || 10000;
+    console.log(`Retrying database initialization in ${retryDelayMs}ms...`);
+    setTimeout(() => {
+      dbInitInProgress = false;
+      initializeDatabase();
+    }, retryDelayMs);
+    return;
+  }
+  dbInitInProgress = false;
+};
+
 const getUserFromSession = async (req) => {
   const token = req.cookies?.[SESSION_COOKIE];
   if (!token) return null;
@@ -200,6 +225,14 @@ const getUserFromSession = async (req) => {
     [token],
   );
   return rows[0] || null;
+};
+
+const requireDatabase = (_req, res, next) => {
+  if (!dbReady) {
+    res.status(503).json({ error: 'Database is initializing' });
+    return;
+  }
+  next();
 };
 
 const requireAuth = async (req, res, next) => {
@@ -235,7 +268,12 @@ app.use(async (req, res, next) => {
   // Refresh session on activity
   const token = req.cookies?.[SESSION_COOKIE];
   if (token) {
-    await pool.query(`UPDATE sessions SET expires_at = now() + interval '${SESSION_TTL_HOURS} hours' WHERE token = $1`, [token]);
+    if (!dbReady) return next();
+    try {
+      await pool.query(`UPDATE sessions SET expires_at = now() + interval '${SESSION_TTL_HOURS} hours' WHERE token = $1`, [token]);
+    } catch (err) {
+      console.error('Failed to refresh session expiry:', err);
+    }
   }
   next();
 });
@@ -266,6 +304,8 @@ app.use('/api/Stations', async (req, res) => {
     res.status(502).json({ error: 'Proxy request failed' });
   }
 });
+
+app.use('/api', requireDatabase);
 
 // Auth routes
 app.post('/api/auth/signup', async (req, res) => {
@@ -599,16 +639,9 @@ const startServer = async () => {
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`Port: ${PORT}`);
 
-    // Test database connection with retries
-    await testDatabaseConnection();
-
-    // Create database schema
-    await ensureSchema();
-
     // Start Express server
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`✓ Server running successfully on port ${PORT}`);
-      console.log(`✓ Database connected`);
       console.log(`✓ Ready to accept requests`);
     });
 
@@ -621,6 +654,8 @@ const startServer = async () => {
       process.exit(1);
     });
 
+    // Initialize database connection and schema in the background
+    initializeDatabase();
   } catch (err) {
     console.error('FATAL: Failed to start server');
     console.error('Error details:', err);
