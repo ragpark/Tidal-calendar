@@ -503,9 +503,10 @@ export default function TidalCalendarApp() {
     if (!user) { setMaintenanceLogs([]); return; }
     try {
       const data = await apiRequest('/api/maintenance-logs');
-      setMaintenanceLogs(data);
+      setMaintenanceLogs(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to load maintenance logs:', err);
+      setMaintenanceLogs([]);
     }
   }, [apiRequest, user]);
 
@@ -695,10 +696,17 @@ export default function TidalCalendarApp() {
   // Group maintenance logs by date
   const maintenanceByDate = useMemo(() => {
     const grouped = {};
+    if (!Array.isArray(maintenanceLogs)) return grouped;
+
     maintenanceLogs.forEach(log => {
-      const dateKey = new Date(log.date).toDateString();
-      if (!grouped[dateKey]) grouped[dateKey] = [];
-      grouped[dateKey].push(log);
+      if (!log?.date) return;
+      try {
+        const dateKey = new Date(log.date).toDateString();
+        if (!grouped[dateKey]) grouped[dateKey] = [];
+        grouped[dateKey].push(log);
+      } catch (err) {
+        console.error('Error grouping maintenance log:', err, log);
+      }
     });
     return grouped;
   }, [maintenanceLogs]);
