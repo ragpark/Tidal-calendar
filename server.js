@@ -9,6 +9,7 @@ import { Pool } from 'pg';
 import { createReadStream, existsSync } from 'fs';
 import { stat } from 'fs/promises';
 import { Readable } from 'stream';
+import PDFDocument from 'pdfkit';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -580,6 +581,245 @@ app.post('/api/clubs/:id/windows/:windowId/book', requireAuth, async (req, res) 
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Booking failed' });
+  }
+});
+
+// Tide prediction functions (from frontend)
+const getLunarPhase = (date) => {
+  const LUNAR_CYCLE = 29.53059;
+  const KNOWN_NEW_MOON = new Date('2024-01-11T11:57:00Z').getTime();
+  const daysSinceNew = (date.getTime() - KNOWN_NEW_MOON) / (1000 * 60 * 60 * 24);
+  const phase = (daysSinceNew % LUNAR_CYCLE) / LUNAR_CYCLE;
+  return phase < 0 ? phase + 1 : phase;
+};
+
+const getSpringNeapFactor = (date) => {
+  const phase = getLunarPhase(date);
+  const springProximity = Math.min(Math.abs(phase - 0), Math.abs(phase - 0.5), Math.abs(phase - 1));
+  return 1 - (springProximity / 0.25);
+};
+
+const predictTidalEvents = (station, startDate, days) => {
+  const events = [];
+  const { mhws = 4.5, mhwn = 3.5, mlwn = 1.5, mlws = 0.5 } = station;
+  const M2_PERIOD = 12.4206;
+
+  const referenceDate = new Date(startDate);
+  referenceDate.setHours(0, 0, 0, 0);
+
+  const lunarPhase = getLunarPhase(referenceDate);
+  const initialHWOffset = (lunarPhase * 24 * 0.5 + 2) % M2_PERIOD;
+
+  for (let day = 0; day < days; day++) {
+    const currentDate = new Date(referenceDate);
+    currentDate.setDate(currentDate.getDate() + day);
+
+    const laggedDate = new Date(currentDate);
+    laggedDate.setDate(laggedDate.getDate() - 2);
+    const springFactor = getSpringNeapFactor(laggedDate);
+
+    const hwHeight = mhwn + (mhws - mhwn) * springFactor;
+    const lwHeight = mlwn - (mlwn - mlws) * springFactor;
+
+    const dayOffset = day * 0.8333;
+    let hw1Hour = (initialHWOffset + dayOffset) % 24;
+    if (hw1Hour < 0) hw1Hour += 24;
+
+    let hw2Hour = (hw1Hour + M2_PERIOD) % 24;
+    let lw1Hour = (hw1Hour + M2_PERIOD / 2) % 24;
+    let lw2Hour = (hw2Hour + M2_PERIOD / 2) % 24;
+
+    const addEvent = (hour, type, baseHeight) => {
+      if (hour >= 0 && hour < 24) {
+        const time = new Date(currentDate);
+        time.setHours(Math.floor(hour), Math.round((hour % 1) * 60), 0, 0);
+        events.push({
+          EventType: type,
+          DateTime: time.toISOString(),
+          Height: Math.max(0, baseHeight + (Math.random() - 0.5) * 0.15),
+          date: currentDate.toISOString().split('T')[0],
+        });
+      }
+    };
+
+    addEvent(hw1Hour, 'HighWater', hwHeight);
+    if (Math.abs(hw2Hour - hw1Hour) > 6 || hw2Hour < hw1Hour) addEvent(hw2Hour, 'HighWater', hwHeight - 0.1);
+    addEvent(lw1Hour, 'LowWater', lwHeight);
+    if (Math.abs(lw2Hour - lw1Hour) > 6 || lw2Hour < lw1Hour) addEvent(lw2Hour, 'LowWater', lwHeight);
+  }
+
+  return events;
+};
+
+// PDF Tide Booklet Generation
+app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
+  try {
+    // Get user's home port
+    if (!req.user.home_port_id || !req.user.home_port_name) {
+      return res.status(400).json({ error: 'No home port configured. Please set your home port first.' });
+    }
+
+    // Fetch station data from Admiralty API
+    const stationUrl = `${API_BASE_URL}/Stations/${req.user.home_port_id}`;
+    const stationResponse = await fetch(stationUrl, {
+      headers: {
+        Accept: 'application/json',
+        'Ocp-Apim-Subscription-Key': API_KEY,
+      },
+    });
+
+    if (!stationResponse.ok) {
+      throw new Error('Failed to fetch station data');
+    }
+
+    const station = await stationResponse.json();
+
+    // Generate tide data for the entire year
+    const currentYear = new Date().getFullYear();
+    const startDate = new Date(currentYear, 0, 1); // January 1st of current year
+    const allEvents = predictTidalEvents(station, startDate, 365);
+
+    // Group events by month
+    const eventsByMonth = {};
+    allEvents.forEach(event => {
+      const eventDate = new Date(event.DateTime);
+      const monthKey = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, '0')}`;
+      if (!eventsByMonth[monthKey]) {
+        eventsByMonth[monthKey] = {};
+      }
+      const dayKey = eventDate.getDate();
+      if (!eventsByMonth[monthKey][dayKey]) {
+        eventsByMonth[monthKey][dayKey] = [];
+      }
+      eventsByMonth[monthKey][dayKey].push(event);
+    });
+
+    // Create PDF document
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: 50, bottom: 50, left: 50, right: 50 }
+    });
+
+    // Set response headers
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="tide-booklet-${req.user.home_port_name.replace(/\s+/g, '-')}-${currentYear}.pdf"`);
+
+    // Pipe the PDF to the response
+    doc.pipe(res);
+
+    // Cover page
+    doc.fontSize(24).font('Helvetica-Bold').text('Tide Data Booklet', { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(18).font('Helvetica').text(req.user.home_port_name, { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(14).text(`Year ${currentYear}`, { align: 'center' });
+    doc.moveDown(2);
+    doc.fontSize(10).font('Helvetica-Oblique').text('Generated from Tidal Calendar App', { align: 'center' });
+    doc.fontSize(8).text(`Generated on ${new Date().toLocaleDateString()}`, { align: 'center' });
+
+    // Generate a page for each month
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    for (let month = 0; month < 12; month++) {
+      doc.addPage();
+
+      const monthKey = `${currentYear}-${String(month + 1).padStart(2, '0')}`;
+      const monthEvents = eventsByMonth[monthKey] || {};
+
+      // Month header
+      doc.fontSize(20).font('Helvetica-Bold').text(`${months[month]} ${currentYear}`, { align: 'center' });
+      doc.moveDown();
+
+      // Draw table header
+      const startY = doc.y;
+      const colWidths = [60, 80, 120, 80];
+      const tableLeft = 50;
+
+      doc.fontSize(10).font('Helvetica-Bold');
+      doc.text('Date', tableLeft, startY, { width: colWidths[0], continued: false });
+      doc.text('Day', tableLeft + colWidths[0], startY, { width: colWidths[1], continued: false });
+      doc.text('Time', tableLeft + colWidths[0] + colWidths[1], startY, { width: colWidths[2], continued: false });
+      doc.text('Height (m)', tableLeft + colWidths[0] + colWidths[1] + colWidths[2], startY, { width: colWidths[3], continued: false });
+
+      doc.moveDown();
+      let currentY = doc.y;
+
+      // Draw horizontal line under header
+      doc.moveTo(tableLeft, currentY).lineTo(tableLeft + colWidths.reduce((a, b) => a + b, 0), currentY).stroke();
+      doc.moveDown(0.5);
+      currentY = doc.y;
+
+      // Get all days in the month
+      const daysInMonth = new Date(currentYear, month + 1, 0).getDate();
+
+      doc.fontSize(9).font('Helvetica');
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dayEvents = monthEvents[day] || [];
+        const date = new Date(currentYear, month, day);
+        const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
+
+        if (dayEvents.length === 0) {
+          // No tide data for this day
+          doc.text(String(day), tableLeft, currentY, { width: colWidths[0] });
+          doc.text(dayName, tableLeft + colWidths[0], currentY, { width: colWidths[1] });
+          doc.text('No data', tableLeft + colWidths[0] + colWidths[1], currentY, { width: colWidths[2] });
+          currentY += 15;
+        } else {
+          // Sort events by time
+          dayEvents.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime));
+
+          // Print each tide event for the day
+          dayEvents.forEach((event, idx) => {
+            const eventDate = new Date(event.DateTime);
+            const timeStr = eventDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            const typeSymbol = event.EventType === 'HighWater' ? '▲ HW' : '▼ LW';
+            const heightStr = event.Height.toFixed(2);
+
+            // Only show date and day on first event of the day
+            if (idx === 0) {
+              doc.text(String(day), tableLeft, currentY, { width: colWidths[0] });
+              doc.text(dayName, tableLeft + colWidths[0], currentY, { width: colWidths[1] });
+            }
+
+            doc.text(`${timeStr} ${typeSymbol}`, tableLeft + colWidths[0] + colWidths[1], currentY, { width: colWidths[2] });
+            doc.text(heightStr, tableLeft + colWidths[0] + colWidths[1] + colWidths[2], currentY, { width: colWidths[3] });
+
+            currentY += 15;
+
+            // Check if we need a new page
+            if (currentY > 700) {
+              doc.addPage();
+              doc.fontSize(16).font('Helvetica-Bold').text(`${months[month]} ${currentYear} (continued)`, { align: 'center' });
+              doc.moveDown();
+              currentY = doc.y;
+            }
+          });
+        }
+
+        // Add small spacing between days
+        currentY += 3;
+      }
+
+      // Footer with page number
+      doc.fontSize(8).font('Helvetica').text(
+        `Page ${month + 2} of 13`,
+        50,
+        doc.page.height - 50,
+        { align: 'center' }
+      );
+    }
+
+    // Finalize the PDF
+    doc.end();
+  } catch (err) {
+    console.error('PDF generation failed:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to generate PDF booklet' });
+    }
   }
 });
 

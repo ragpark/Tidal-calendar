@@ -619,6 +619,34 @@ export default function TidalCalendarApp() {
     }
   };
 
+  const handleDownloadTideBooklet = async () => {
+    if (!user || !user.home_port_id) {
+      alert('Please set your home port first before downloading the tide booklet.');
+      return;
+    }
+    try {
+      const response = await fetch('/api/generate-tide-booklet', {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate PDF');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `tide-booklet-${user.home_port_name.replace(/\s+/g, '-')}-${new Date().getFullYear()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      alert(`Failed to download tide booklet: ${err.message}`);
+    }
+  };
+
   const applySelectedStation = (stationId) => {
     setHomePort(stationId);
     const match = stations.find(s => s.id === stationId);
@@ -1092,7 +1120,12 @@ export default function TidalCalendarApp() {
                       {stations.map(s => <option key={s.id} value={s.id}>{s.name} — {s.country}</option>)}
                     </select>
                     <button onClick={handleSaveHomePort} style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>Save Home Port</button>
-                    {user.home_port_name && <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.home_port_name}</strong></div>}
+                    {user.home_port_name && (
+                      <>
+                        <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.home_port_name}</strong></div>
+                        <button onClick={handleDownloadTideBooklet} style={{ padding: '10px', background: '#8b5cf6', border: '1px solid #7c3aed', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(139,92,246,0.25)' }}>📄 Download Year Tide Booklet (PDF)</button>
+                      </>
+                    )}
                     <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{subscriptionEndLabel}</strong></div>
                   </div>
 
