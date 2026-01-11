@@ -619,7 +619,7 @@ export default function TidalCalendarApp() {
     }
   };
 
-  const handleDownloadTideBooklet = async () => {
+  const handleDownloadTideBooklet = useCallback(async () => {
     if (!user || !user.home_port_id) {
       alert('Please set your home port first before downloading the tide booklet.');
       return;
@@ -645,7 +645,7 @@ export default function TidalCalendarApp() {
     } catch (err) {
       alert(`Failed to download tide booklet: ${err.message}`);
     }
-  };
+  }, [user]);
 
   const applySelectedStation = (stationId) => {
     setHomePort(stationId);
