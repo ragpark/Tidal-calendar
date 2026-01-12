@@ -58,7 +58,7 @@ const app = express();
 app.use(express.json());
 app.use(cookieParser());
 
-const distPath = path.join(__dirname, 'dist');
+const publicPath = path.join(__dirname, 'public');
 
 const mimeTypes = {
   '.html': 'text/html',
@@ -823,7 +823,7 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
   }
 });
 
-// Static assets (Vite build output)
+// Static assets (build output)
 const serveStatic = (filePath, res) => {
   const ext = path.extname(filePath);
   const contentType = mimeTypes[ext] || 'application/octet-stream';
@@ -831,14 +831,14 @@ const serveStatic = (filePath, res) => {
   createReadStream(filePath).pipe(res);
 };
 
-app.use(express.static(distPath));
+app.use(express.static(publicPath));
 
 app.get('*', async (req, res) => {
   // skip API routes
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
-  let filePath = path.join(distPath, req.path);
+  let filePath = path.join(publicPath, req.path);
   if (req.path === '/' || !path.extname(filePath)) {
-    filePath = path.join(distPath, 'index.html');
+    filePath = path.join(publicPath, 'index.html');
   }
 
   try {
@@ -851,7 +851,7 @@ app.get('*', async (req, res) => {
     // fallthrough to index.html for SPA routes
   }
 
-  const indexPath = path.join(distPath, 'index.html');
+  const indexPath = path.join(publicPath, 'index.html');
   if (existsSync(indexPath)) {
     serveStatic(indexPath, res);
   } else {
