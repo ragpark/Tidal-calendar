@@ -767,7 +767,7 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
       });
 
       doc.fontSize(10).font(fontRegular).text(
-        `${req.user.home_port_name} • Tide Calendar`,
+        `${req.user.home_port_name} - Tide Calendar`,
         pageMargin,
         pageMargin + 40,
         { width: gridWidth, align: 'center' }
@@ -836,8 +836,8 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
           const eventsText = eventsToShow.map(event => {
             const eventDate = new Date(event.DateTime);
             const timeStr = eventDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-            const typeSymbol = event.EventType === 'HighWater' ? '▲' : '▼';
-            return `${timeStr} ${typeSymbol} ${event.Height.toFixed(1)}m`;
+            const typeLabel = event.EventType === 'HighWater' ? 'HW' : 'LW';
+            return `${timeStr} ${typeLabel} ${event.Height.toFixed(1)}m`;
           });
 
           doc.font(fontRegular).fontSize(8).fillColor(palette.text).text(
@@ -850,7 +850,7 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
       }
 
       doc.fillColor(palette.muted).font(fontRegular).fontSize(9).text(
-        '▲ High Water  •  ▼ Low Water',
+        'HW High Water  /  LW Low Water',
         pageMargin,
         doc.page.height - pageMargin - 12,
         { width: gridWidth, align: 'left' }
