@@ -697,7 +697,8 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
     // Create PDF document
     const doc = new PDFDocument({
       size: 'A4',
-      margins: { top: 50, bottom: 50, left: 50, right: 50 }
+      layout: 'landscape',
+      margins: { top: 40, bottom: 40, left: 40, right: 40 }
     });
 
     // Set response headers
@@ -707,15 +708,30 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
     // Pipe the PDF to the response
     doc.pipe(res);
 
+    const palette = {
+      primary: '#8b5cf6',
+      primaryDark: '#6d28d9',
+      text: '#1f2937',
+      muted: '#6b7280',
+      border: '#e5e7eb',
+      headerBg: '#f5f3ff',
+      weekendBg: '#f8fafc'
+    };
+    const fontRegular = 'Helvetica';
+    const fontBold = 'Helvetica-Bold';
+
     // Cover page
-    doc.fontSize(24).font('Helvetica-Bold').text('Tide Data Booklet', { align: 'center' });
-    doc.moveDown();
-    doc.fontSize(18).font('Helvetica').text(req.user.home_port_name, { align: 'center' });
+    doc.rect(0, 0, doc.page.width, doc.page.height).fill(palette.headerBg);
+    doc.fillColor(palette.text);
+    doc.fontSize(30).font(fontBold).text('Tide Data Booklet', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(20).font(fontRegular).text(req.user.home_port_name, { align: 'center' });
     doc.moveDown();
     doc.fontSize(14).text(`Year ${currentYear}`, { align: 'center' });
-    doc.moveDown(2);
-    doc.fontSize(10).font('Helvetica-Oblique').text('Generated from Tidal Calendar App', { align: 'center' });
-    doc.fontSize(8).text(`Generated on ${new Date().toLocaleDateString()}`, { align: 'center' });
+    doc.moveDown(3);
+    doc.fontSize(11).fillColor(palette.muted).font(fontRegular).text('Generated from Tidal Calendar App', { align: 'center' });
+    doc.fontSize(9).text(`Generated on ${new Date().toLocaleDateString()}`, { align: 'center' });
+    doc.fillColor(palette.text);
 
     // Generate a page for each month
     const months = [
@@ -723,94 +739,134 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
 
-    for (let month = 0; month < 12; month++) {
-      doc.addPage();
-
+    const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const drawMonthPage = (month) => {
       const monthKey = `${currentYear}-${String(month + 1).padStart(2, '0')}`;
       const monthEvents = eventsByMonth[monthKey] || {};
-
-      // Month header
-      doc.fontSize(20).font('Helvetica-Bold').text(`${months[month]} ${currentYear}`, { align: 'center' });
-      doc.moveDown();
-
-      // Draw table header
-      const startY = doc.y;
-      const colWidths = [60, 80, 120, 80];
-      const tableLeft = 50;
-
-      doc.fontSize(10).font('Helvetica-Bold');
-      doc.text('Date', tableLeft, startY, { width: colWidths[0], continued: false });
-      doc.text('Day', tableLeft + colWidths[0], startY, { width: colWidths[1], continued: false });
-      doc.text('Time', tableLeft + colWidths[0] + colWidths[1], startY, { width: colWidths[2], continued: false });
-      doc.text('Height (m)', tableLeft + colWidths[0] + colWidths[1] + colWidths[2], startY, { width: colWidths[3], continued: false });
-
-      doc.moveDown();
-      let currentY = doc.y;
-
-      // Draw horizontal line under header
-      doc.moveTo(tableLeft, currentY).lineTo(tableLeft + colWidths.reduce((a, b) => a + b, 0), currentY).stroke();
-      doc.moveDown(0.5);
-      currentY = doc.y;
-
-      // Get all days in the month
       const daysInMonth = new Date(currentYear, month + 1, 0).getDate();
+      const firstDay = new Date(currentYear, month, 1).getDay();
 
-      doc.fontSize(9).font('Helvetica');
+      const pageMargin = 40;
+      const headerHeight = 60;
+      const footerHeight = 24;
+      const gridTop = pageMargin + headerHeight;
+      const gridLeft = pageMargin;
+      const gridWidth = doc.page.width - pageMargin * 2;
+      const gridHeight = doc.page.height - pageMargin * 2 - headerHeight - footerHeight;
+      const headerRowHeight = 20;
+      const dayGridHeight = gridHeight - headerRowHeight;
+      const colWidth = gridWidth / 7;
+      const rowHeight = dayGridHeight / 6;
 
-      for (let day = 1; day <= daysInMonth; day++) {
-        const dayEvents = monthEvents[day] || [];
-        const date = new Date(currentYear, month, day);
-        const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
+      doc.rect(0, 0, doc.page.width, doc.page.height).fill('white');
+      doc.rect(pageMargin, pageMargin, gridWidth, headerHeight).fill(palette.primary);
+      doc.fillColor('white');
+      doc.fontSize(24).font(fontBold).text(`${months[month]} ${currentYear}`, pageMargin, pageMargin + 16, {
+        width: gridWidth,
+        align: 'center'
+      });
 
-        if (dayEvents.length === 0) {
-          // No tide data for this day
-          doc.text(String(day), tableLeft, currentY, { width: colWidths[0] });
-          doc.text(dayName, tableLeft + colWidths[0], currentY, { width: colWidths[1] });
-          doc.text('No data', tableLeft + colWidths[0] + colWidths[1], currentY, { width: colWidths[2] });
-          currentY += 15;
-        } else {
-          // Sort events by time
-          dayEvents.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime));
+      doc.fontSize(10).font(fontRegular).text(
+        `${req.user.home_port_name} • Tide Calendar`,
+        pageMargin,
+        pageMargin + 40,
+        { width: gridWidth, align: 'center' }
+      );
 
-          // Print each tide event for the day
-          dayEvents.forEach((event, idx) => {
-            const eventDate = new Date(event.DateTime);
-            const timeStr = eventDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-            const typeSymbol = event.EventType === 'HighWater' ? '▲ HW' : '▼ LW';
-            const heightStr = event.Height.toFixed(2);
+      doc.fillColor(palette.text);
+      doc.rect(gridLeft, gridTop, gridWidth, gridHeight).stroke(palette.border);
 
-            // Only show date and day on first event of the day
-            if (idx === 0) {
-              doc.text(String(day), tableLeft, currentY, { width: colWidths[0] });
-              doc.text(dayName, tableLeft + colWidths[0], currentY, { width: colWidths[1] });
-            }
-
-            doc.text(`${timeStr} ${typeSymbol}`, tableLeft + colWidths[0] + colWidths[1], currentY, { width: colWidths[2] });
-            doc.text(heightStr, tableLeft + colWidths[0] + colWidths[1] + colWidths[2], currentY, { width: colWidths[3] });
-
-            currentY += 15;
-
-            // Check if we need a new page
-            if (currentY > 700) {
-              doc.addPage();
-              doc.fontSize(16).font('Helvetica-Bold').text(`${months[month]} ${currentYear} (continued)`, { align: 'center' });
-              doc.moveDown();
-              currentY = doc.y;
-            }
-          });
-        }
-
-        // Add small spacing between days
-        currentY += 3;
+      // Weekday header
+      for (let col = 0; col < 7; col++) {
+        const x = gridLeft + col * colWidth;
+        doc.rect(x, gridTop, colWidth, headerRowHeight).fill(palette.headerBg);
+        doc.fillColor(palette.muted).font(fontBold).fontSize(10).text(weekdayNames[col], x, gridTop + 5, {
+          width: colWidth,
+          align: 'center'
+        });
+        doc.fillColor(palette.text);
       }
 
-      // Footer with page number
-      doc.fontSize(8).font('Helvetica').text(
-        `Page ${month + 2} of 13`,
-        50,
-        doc.page.height - 50,
-        { align: 'center' }
+      // Weekend background
+      const maxCells = 42;
+      for (let cell = 0; cell < maxCells; cell++) {
+        const row = Math.floor(cell / 7);
+        const col = cell % 7;
+        const cellX = gridLeft + col * colWidth;
+        const cellY = gridTop + headerRowHeight + row * rowHeight;
+
+        if (col === 0 || col === 6) {
+          doc.rect(cellX, cellY, colWidth, rowHeight).fill(palette.weekendBg);
+        }
+      }
+
+      // Grid lines
+      doc.strokeColor(palette.border);
+      for (let col = 0; col <= 7; col++) {
+        const x = gridLeft + col * colWidth;
+        doc.moveTo(x, gridTop).lineTo(x, gridTop + gridHeight).stroke();
+      }
+      for (let row = 0; row <= 6; row++) {
+        const y = gridTop + headerRowHeight + row * rowHeight;
+        doc.moveTo(gridLeft, y).lineTo(gridLeft + gridWidth, y).stroke();
+      }
+
+      // Calendar cells
+      for (let cell = 0; cell < maxCells; cell++) {
+        const row = Math.floor(cell / 7);
+        const col = cell % 7;
+        const dayNumber = cell - firstDay + 1;
+        const cellX = gridLeft + col * colWidth;
+        const cellY = gridTop + headerRowHeight + row * rowHeight;
+
+        if (dayNumber < 1 || dayNumber > daysInMonth) {
+          continue;
+        }
+
+        doc.fillColor(palette.text).font(fontBold).fontSize(11).text(String(dayNumber), cellX + 6, cellY + 4, {
+          width: colWidth - 12,
+          align: 'left'
+        });
+
+        const dayEvents = monthEvents[dayNumber] || [];
+        if (dayEvents.length > 0) {
+          const eventsToShow = [...dayEvents]
+            .sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime))
+            .slice(0, 3);
+          const eventsText = eventsToShow.map(event => {
+            const eventDate = new Date(event.DateTime);
+            const timeStr = eventDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            const typeSymbol = event.EventType === 'HighWater' ? '▲' : '▼';
+            return `${timeStr} ${typeSymbol} ${event.Height.toFixed(1)}m`;
+          });
+
+          doc.font(fontRegular).fontSize(8).fillColor(palette.text).text(
+            eventsText.join('\n'),
+            cellX + 6,
+            cellY + 20,
+            { width: colWidth - 12, height: rowHeight - 24 }
+          );
+        }
+      }
+
+      doc.fillColor(palette.muted).font(fontRegular).fontSize(9).text(
+        '▲ High Water  •  ▼ Low Water',
+        pageMargin,
+        doc.page.height - pageMargin - 12,
+        { width: gridWidth, align: 'left' }
       );
+
+      doc.fillColor(palette.muted).font(fontRegular).fontSize(9).text(
+        `Page ${month + 2} of 13`,
+        pageMargin,
+        doc.page.height - pageMargin - 12,
+        { width: gridWidth, align: 'right' }
+      );
+    };
+
+    for (let month = 0; month < 12; month++) {
+      doc.addPage();
+      drawMonthPage(month);
     }
 
     // Finalize the PDF
