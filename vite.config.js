@@ -13,6 +13,11 @@ export default defineConfig({
     modulePreload: false,
     // Optimize build for Railway's memory constraints
     chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        inlineDynamicImports: true
+      }
+    },
     // Use esbuild minification (faster and lower memory)
     minify: 'esbuild',
     target: 'es2015'
