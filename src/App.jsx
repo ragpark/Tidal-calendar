@@ -337,7 +337,6 @@ export default function TidalCalendarApp() {
   useEffect(() => { if (selectedStation) fetchTidalEvents(selectedStation); }, [selectedStation, fetchTidalEvents]);
   useEffect(() => { loadSession(); }, [loadSession]);
   useEffect(() => { loadAlerts(); }, [loadAlerts]);
-  useEffect(() => { loadMaintenanceLogs(); }, [loadMaintenanceLogs]);
   useEffect(() => {
     if (isEmbed || typeof window === 'undefined' || stations.length === 0) return;
     if (user?.home_port_id) {
@@ -509,6 +508,8 @@ export default function TidalCalendarApp() {
       setMaintenanceLogs([]);
     }
   }, [apiRequest, user]);
+
+  useEffect(() => { loadMaintenanceLogs(); }, [loadMaintenanceLogs]);
 
   const createMaintenanceLog = async (payload) => {
     if (!user) {
