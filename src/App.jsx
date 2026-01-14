@@ -517,15 +517,18 @@ export default function TidalCalendarApp() {
   useEffect(() => { loadMaintenanceLogs(); }, [loadMaintenanceLogs]);
 
   const weatherStation = useMemo(() => {
-    if (homePort) {
-      const match = stations.find(station => station.id === homePort);
+    const targetId = homePort?.toString();
+    if (targetId) {
+      const match = stations.find(station => `${station.id}` === targetId);
       if (match) return match;
     }
     return selectedStation;
   }, [homePort, selectedStation, stations]);
 
   useEffect(() => {
-    if (!scrubModal || !selectedDay || !weatherStation?.lat || !weatherStation?.lon) {
+    const lat = Number(weatherStation?.lat);
+    const lon = Number(weatherStation?.lon);
+    if (!scrubModal || !selectedDay || !Number.isFinite(lat) || !Number.isFinite(lon)) {
       setWeatherForecast(null);
       setWeatherError('');
       return;
@@ -539,7 +542,7 @@ export default function TidalCalendarApp() {
       setWeatherError('');
       try {
         const response = await fetch(
-          `${WEATHER_API_BASE_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${weatherStation.lat},${weatherStation.lon}&days=7&aqi=no&alerts=no`,
+          `${WEATHER_API_BASE_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${lat},${lon}&days=7&aqi=no&alerts=no`,
           { signal: controller.signal }
         );
         if (!response.ok) throw new Error('Failed to fetch weather forecast.');
