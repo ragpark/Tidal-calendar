@@ -516,8 +516,16 @@ export default function TidalCalendarApp() {
 
   useEffect(() => { loadMaintenanceLogs(); }, [loadMaintenanceLogs]);
 
+  const weatherStation = useMemo(() => {
+    if (homePort) {
+      const match = stations.find(station => station.id === homePort);
+      if (match) return match;
+    }
+    return selectedStation;
+  }, [homePort, selectedStation, stations]);
+
   useEffect(() => {
-    if (!scrubModal || !selectedDay || !selectedStation?.lat || !selectedStation?.lon) {
+    if (!scrubModal || !selectedDay || !weatherStation?.lat || !weatherStation?.lon) {
       setWeatherForecast(null);
       setWeatherError('');
       return;
@@ -531,7 +539,7 @@ export default function TidalCalendarApp() {
       setWeatherError('');
       try {
         const response = await fetch(
-          `${WEATHER_API_BASE_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${selectedStation.lat},${selectedStation.lon}&days=7&aqi=no&alerts=no`,
+          `${WEATHER_API_BASE_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${weatherStation.lat},${weatherStation.lon}&days=7&aqi=no&alerts=no`,
           { signal: controller.signal }
         );
         if (!response.ok) throw new Error('Failed to fetch weather forecast.');
@@ -565,7 +573,7 @@ export default function TidalCalendarApp() {
     fetchWeather();
 
     return () => controller.abort();
-  }, [scrubModal, selectedDay, selectedStation]);
+  }, [scrubModal, selectedDay, weatherStation]);
 
   const createMaintenanceLog = async (payload) => {
     if (!user) {
@@ -1668,7 +1676,7 @@ export default function TidalCalendarApp() {
                               <div>
                                 <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{weatherForecast.day.condition?.text || 'Forecast'}</div>
                                 <div style={{ fontSize: '12px', color: '#475569' }}>
-                                  {weatherForecast.location?.name || selectedStation.name}{weatherForecast.location?.region ? `, ${weatherForecast.location.region}` : ''}
+                                  {weatherForecast.location?.name || weatherStation?.name}{weatherForecast.location?.region ? `, ${weatherForecast.location.region}` : ''}
                                 </div>
                               </div>
                             </div>
