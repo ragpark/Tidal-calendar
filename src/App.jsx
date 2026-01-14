@@ -3,6 +3,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 // UK Admiralty Tidal API Configuration
 const API_BASE_URL = '/api';
 const DEFAULT_API_KEY = 'baec423358314e4e8f527980f959295d';
+const WEATHER_API_BASE_URL = 'https://api.weatherapi.com/v1';
+const WEATHER_API_KEY = '34c6cb97a9cb4f0c89e85256261401';
 const LOCAL_HOME_PORT_KEY = 'tidal-calendar-home-port';
 
 const parseEmbedConfig = () => {
@@ -218,6 +220,9 @@ export default function TidalCalendarApp() {
     highWaterEnd: '09:00',
   });
   const [scrubModal, setScrubModal] = useState(null);
+  const [weatherForecast, setWeatherForecast] = useState(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState('');
   const role = user?.role || 'user';
   const subscriptionEndLabel = subscriptionEnd && !Number.isNaN(new Date(subscriptionEnd).getTime())
     ? new Date(subscriptionEnd).toLocaleDateString('en-GB')
@@ -511,6 +516,68 @@ export default function TidalCalendarApp() {
 
   useEffect(() => { loadMaintenanceLogs(); }, [loadMaintenanceLogs]);
 
+  const weatherStation = useMemo(() => {
+    const targetId = homePort?.toString();
+    if (targetId) {
+      const match = stations.find(station => `${station.id}` === targetId);
+      if (match) return match;
+    }
+    return selectedStation;
+  }, [homePort, selectedStation, stations]);
+
+  useEffect(() => {
+    const lat = Number(weatherStation?.lat);
+    const lon = Number(weatherStation?.lon);
+    if (!scrubModal || !selectedDay || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+      setWeatherForecast(null);
+      setWeatherError('');
+      return;
+    }
+
+    const controller = new AbortController();
+    const dateKey = selectedDay.toISOString().split('T')[0];
+
+    const fetchWeather = async () => {
+      setWeatherLoading(true);
+      setWeatherError('');
+      try {
+        const response = await fetch(
+          `${WEATHER_API_BASE_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${lat},${lon}&days=7&aqi=no&alerts=no`,
+          { signal: controller.signal }
+        );
+        if (!response.ok) throw new Error('Failed to fetch weather forecast.');
+        const data = await response.json();
+        const forecastDay = data?.forecast?.forecastday?.find(day => day.date === dateKey);
+
+        if (!forecastDay) {
+          setWeatherForecast({
+            date: dateKey,
+            location: data?.location,
+            missing: true,
+          });
+          return;
+        }
+
+        setWeatherForecast({
+          date: dateKey,
+          location: data?.location,
+          day: forecastDay.day,
+          astro: forecastDay.astro,
+        });
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        setWeatherError(err.message || 'Unable to load weather forecast.');
+        setWeatherForecast(null);
+      } finally {
+        setWeatherLoading(false);
+      }
+    };
+
+    fetchWeather();
+
+    return () => controller.abort();
+  }, [scrubModal, selectedDay, weatherStation]);
+
   const createMaintenanceLog = async (payload) => {
     if (!user) {
       setMaintenanceError('Sign in to save maintenance logs.');
@@ -781,6 +848,7 @@ export default function TidalCalendarApp() {
   const selectedDayEvents = selectedDay ? eventsByDay[selectedDay.toDateString()] || [] : [];
   const selectedDayHasUkhoApi = selectedDayEvents.some(e => e.Source === 'UKHO');
   const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
+  const weatherIconUrl = weatherForecast?.day?.condition?.icon ? `https:${weatherForecast.day.condition.icon}` : '';
   const handleDaySelect = useCallback((date, allowSelection = true) => {
     if (!allowSelection) return;
     setSelectedDay(date);
@@ -1588,6 +1656,53 @@ export default function TidalCalendarApp() {
                       <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
                         <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '4px' }}>Tidal Range</div>
                         <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>{scrubModal.data.tidalRange.toFixed(1)}m</div>
+                      </div>
+                      <div style={{ gridColumn: '1 / -1', background: '#f8fafc', borderRadius: '12px', padding: '12px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#475569', marginBottom: '8px' }}>Weather Forecast</div>
+                        {weatherLoading && (
+                          <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#475569' }}>Loading forecast...</div>
+                        )}
+                        {!weatherLoading && weatherError && (
+                          <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#b91c1c' }}>{weatherError}</div>
+                        )}
+                        {!weatherLoading && !weatherError && weatherForecast?.missing && (
+                          <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#475569' }}>
+                            Forecast unavailable for {weatherForecast.date}. WeatherAPI provides up to a 7-day outlook.
+                          </div>
+                        )}
+                        {!weatherLoading && !weatherError && weatherForecast?.day && (
+                          <div style={{ display: 'grid', gap: '10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              {weatherIconUrl && (
+                                <img src={weatherIconUrl} alt={weatherForecast.day.condition?.text || 'Forecast'} style={{ width: '36px', height: '36px' }} />
+                              )}
+                              <div>
+                                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{weatherForecast.day.condition?.text || 'Forecast'}</div>
+                                <div style={{ fontSize: '12px', color: '#475569' }}>
+                                  {weatherForecast.location?.name || weatherStation?.name}{weatherForecast.location?.region ? `, ${weatherForecast.location.region}` : ''}
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
+                              <div>
+                                <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#64748b' }}>High / Low</div>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{weatherForecast.day.maxtemp_c?.toFixed(1)}°C / {weatherForecast.day.mintemp_c?.toFixed(1)}°C</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#64748b' }}>Wind</div>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{weatherForecast.day.maxwind_kph?.toFixed(0)} kph</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#64748b' }}>Rain Chance</div>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{weatherForecast.day.daily_chance_of_rain ?? 0}%</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#64748b' }}>Precip</div>
+                                <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{weatherForecast.day.totalprecip_mm?.toFixed(1)} mm</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </>
                   ) : (
