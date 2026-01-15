@@ -618,6 +618,40 @@ export default function TidalCalendarApp() {
     setMaintenanceLogs(prev => prev.filter(m => m.id !== id));
   };
 
+  const handleExportMaintenanceLogs = () => {
+    if (!user) {
+      setMaintenanceError('Sign in to export maintenance logs.');
+      return;
+    }
+    if (!maintenanceLogs.length) {
+      setMaintenanceError('No maintenance logs to export yet.');
+      return;
+    }
+    setMaintenanceError('');
+    const headers = ['Date', 'Activity Type', 'Title', 'Notes', 'Completed'];
+    const escapeValue = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = maintenanceLogs.map(log => ([
+      log.date ? new Date(log.date).toISOString().split('T')[0] : '',
+      log.activityType || '',
+      log.title || '',
+      log.notes || '',
+      log.completed ? 'Yes' : 'No',
+    ]));
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(escapeValue).join(','))
+      .join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStamp = new Date().toISOString().split('T')[0];
+    link.href = url;
+    link.download = `maintenance-logs-${dateStamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(link);
+  };
+
   const handleMaintenanceSubmit = async (e) => {
     e.preventDefault();
     if (!user) { setMaintenanceError('Sign in to save maintenance logs.'); return; }
@@ -1278,10 +1312,19 @@ export default function TidalCalendarApp() {
                         <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Maintenance Logs</div>
                         <div style={{ fontSize: '11px', color: '#475569' }}>Track scrubbing days and boat maintenance.</div>
                       </div>
-                      <button onClick={() => openMaintenanceModal()} style={{ padding: '8px 12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
-                        Add Log
-                      </button>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={handleExportMaintenanceLogs}
+                          style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}
+                        >
+                          Export CSV
+                        </button>
+                        <button onClick={() => openMaintenanceModal()} style={{ padding: '8px 12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>
+                          Add Log
+                        </button>
+                      </div>
                     </div>
+                    {maintenanceError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{maintenanceError}</div>}
                     <div style={{ display: 'grid', gap: '8px' }}>
                       {maintenanceLogs.length === 0 && <div style={{ fontSize: '12px', color: '#475569' }}>No maintenance logs yet. Create your first entry.</div>}
                       {maintenanceLogs.map(log => (
