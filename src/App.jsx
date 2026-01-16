@@ -1049,10 +1049,10 @@ export default function TidalCalendarApp() {
           .calendar-nav { flex-direction: column; gap: 10px; }
           .calendar-nav button { width: 100%; }
           .scrub-card { flex-direction: column; align-items: flex-start; gap: 10px !important; }
-          .profile-section { padding: 18px; }
-          .profile-card { padding: 14px; box-shadow: 0 4px 12px rgba(15,23,42,0.08); }
-          .profile-card-nested { padding: 12px; box-shadow: none; background: #f8fafc; border-color: #e2e8f0; }
-          .profile-card-nested + .profile-card-nested { margin-top: 6px; }
+          .profile-section { padding: 18px; grid-template-columns: 1fr; gap: 12px; }
+          .profile-card { padding: 14px; gap: 10px; background: #ffffff; box-shadow: 0 2px 10px rgba(15,23,42,0.06); }
+          .profile-card-nested { padding: 12px; box-shadow: none; background: #ffffff; border-color: #e2e8f0; border-left: 3px solid #bae6fd; }
+          .profile-card-nested + .profile-card-nested { margin-top: 8px; }
         }
         ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); } ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 4px; }
       `}</style>
