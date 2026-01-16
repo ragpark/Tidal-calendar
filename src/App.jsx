@@ -1629,7 +1629,7 @@ export default function TidalCalendarApp() {
                   {scrubModal.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
                 </div>
                 <div style={{ fontSize: '12px', color: '#475569' }}>
-                  {getMoonPhaseName(scrubModal.date).icon} {getMoonPhaseName(scrubModal.date).name} • {selectedDayHasUkhoApi ? (hasUkhoAccess ? 'UKHO data (subscriber)' : 'Admiralty preview (7 days)') : (selectedDayHasPredicted ? 'Predicted' : 'API Data')}
+                  {getMoonPhaseName(scrubModal.date).icon} {getMoonPhaseName(scrubModal.date).name} • {selectedDayHasUkhoApi ? (hasUkhoAccess ? 'UKHO data (subscriber)' : 'Admiralty Data (7 days)') : (selectedDayHasPredicted ? 'Predicted' : 'API Data')}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
