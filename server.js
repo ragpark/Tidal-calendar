@@ -109,6 +109,7 @@ const ensureSchema = async () => {
         subscription_period_end TIMESTAMPTZ,
         stripe_customer_id TEXT,
         stripe_last_session_id TEXT,
+        maintenance_reminders_enabled BOOLEAN NOT NULL DEFAULT false,
         home_port_id TEXT,
         home_port_name TEXT,
         home_club_id UUID,
@@ -160,6 +161,7 @@ const ensureSchema = async () => {
         title TEXT NOT NULL,
         notes TEXT,
         completed BOOLEAN DEFAULT false,
+        reminder_sent_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT now()
       );
     `);
@@ -174,6 +176,8 @@ const ensureSchema = async () => {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_period_end TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_last_session_id TEXT;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS maintenance_reminders_enabled BOOLEAN NOT NULL DEFAULT false;`);
+  await pool.query(`ALTER TABLE maintenance_logs ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;`);
 
   const { rows } = await pool.query(`SELECT id FROM clubs LIMIT 1`);
   if (rows.length === 0) {
@@ -204,6 +208,7 @@ const initializeDatabase = async () => {
     await ensureSchema();
     dbReady = true;
     console.log('Database initialization complete');
+    scheduleMaintenanceReminderChecks();
   } catch (err) {
     dbReady = false;
     console.error('Database initialization failed:', err.message);
@@ -222,7 +227,7 @@ const getUserFromSession = async (req) => {
   const token = req.cookies?.[SESSION_COOKIE];
   if (!token) return null;
   const { rows } = await pool.query(
-    `SELECT u.id, u.email, u.role, u.subscription_status, u.subscription_period_end, u.stripe_customer_id, u.stripe_last_session_id, u.home_port_id, u.home_port_name, u.home_club_id, u.home_club_name
+    `SELECT u.id, u.email, u.role, u.subscription_status, u.subscription_period_end, u.stripe_customer_id, u.stripe_last_session_id, u.maintenance_reminders_enabled, u.home_port_id, u.home_port_name, u.home_club_id, u.home_club_name
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token = $1 AND s.expires_at > now()`,
@@ -318,7 +323,8 @@ app.post('/api/auth/signup', async (req, res) => {
   const hash = await bcrypt.hash(password, 10);
   try {
     const { rows } = await pool.query(
-      `INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, home_port_id, home_port_name, home_club_id, home_club_name`,
+      `INSERT INTO users (email, password_hash) VALUES ($1, $2)
+       RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
       [email.toLowerCase(), hash],
     );
     const user = rows[0];
@@ -337,7 +343,8 @@ app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   const { rows } = await pool.query(
-    `SELECT id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, password_hash, home_port_id, home_port_name, home_club_id, home_club_name FROM users WHERE email = $1`,
+    `SELECT id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, password_hash, home_port_id, home_port_name, home_club_id, home_club_name
+     FROM users WHERE email = $1`,
     [email.toLowerCase()],
   );
   const user = rows[0];
@@ -355,6 +362,7 @@ app.post('/api/auth/login', async (req, res) => {
     subscription_period_end: user.subscription_period_end,
     stripe_customer_id: user.stripe_customer_id,
     stripe_last_session_id: user.stripe_last_session_id,
+    maintenance_reminders_enabled: user.maintenance_reminders_enabled,
     home_port_id: user.home_port_id,
     home_port_name: user.home_port_name,
     home_club_id: user.home_club_id,
@@ -383,10 +391,17 @@ app.get('/api/profile', requireAuth, async (req, res) => {
 });
 
 app.put('/api/profile', requireAuth, async (req, res) => {
-  const { homePortId, homePortName, homeClubId, homeClubName } = req.body || {};
+  const { homePortId, homePortName, homeClubId, homeClubName, maintenanceRemindersEnabled } = req.body || {};
   const { rows } = await pool.query(
-    `UPDATE users SET home_port_id = $1, home_port_name = $2, home_club_id = $3, home_club_name = $4 WHERE id = $5 RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, home_port_id, home_port_name, home_club_id, home_club_name`,
-    [homePortId || null, homePortName || null, homeClubId || null, homeClubName || null, req.user.id],
+    `UPDATE users
+     SET home_port_id = $1,
+         home_port_name = $2,
+         home_club_id = $3,
+         home_club_name = $4,
+         maintenance_reminders_enabled = COALESCE($5, maintenance_reminders_enabled)
+     WHERE id = $6
+     RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
+    [homePortId || null, homePortName || null, homeClubId || null, homeClubName || null, maintenanceRemindersEnabled, req.user.id],
   );
   res.json(rows[0]);
 });
@@ -400,7 +415,7 @@ app.post('/api/profile/role', requireAuth, async (req, res) => {
          subscription_status = CASE WHEN $1 = 'subscriber' THEN 'active' ELSE subscription_status END,
          subscription_period_end = CASE WHEN $1 = 'subscriber' AND subscription_period_end IS NULL THEN now() + interval '1 year' ELSE subscription_period_end END
      WHERE id = $2
-     RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, home_port_id, home_port_name, home_club_id, home_club_name`,
+     RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
     [role, req.user.id],
   );
   res.json(rows[0]);
@@ -462,7 +477,8 @@ app.put('/api/maintenance-logs/:id', requireAuth, async (req, res) => {
          activity_type = COALESCE($2, activity_type),
          title = COALESCE($3, title),
          notes = $4,
-         completed = COALESCE($5, completed)
+         completed = COALESCE($5, completed),
+         reminder_sent_at = CASE WHEN $1 IS NOT NULL THEN NULL ELSE reminder_sent_at END
      WHERE id = $6 AND user_id = $7
      RETURNING id, date, activity_type as "activityType", title, notes, completed`,
     [date ? new Date(date) : null, activityType, title, notes, completed, req.params.id, req.user.id],
@@ -475,6 +491,76 @@ app.delete('/api/maintenance-logs/:id', requireAuth, async (req, res) => {
   await pool.query(`DELETE FROM maintenance_logs WHERE id = $1 AND user_id = $2`, [req.params.id, req.user.id]);
   res.json({ ok: true });
 });
+
+const formatMaintenanceDate = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+  return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const buildMaintenanceReminderEmail = ({ log, user }) => {
+  const dueLabel = formatMaintenanceDate(log.date);
+  const subject = `Maintenance reminder: ${log.title} due ${dueLabel}`;
+  const bodyLines = [
+    `Hi ${user.email},`,
+    '',
+    'This is a reminder that your maintenance task is due tomorrow:',
+    `• Task: ${log.title}`,
+    `• Due date: ${dueLabel}`,
+    `• Activity type: ${log.activityType || 'planned'}`,
+    `• Completed: ${log.completed ? 'Yes' : 'No'}`,
+  ];
+  if (log.notes) {
+    bodyLines.push(`• Notes: ${log.notes}`);
+  }
+  bodyLines.push('', 'You can edit or delete this task in Tidal Calendar before it is due.');
+  return { subject, body: bodyLines.join('\n') };
+};
+
+const sendMaintenanceReminderEmail = async ({ to, subject, body }) => {
+  console.log('Maintenance reminder email (placeholder):', { to, subject, body });
+  return true;
+};
+
+const sendMaintenanceRemindersForTomorrow = async () => {
+  if (!dbReady) return;
+  const { rows } = await pool.query(
+    `SELECT m.id, m.date, m.activity_type as "activityType", m.title, m.notes, m.completed, u.email
+     FROM maintenance_logs m
+     JOIN users u ON u.id = m.user_id
+     WHERE m.date = current_date + interval '1 day'
+       AND m.completed = false
+       AND m.reminder_sent_at IS NULL
+       AND u.maintenance_reminders_enabled = true`,
+  );
+
+  for (const log of rows) {
+    const payload = buildMaintenanceReminderEmail({ log, user: { email: log.email } });
+    try {
+      const sent = await sendMaintenanceReminderEmail({ to: log.email, ...payload });
+      if (sent) {
+        await pool.query(`UPDATE maintenance_logs SET reminder_sent_at = now() WHERE id = $1`, [log.id]);
+      }
+    } catch (err) {
+      console.error(`Failed to send maintenance reminder for log ${log.id}:`, err);
+    }
+  }
+};
+
+let maintenanceReminderTimer = null;
+const scheduleMaintenanceReminderChecks = () => {
+  if (maintenanceReminderTimer) return;
+  const run = async () => {
+    if (!dbReady) return;
+    try {
+      await sendMaintenanceRemindersForTomorrow();
+    } catch (err) {
+      console.error('Failed to run maintenance reminder checks:', err);
+    }
+  };
+  run();
+  maintenanceReminderTimer = setInterval(run, 60 * 60 * 1000);
+};
 
 const retrieveStripeSession = async (sessionId) => {
   const params = new URLSearchParams();
@@ -519,7 +605,7 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
            stripe_customer_id = COALESCE($2, stripe_customer_id),
            stripe_last_session_id = $3
        WHERE id = $4
-       RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, home_port_id, home_port_name, home_club_id, home_club_name`,
+       RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
       [periodEndIso, session.customer || null, session.id, req.user.id],
     );
     res.status(200).json({ ok: true, user: rows[0] });
@@ -919,6 +1005,10 @@ app.get('*', async (req, res) => {
 const shutdown = async (signal) => {
   console.log(`\n${signal} received, shutting down gracefully...`);
   try {
+    if (maintenanceReminderTimer) {
+      clearInterval(maintenanceReminderTimer);
+      maintenanceReminderTimer = null;
+    }
     await pool.end();
     console.log('Database connections closed');
     process.exit(0);
