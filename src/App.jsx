@@ -1049,6 +1049,10 @@ export default function TidalCalendarApp() {
           .calendar-nav { flex-direction: column; gap: 10px; }
           .calendar-nav button { width: 100%; }
           .scrub-card { flex-direction: column; align-items: flex-start; gap: 10px !important; }
+          .profile-section { padding: 18px; }
+          .profile-card { padding: 14px; box-shadow: 0 4px 12px rgba(15,23,42,0.08); }
+          .profile-card-nested { padding: 12px; box-shadow: none; background: #f8fafc; border-color: #e2e8f0; }
+          .profile-card-nested + .profile-card-nested { margin-top: 6px; }
         }
         ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); } ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 4px; }
       `}</style>
@@ -1145,9 +1149,9 @@ export default function TidalCalendarApp() {
         )}
 
         {currentPage === 'profile' && (
-          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
+          <section className="profile-section" style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
             <div style={{ display: 'grid', gap: '16px' }}>
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)', display: 'grid', gap: '12px' }}>
+              <div className="profile-card" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)', display: 'grid', gap: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Profile</h3>
                   <div style={{ display: 'flex', gap: '6px' }}>
@@ -1178,8 +1182,8 @@ export default function TidalCalendarApp() {
               </div>
 
               {user && (
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)', display: 'grid', gap: '12px' }}>
-                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 14px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)', display: 'grid', gap: '10px' }}>
+                <div className="profile-card" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)', display: 'grid', gap: '12px' }}>
+                  <div className="profile-card-nested" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 14px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)', display: 'grid', gap: '10px' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Home Port (default after sign-in)</div>
                     <select value={homePort} onChange={(e) => setHomePort(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }}>
                       <option value="">Select a station</option>
@@ -1195,7 +1199,7 @@ export default function TidalCalendarApp() {
                     <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{subscriptionEndLabel}</strong></div>
                   </div>
 
-                  <div style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                  <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
                     <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • extended Admiralty API access</div>
                     <div style={{ fontSize: '11px', color: '#475569' }}>Enable test checkout via Stripe Buy Button for extended API coverage. Use Stripe test cards during checkout—successful payment will activate your subscriber role automatically.</div>
@@ -1217,7 +1221,7 @@ export default function TidalCalendarApp() {
                       </button>
                     </div>
                   </div>
-                  <div style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                  <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                       <div>
                         <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Maintenance Logs</div>
