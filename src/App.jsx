@@ -652,6 +652,24 @@ export default function TidalCalendarApp() {
     document.body.removeChild(link);
   };
 
+  const handleMaintenanceReminderToggle = async () => {
+    if (!user) {
+      setMaintenanceError('Sign in to enable email reminders.');
+      return;
+    }
+    setMaintenanceError('');
+    const nextValue = !user.maintenance_reminders_enabled;
+    try {
+      const updated = await apiRequest('/api/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ maintenanceRemindersEnabled: nextValue }),
+      });
+      setUser(updated);
+    } catch (err) {
+      setMaintenanceError(err.message);
+    }
+  };
+
   const handleMaintenanceSubmit = async (e) => {
     e.preventDefault();
     if (!user) { setMaintenanceError('Sign in to save maintenance logs.'); return; }
@@ -1323,6 +1341,19 @@ export default function TidalCalendarApp() {
                           Add Log
                         </button>
                       </div>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#0f172a', cursor: user ? 'pointer' : 'not-allowed' }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(user?.maintenance_reminders_enabled)}
+                          onChange={handleMaintenanceReminderToggle}
+                          disabled={!user}
+                          style={{ accentColor: '#0ea5e9' }}
+                        />
+                        Email reminders (sent the day before).
+                      </label>
+                      {!user && <span style={{ fontSize: '11px', color: '#94a3b8' }}>Sign in to enable reminders.</span>}
                     </div>
                     {maintenanceError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{maintenanceError}</div>}
                     <div style={{ display: 'grid', gap: '8px' }}>
