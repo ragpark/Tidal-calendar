@@ -10,6 +10,7 @@ import { createReadStream, existsSync } from 'fs';
 import { stat } from 'fs/promises';
 import { Readable } from 'stream';
 import PDFDocument from 'pdfkit';
+import tls from 'tls';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +21,10 @@ const API_KEY = process.env.ADMIRALTY_API_KEY || 'baec423358314e4e8f527980f95929
 const SESSION_COOKIE = 'tc_session';
 const SESSION_TTL_HOURS = 24;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
+const SMTP_HOST = process.env.SMTP_HOST || 'mail.boatscrubcalendar.com';
+const SMTP_PORT = Number(process.env.SMTP_PORT) || 465;
+const SMTP_USER = process.env.SMTP_USER || 'alerts@boatscrubcalendar.com';
+const SMTP_KEY = process.env.SMTP_KEY || '';
 
 // Warn if DATABASE_URL missing but don't exit - let connection retry handle it
 if (!process.env.DATABASE_URL) {
@@ -485,9 +490,94 @@ const buildMaintenanceReminderEmail = ({ log, user }) => {
   return { subject, body: bodyLines.join('\n') };
 };
 
+const sendSmtpCommand = (socket, command) => new Promise((resolve, reject) => {
+  const onData = (data) => {
+    const message = data.toString('utf8');
+    const lines = message.split(/\r?\n/).filter(Boolean);
+    const lastLine = lines[lines.length - 1] || '';
+    const code = Number.parseInt(lastLine.slice(0, 3), 10);
+    if (Number.isNaN(code)) {
+      socket.off('data', onData);
+      reject(new Error(`Unexpected SMTP response: ${message}`));
+      return;
+    }
+    if (lastLine[3] === '-') return;
+    socket.off('data', onData);
+    resolve({ code, message });
+  };
+  socket.on('data', onData);
+  if (command) {
+    socket.write(`${command}\r\n`);
+  }
+});
+
 const sendMaintenanceReminderEmail = async ({ to, subject, body }) => {
-  console.log('Maintenance reminder email (placeholder):', { to, subject, body });
-  return true;
+  if (!SMTP_KEY) {
+    console.warn('SMTP_KEY is not configured; maintenance reminder emails will not be sent.');
+    return false;
+  }
+  if (SMTP_PORT !== 465) {
+    throw new Error(`Unsupported SMTP port ${SMTP_PORT}. Expected port 465.`);
+  }
+  const socket = tls.connect({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    servername: SMTP_HOST,
+    rejectUnauthorized: false,
+  });
+
+  await new Promise((resolve, reject) => {
+    socket.once('secureConnect', resolve);
+    socket.once('error', reject);
+  });
+
+  try {
+    const greeting = await sendSmtpCommand(socket, null);
+    if (greeting.code !== 220) throw new Error(`SMTP greeting failed: ${greeting.message}`);
+
+    const ehlo = await sendSmtpCommand(socket, `EHLO ${SMTP_HOST}`);
+    if (ehlo.code !== 250) throw new Error(`SMTP EHLO failed: ${ehlo.message}`);
+
+    const auth = await sendSmtpCommand(socket, 'AUTH LOGIN');
+    if (auth.code !== 334) throw new Error(`SMTP AUTH LOGIN failed: ${auth.message}`);
+
+    const userRes = await sendSmtpCommand(socket, Buffer.from(SMTP_USER).toString('base64'));
+    if (userRes.code !== 334) throw new Error(`SMTP username rejected: ${userRes.message}`);
+
+    const passRes = await sendSmtpCommand(socket, Buffer.from(SMTP_KEY).toString('base64'));
+    if (passRes.code !== 235) throw new Error(`SMTP password rejected: ${passRes.message}`);
+
+    const mailFrom = await sendSmtpCommand(socket, `MAIL FROM:<${SMTP_USER}>`);
+    if (mailFrom.code !== 250) throw new Error(`SMTP MAIL FROM failed: ${mailFrom.message}`);
+
+    const rcptTo = await sendSmtpCommand(socket, `RCPT TO:<${to}>`);
+    if (rcptTo.code !== 250 && rcptTo.code !== 251) throw new Error(`SMTP RCPT TO failed: ${rcptTo.message}`);
+
+    const dataCmd = await sendSmtpCommand(socket, 'DATA');
+    if (dataCmd.code !== 354) throw new Error(`SMTP DATA failed: ${dataCmd.message}`);
+
+    const message = [
+      `From: ${SMTP_USER}`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      'Content-Type: text/plain; charset="utf-8"',
+      '',
+      body,
+      '',
+      '.',
+    ].join('\r\n');
+    socket.write(`${message}\r\n`);
+
+    const dataRes = await sendSmtpCommand(socket, null);
+    if (dataRes.code !== 250) throw new Error(`SMTP message rejected: ${dataRes.message}`);
+
+    await sendSmtpCommand(socket, 'QUIT');
+    socket.end();
+    return true;
+  } catch (err) {
+    socket.end();
+    throw err;
+  }
 };
 
 const sendMaintenanceRemindersForTomorrow = async () => {
