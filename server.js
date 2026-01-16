@@ -391,14 +391,14 @@ app.put('/api/profile', requireAuth, async (req, res) => {
   const { homePortId, homePortName, homeClubId, homeClubName, maintenanceRemindersEnabled } = req.body || {};
   const { rows } = await pool.query(
     `UPDATE users
-     SET home_port_id = $1,
-         home_port_name = $2,
-         home_club_id = $3,
-         home_club_name = $4,
+     SET home_port_id = COALESCE($1, home_port_id),
+         home_port_name = COALESCE($2, home_port_name),
+         home_club_id = COALESCE($3, home_club_id),
+         home_club_name = COALESCE($4, home_club_name),
          maintenance_reminders_enabled = COALESCE($5, maintenance_reminders_enabled)
      WHERE id = $6
      RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
-    [homePortId || null, homePortName || null, homeClubId || null, homeClubName || null, maintenanceRemindersEnabled, req.user.id],
+    [homePortId ?? null, homePortName ?? null, homeClubId ?? null, homeClubName ?? null, maintenanceRemindersEnabled, req.user.id],
   );
   res.json(rows[0]);
 });
@@ -523,7 +523,6 @@ const sendMaintenanceReminderEmail = async ({ to, subject, body }) => {
     host: SMTP_HOST,
     port: SMTP_PORT,
     servername: SMTP_HOST,
-    rejectUnauthorized: false,
   });
 
   await new Promise((resolve, reject) => {
