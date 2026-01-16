@@ -209,6 +209,7 @@ export default function TidalCalendarApp() {
   const [maintenanceLogs, setMaintenanceLogs] = useState([]);
   const [maintenanceForm, setMaintenanceForm] = useState({ date: '', activityType: 'planned', title: '', notes: '', completed: false });
   const [maintenanceError, setMaintenanceError] = useState('');
+  const [maintenanceReminderStatus, setMaintenanceReminderStatus] = useState(null);
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
   const [editingMaintenance, setEditingMaintenance] = useState(null);
   
@@ -603,6 +604,7 @@ export default function TidalCalendarApp() {
       return;
     }
     setMaintenanceError('');
+    setMaintenanceReminderStatus(null);
     const nextValue = !user.maintenance_reminders_enabled;
     try {
       const updated = await apiRequest('/api/profile', {
@@ -612,6 +614,25 @@ export default function TidalCalendarApp() {
       setUser(updated);
     } catch (err) {
       setMaintenanceError(err.message);
+    }
+  };
+
+  const handleSendTestReminder = async () => {
+    if (!user) {
+      setMaintenanceError('Sign in to send a test reminder.');
+      return;
+    }
+    setMaintenanceError('');
+    setMaintenanceReminderStatus({ tone: 'info', message: 'Sending test reminder...' });
+    try {
+      const data = await apiRequest('/api/maintenance-reminders/test', { method: 'POST' });
+      if (data.sent) {
+        setMaintenanceReminderStatus({ tone: 'success', message: `Test reminder sent to ${data.email}.` });
+      } else {
+        setMaintenanceReminderStatus({ tone: 'warning', message: data.note || 'Test reminder was not sent.' });
+      }
+    } catch (err) {
+      setMaintenanceReminderStatus({ tone: 'error', message: err.message });
     }
   };
 
@@ -1250,9 +1271,41 @@ export default function TidalCalendarApp() {
                         />
                         Email reminders (sent the day before).
                       </label>
-                      {!user && <span style={{ fontSize: '11px', color: '#94a3b8' }}>Sign in to enable reminders.</span>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={handleSendTestReminder}
+                          disabled={!user}
+                          style={{ padding: '6px 10px', background: user ? '#fef3c7' : '#f8fafc', border: '1px solid #f59e0b', borderRadius: '8px', color: '#92400e', cursor: user ? 'pointer' : 'not-allowed', fontWeight: 700, fontSize: '11px' }}
+                        >
+                          Send test reminder
+                        </button>
+                        {!user && <span style={{ fontSize: '11px', color: '#94a3b8' }}>Sign in to enable reminders.</span>}
+                      </div>
                     </div>
                     {maintenanceError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{maintenanceError}</div>}
+                    {maintenanceReminderStatus && (
+                      <div style={{
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: maintenanceReminderStatus.tone === 'success' ? '#166534'
+                          : maintenanceReminderStatus.tone === 'warning' ? '#92400e'
+                            : maintenanceReminderStatus.tone === 'error' ? '#b91c1c'
+                              : '#1d4ed8',
+                        background: maintenanceReminderStatus.tone === 'success' ? '#dcfce7'
+                          : maintenanceReminderStatus.tone === 'warning' ? '#fef3c7'
+                            : maintenanceReminderStatus.tone === 'error' ? '#fee2e2'
+                              : '#dbeafe',
+                        border: '1px solid',
+                        borderColor: maintenanceReminderStatus.tone === 'success' ? '#86efac'
+                          : maintenanceReminderStatus.tone === 'warning' ? '#fcd34d'
+                            : maintenanceReminderStatus.tone === 'error' ? '#fecaca'
+                              : '#93c5fd',
+                        borderRadius: '8px',
+                        padding: '8px 10px',
+                      }}>
+                        {maintenanceReminderStatus.message}
+                      </div>
+                    )}
                     <div style={{ display: 'grid', gap: '8px' }}>
                       {maintenanceLogs.length === 0 && <div style={{ fontSize: '12px', color: '#475569' }}>No maintenance logs yet. Create your first entry.</div>}
                       {maintenanceLogs.map(log => (

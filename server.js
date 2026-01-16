@@ -465,6 +465,43 @@ app.delete('/api/maintenance-logs/:id', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/maintenance-reminders/test', requireAuth, async (req, res) => {
+  if (!dbReady) return res.status(503).json({ error: 'Database not ready' });
+  const { rows } = await pool.query(
+    `SELECT id, date, activity_type as "activityType", title, notes, completed
+     FROM maintenance_logs
+     WHERE user_id = $1
+     ORDER BY date DESC NULLS LAST
+     LIMIT 1`,
+    [req.user.id],
+  );
+  let log = rows[0];
+  if (!log) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    log = {
+      id: 'sample',
+      date: tomorrow,
+      activityType: 'planned',
+      title: 'Sample maintenance task',
+      notes: 'This is a test reminder email.',
+      completed: false,
+    };
+  }
+  const payload = buildMaintenanceReminderEmail({ log, user: { email: req.user.email } });
+  let sent = false;
+  let note = '';
+  try {
+    sent = await sendMaintenanceReminderEmail({ to: req.user.email, ...payload });
+    if (!sent) {
+      note = 'SMTP is not configured, so no email was sent. The preview below shows the message.';
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message, subject: payload.subject, body: payload.body });
+  }
+  return res.json({ sent, email: req.user.email, subject: payload.subject, body: payload.body, note });
+});
+
 const formatMaintenanceDate = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Unknown date';
