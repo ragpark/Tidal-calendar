@@ -145,14 +145,6 @@ const ensureSchema = async () => {
         created_at TIMESTAMPTZ DEFAULT now(),
         UNIQUE(window_id, user_id)
       );
-      CREATE TABLE IF NOT EXISTS alerts (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-        title TEXT NOT NULL,
-        due_at TIMESTAMPTZ,
-        notes TEXT,
-        created_at TIMESTAMPTZ DEFAULT now()
-      );
       CREATE TABLE IF NOT EXISTS maintenance_logs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -419,30 +411,6 @@ app.post('/api/profile/role', requireAuth, async (req, res) => {
     [role, req.user.id],
   );
   res.json(rows[0]);
-});
-
-// Alerts
-app.get('/api/alerts', requireAuth, async (req, res) => {
-  const { rows } = await pool.query(
-    `SELECT id, title, due_at as "dueDate", notes FROM alerts WHERE user_id = $1 ORDER BY due_at NULLS LAST, created_at DESC`,
-    [req.user.id],
-  );
-  res.json(rows);
-});
-
-app.post('/api/alerts', requireAuth, async (req, res) => {
-  const { title, dueDate, notes } = req.body || {};
-  if (!title) return res.status(400).json({ error: 'Title required' });
-  const { rows } = await pool.query(
-    `INSERT INTO alerts (user_id, title, due_at, notes) VALUES ($1, $2, $3, $4) RETURNING id, title, due_at as "dueDate", notes`,
-    [req.user.id, title, dueDate ? new Date(dueDate) : null, notes || null],
-  );
-  res.status(201).json(rows[0]);
-});
-
-app.delete('/api/alerts/:id', requireAuth, async (req, res) => {
-  await pool.query(`DELETE FROM alerts WHERE id = $1 AND user_id = $2`, [req.params.id, req.user.id]);
-  res.json({ ok: true });
 });
 
 // Maintenance logs

@@ -202,9 +202,6 @@ export default function TidalCalendarApp() {
   const [authMode, setAuthMode] = useState('signin');
   const [authForm, setAuthForm] = useState({ email: '', password: '' });
   const [authError, setAuthError] = useState('');
-  const [alerts, setAlerts] = useState([]);
-  const [alertForm, setAlertForm] = useState({ title: '', dueDate: '', notes: '' });
-  const [alertError, setAlertError] = useState('');
   const [subscriptionEnd, setSubscriptionEnd] = useState('');
   const [subscriptionNotice, setSubscriptionNotice] = useState('');
   const SUBSCRIPTION_PRICE_GBP = 5;
@@ -259,16 +256,6 @@ export default function TidalCalendarApp() {
       setUser(null);
     }
   }, [apiRequest]);
-
-  const loadAlerts = useCallback(async () => {
-    if (!user) { setAlerts([]); return; }
-    try {
-      const data = await apiRequest('/api/alerts');
-      setAlerts(data);
-    } catch (err) {
-      console.error(err);
-    }
-  }, [apiRequest, user]);
 
   const fetchStations = useCallback(async () => {
     if (!apiKey) { setStations(DEMO_STATIONS); setIsDemo(true); return; }
@@ -449,7 +436,6 @@ export default function TidalCalendarApp() {
       const account = await apiRequest(endpoint, { method: 'POST', body: JSON.stringify({ email, password }) });
       setUser(account);
       setHomePort(account.home_port_id || '');
-      await loadAlerts();
     } catch (err) {
       setAuthError(err.message);
     }
@@ -459,48 +445,8 @@ export default function TidalCalendarApp() {
   const handleSignOut = async () => {
     await apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => {});
     setUser(null);
-    setAlerts([]);
     setSubscriptionNotice('');
     setSubscriptionEnd('');
-  };
-
-  const createAlert = useCallback(async (payload) => {
-    if (!user) {
-      setAlertError('Sign in to save alerts.');
-      return null;
-    }
-    setAlertError('');
-    try {
-      const created = await apiRequest('/api/alerts', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: payload.title,
-          dueDate: payload.dueDate ? new Date(payload.dueDate).toISOString() : null,
-          notes: payload.notes || '',
-        }),
-      });
-      setAlerts(prev => [...prev, created]);
-      return created;
-    } catch (err) {
-      setAlertError(err.message);
-      throw err;
-    }
-  }, [apiRequest, user]);
-
-  const handleAlertSubmit = async (e) => {
-    e.preventDefault();
-    if (!user) { setAlertError('Sign in to save alerts.'); return; }
-    if (!alertForm.title || !alertForm.dueDate) { setAlertError('Title and due date are required.'); return; }
-    try {
-      await createAlert(alertForm);
-      setAlertForm({ title: '', dueDate: '', notes: '' });
-    } catch { /* handled in createAlert */ }
-  };
-
-  const handleDeleteAlert = async (id) => {
-    if (!user) return;
-    await apiRequest(`/api/alerts/${id}`, { method: 'DELETE' }).catch(() => {});
-    setAlerts(prev => prev.filter(a => a.id !== id));
   };
 
   const loadMaintenanceLogs = useCallback(async () => {
@@ -1147,7 +1093,7 @@ export default function TidalCalendarApp() {
               <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9', margin: 0 }}>About</p>
               <h2 style={{ fontSize: '22px', margin: 0, color: '#0f172a', fontWeight: 600 }}>Why we built the Scrubbing off Calendar</h2>
               <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155', margin: 0 }}>
-                This Calendar keeps boaters informed with a monthly tide view, scrubbing guidance, and alerts for your chosen home port. We blend UKHO data where available with harmonic predictions so you can plan confidently—even when connectivity is limited.
+                This Calendar keeps boaters informed with a monthly tide view, scrubbing guidance, and maintenance reminders for your chosen home port. We blend UKHO data where available with harmonic predictions so you can plan confidently—even when connectivity is limited.
               </p>
             </div>
 
@@ -1176,7 +1122,7 @@ export default function TidalCalendarApp() {
                   emoji: '🌊',
                   points: [
                     'Unlock extended UKHO tidal events across the year.',
-                    'Keep scrubbing guidance and alerts in sync with your subscription.',
+                    'Keep scrubbing guidance and reminders in sync with your subscription.',
                     'Predictions supplement data only when UKHO coverage is unavailable.',
                   ],
                 },
@@ -1272,58 +1218,6 @@ export default function TidalCalendarApp() {
                       </button>
                     </div>
                   </div>
-                  <div style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                      <div>
-                        <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Maintenance alerts</div>
-                        <div style={{ fontSize: '11px', color: '#475569' }}>Plan haul-outs, scrubs, and reminders.</div>
-                      </div>
-                    </div>
-                    <form onSubmit={handleAlertSubmit} style={{ display: 'grid', gap: '8px' }}>
-                      <input
-                        type="text"
-                        placeholder="Alert title (e.g. Scrub hull)"
-                        value={alertForm.title}
-                        onChange={(e) => setAlertForm(f => ({ ...f, title: e.target.value }))}
-                        style={{ padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px' }}
-                      />
-                      <input
-                        type="date"
-                        value={alertForm.dueDate}
-                        onChange={(e) => setAlertForm(f => ({ ...f, dueDate: e.target.value }))}
-                        style={{ padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px' }}
-                      />
-                      <textarea
-                        placeholder="Notes (optional)"
-                        value={alertForm.notes}
-                        onChange={(e) => setAlertForm(f => ({ ...f, notes: e.target.value }))}
-                        rows={2}
-                        style={{ padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontSize: '13px', resize: 'vertical', minHeight: '60px' }}
-                      />
-                      {alertError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{alertError}</div>}
-                      <button type="submit" style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>
-                        Add alert
-                      </button>
-                    </form>
-                    <div style={{ display: 'grid', gap: '8px' }}>
-                      {alerts.length === 0 && <div style={{ fontSize: '12px', color: '#475569' }}>No alerts yet. Create your first reminder.</div>}
-                      {alerts.map(alert => (
-                        <div key={alert.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                          <div style={{ display: 'grid', gap: '4px' }}>
-                            <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{alert.title}</div>
-                            <div style={{ fontSize: '11px', color: '#475569' }}>
-                              Due {alert.dueDate ? new Date(alert.dueDate).toLocaleDateString('en-GB') : '—'}
-                            </div>
-                            {alert.notes && <div style={{ fontSize: '11px', color: '#334155' }}>{alert.notes}</div>}
-                          </div>
-                          <button onClick={() => handleDeleteAlert(alert.id)} style={{ padding: '6px 8px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
                   <div style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                       <div>
