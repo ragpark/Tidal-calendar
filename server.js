@@ -11,6 +11,14 @@ import { stat } from 'fs/promises';
 import { Readable } from 'stream';
 import PDFDocument from 'pdfkit';
 import tls from 'tls';
+import { sendPasswordResetEmail, sendWelcomeEmail } from './src/email/send.js';
+import { createPasswordResetStore } from './src/auth/passwordResetStore.js';
+import {
+  InMemoryPasswordResetStore,
+  buildPasswordResetUrl,
+  requestPasswordReset,
+  resetPasswordWithToken,
+} from './src/auth/passwordResetService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,6 +62,11 @@ const pool = new Pool({
   max: 20,
 });
 
+const passwordResetStore =
+  process.env.USE_IN_MEMORY_RESET_STORE === 'true'
+    ? new InMemoryPasswordResetStore() // TODO: replace with persistent storage outside local dev.
+    : createPasswordResetStore(pool);
+
 // Handle pool errors to prevent crashes
 pool.on('error', (err, client) => {
   console.error('Unexpected database pool error:', err);
@@ -62,6 +75,32 @@ pool.on('error', (err, client) => {
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
+
+const isValidEmail = (value) => typeof value === 'string' && /\S+@\S+\.\S+/.test(value);
+
+const createRateLimiter = ({ windowMs, max, message }) => {
+  const hits = new Map();
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    const entry = hits.get(key) || { count: 0, resetAt: now + windowMs };
+
+    if (now > entry.resetAt) {
+      entry.count = 0;
+      entry.resetAt = now + windowMs;
+    }
+
+    entry.count += 1;
+    hits.set(key, entry);
+
+    if (entry.count > max) {
+      res.status(429).json(message);
+      return;
+    }
+
+    next();
+  };
+};
 
 const publicPath = path.join(__dirname, 'public');
 
@@ -126,6 +165,15 @@ const ensureSchema = async () => {
         user_id UUID REFERENCES users(id) ON DELETE CASCADE,
         token TEXT UNIQUE NOT NULL,
         expires_at TIMESTAMPTZ NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        email TEXT NOT NULL,
+        token_hash TEXT UNIQUE NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        consumed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT now()
       );
       CREATE TABLE IF NOT EXISTS clubs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -251,6 +299,12 @@ const requireAuth = async (req, res, next) => {
   next();
 };
 
+const passwordResetLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many password reset requests, please try again later.' },
+});
+
 // Health check endpoint for container monitoring
 app.get('/health', async (req, res) => {
   try {
@@ -328,6 +382,11 @@ app.post('/api/auth/signup', async (req, res) => {
     const token = randomUUID();
     await pool.query(`INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, now() + interval '${SESSION_TTL_HOURS} hours')`, [user.id, token]);
     res.cookie(SESSION_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: SESSION_TTL_HOURS * 3600 * 1000 });
+    try {
+      await sendWelcomeEmail({ to: user.email });
+    } catch (err) {
+      console.error('Failed to send welcome email:', err.message);
+    }
     res.json(user);
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'User already exists' });
@@ -365,6 +424,92 @@ app.post('/api/auth/login', async (req, res) => {
     home_club_id: user.home_club_id,
     home_club_name: user.home_club_name,
   });
+});
+
+app.post('/api/auth/request-password-reset', passwordResetLimiter, async (req, res) => {
+  const { email } = req.body || {};
+  if (!isValidEmail(email)) {
+    res.status(200).json({ ok: true });
+    return;
+  }
+
+  try {
+    await requestPasswordReset({
+      email,
+      store: passwordResetStore,
+      userLookup: async (normalizedEmail) => {
+        const { rows } = await pool.query(
+          `SELECT id, email FROM users WHERE email = $1`,
+          [normalizedEmail],
+        );
+        return rows[0] || null;
+      },
+      sendPasswordResetEmail,
+      publicAppUrl: process.env.PUBLIC_APP_URL,
+    });
+  } catch (err) {
+    console.error('Password reset request failed:', err.message);
+  }
+
+  res.status(200).json({ ok: true });
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { token, newPassword } = req.body || {};
+  if (!token || typeof token !== 'string') {
+    return res.status(400).json({ error: 'Token required' });
+  }
+  if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+    return res.status(400).json({ error: 'New password must be at least 8 characters' });
+  }
+
+  const newHash = await bcrypt.hash(newPassword, 10);
+  const result = await resetPasswordWithToken({
+    token,
+    newPasswordHash: newHash,
+    store: passwordResetStore,
+    updatePasswordHash: async (userId, passwordHash) => {
+      await pool.query(
+        `UPDATE users SET password_hash = $1 WHERE id = $2`,
+        [passwordHash, userId],
+      );
+    },
+  });
+
+  if (!result.ok) {
+    return res.status(400).json({ error: 'Invalid or expired token' });
+  }
+
+  res.json({ ok: true });
+});
+
+app.post('/api/dev/send-test-email', async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  const { to, type } = req.body || {};
+  if (!isValidEmail(to)) {
+    return res.status(400).json({ error: 'Valid email required' });
+  }
+
+  const emailType = type || 'welcome';
+  try {
+    if (emailType === 'welcome') {
+      const result = await sendWelcomeEmail({ to });
+      return res.json({ ok: true, id: result.id });
+    }
+    if (emailType === 'reset') {
+      const fallbackUrl = process.env.PUBLIC_APP_URL || 'http://localhost:3000';
+      const resetUrl = buildPasswordResetUrl(fallbackUrl, 'test-token');
+      const result = await sendPasswordResetEmail({ to, resetUrl });
+      return res.json({ ok: true, id: result.id });
+    }
+    return res.status(400).json({ error: 'Unknown email type' });
+  } catch (err) {
+    console.error('Test email failed:', err.message);
+    return res.status(500).json({ error: 'Failed to send test email' });
+  }
 });
 
 app.post('/api/auth/logout', async (req, res) => {
