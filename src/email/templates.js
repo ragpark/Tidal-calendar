@@ -1,4 +1,4 @@
-(const baseStyles = `
+const baseStyles = `
   body { font-family: Arial, sans-serif; margin: 0; padding: 0; color: #1f2937; }
   .container { max-width: 560px; margin: 0 auto; padding: 24px; }
   .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; }
@@ -40,7 +40,7 @@ export const buildPasswordResetEmail = ({ resetUrl }) => {
   const subject = 'Reset your Tidal Calendar password';
   const html = wrapHtml(`
     <h2>Password reset request</h2>
-    <p>Use the button below to reset your password. This link expires in 40 minutes.</p>
+    <p>Use the button below to reset your password. This link expires in 45 minutes.</p>
     <p><a class="button" href="${resetUrl}">Reset password</a></p>
     <p class="muted">If you did not request a reset, you can safely ignore this email.</p>
   `);
