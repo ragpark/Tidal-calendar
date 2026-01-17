@@ -22,7 +22,7 @@ const SESSION_COOKIE = 'tc_session';
 const SESSION_TTL_HOURS = 24;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const SMTP_HOST = process.env.SMTP_HOST || 'mail.boatscrubcalendar.com';
-const SMTP_PORT = Number(process.env.SMTP_PORT) || 465;
+const SMTP_PORT = Number(process.env.SMTP_PORT) || 587;
 const SMTP_USER = process.env.SMTP_USER || 'alerts@boatscrubcalendar.com';
 const SMTP_KEY = process.env.SMTP_KEY || '';
 
