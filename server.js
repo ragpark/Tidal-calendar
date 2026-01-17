@@ -553,7 +553,7 @@ const sendMaintenanceReminderEmail = async ({ to, subject, body }) => {
     console.warn('SMTP_KEY is not configured; maintenance reminder emails will not be sent.');
     return false;
   }
-  if (SMTP_PORT !== 587) {
+  if (SMTP_PORT !== 465) {
     throw new Error(`Unsupported SMTP port ${SMTP_PORT}. Expected port 465.`);
   }
   const socket = tls.connect({
