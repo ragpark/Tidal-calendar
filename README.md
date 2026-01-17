@@ -90,6 +90,38 @@ Example:
 
 ## Configuration
 
+### Transactional Email (Resend)
+
+Set these environment variables (Railway-friendly, no SMTP):
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `RESEND_API_KEY` | ✅ | Resend API key for sending transactional emails. |
+| `EMAIL_FROM` | ➖ | From address (default: `Your App <no-reply@yourdomain.com>`). |
+| `PUBLIC_APP_URL` | ✅ | Base URL for building reset links (e.g. `https://myapp.com`). |
+| `RESEND_USE_TEMPLATES` | ➖ | Set to `true` to use Resend templates. |
+| `RESEND_WELCOME_TEMPLATE_ID` | ➖ | Template id for welcome email (required if templates enabled). |
+| `RESEND_RESET_TEMPLATE_ID` | ➖ | Template id for password reset email (required if templates enabled). |
+
+Template switching:
+
+- Inline HTML emails are sent by default.
+- Set `RESEND_USE_TEMPLATES=true` to send using template ids + variables.
+
+### Local development
+
+```bash
+npm install
+npm run dev
+```
+
+For local testing without a database, you can temporarily set `USE_IN_MEMORY_RESET_STORE=true` (reset tokens will not persist).
+
+### Railway configuration
+
+1. Add the environment variables above in Railway → Service → Variables.
+2. Ensure the Railway Postgres plugin is attached and `DATABASE_URL` is injected.
+
 ### Adding Stations
 
 Edit `src/App.jsx` and modify the `DEMO_STATIONS` array:
