@@ -198,6 +198,11 @@ export default function TidalCalendarApp() {
   const [selectedDay, setSelectedDay] = useState(null);
   const [user, setUser] = useState(null);
   const [homePort, setHomePort] = useState('');
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [adminStats, setAdminStats] = useState(null);
+  const [adminForm, setAdminForm] = useState({ id: null, email: '', password: '', role: 'user', subscriptionStatus: 'inactive', subscriptionPeriodEnd: '' });
+  const [adminError, setAdminError] = useState(null);
+  const [adminLoading, setAdminLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState('calendar');
   const [authMode, setAuthMode] = useState('signin');
   const [authForm, setAuthForm] = useState({ email: '', password: '' });
@@ -222,6 +227,17 @@ export default function TidalCalendarApp() {
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState('');
   const role = user?.role || 'user';
+  const roleLabel = useMemo(() => {
+    if (role === 'subscriber') return 'Subscriber (extended data)';
+    if (role === 'admin') return 'Admin';
+    if (role === 'club_admin') return 'Club admin';
+    return 'User (7-day view)';
+  }, [role]);
+  const pages = useMemo(() => {
+    const base = ['calendar', 'profile', 'about'];
+    if (user?.role === 'admin') base.push('admin');
+    return base;
+  }, [user]);
   const subscriptionEndLabel = subscriptionEnd && !Number.isNaN(new Date(subscriptionEnd).getTime())
     ? new Date(subscriptionEnd).toLocaleDateString('en-GB')
     : 'Not set';
@@ -447,6 +463,91 @@ export default function TidalCalendarApp() {
     setUser(null);
     setSubscriptionNotice('');
     setSubscriptionEnd('');
+  };
+
+  const resetAdminForm = useCallback(() => {
+    setAdminForm({ id: null, email: '', password: '', role: 'user', subscriptionStatus: 'inactive', subscriptionPeriodEnd: '' });
+  }, []);
+
+  const loadAdminData = useCallback(async () => {
+    if (!user || user.role !== 'admin') return;
+    setAdminLoading(true);
+    setAdminError(null);
+    try {
+      const [stats, users] = await Promise.all([
+        apiRequest('/api/admin/stats'),
+        apiRequest('/api/admin/users'),
+      ]);
+      setAdminStats(stats);
+      setAdminUsers(Array.isArray(users) ? users : []);
+    } catch (err) {
+      setAdminError(err.message);
+    } finally {
+      setAdminLoading(false);
+    }
+  }, [apiRequest, user]);
+
+  useEffect(() => {
+    if (currentPage === 'admin' && user?.role !== 'admin') {
+      setCurrentPage('profile');
+    }
+  }, [currentPage, user]);
+
+  useEffect(() => {
+    if (currentPage === 'admin') {
+      loadAdminData();
+    }
+  }, [currentPage, loadAdminData]);
+
+  const formatAdminDate = (value) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleDateString('en-GB');
+  };
+
+  const handleAdminSubmit = async (event) => {
+    event.preventDefault();
+    setAdminError(null);
+    try {
+      const payload = {
+        email: adminForm.email,
+        role: adminForm.role,
+        subscriptionStatus: adminForm.subscriptionStatus,
+        subscriptionPeriodEnd: adminForm.subscriptionPeriodEnd || null,
+      };
+      if (adminForm.password) payload.password = adminForm.password;
+      if (adminForm.id) {
+        await apiRequest(`/api/admin/users/${adminForm.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      } else {
+        await apiRequest('/api/admin/users', { method: 'POST', body: JSON.stringify(payload) });
+      }
+      resetAdminForm();
+      await loadAdminData();
+    } catch (err) {
+      setAdminError(err.message);
+    }
+  };
+
+  const handleAdminEdit = (record) => {
+    setAdminForm({
+      id: record.id,
+      email: record.email || '',
+      password: '',
+      role: record.role || 'user',
+      subscriptionStatus: record.subscription_status || 'inactive',
+      subscriptionPeriodEnd: record.subscription_period_end ? new Date(record.subscription_period_end).toISOString().split('T')[0] : '',
+    });
+  };
+
+  const handleAdminDelete = async (id) => {
+    setAdminError(null);
+    try {
+      await apiRequest(`/api/admin/users/${id}`, { method: 'DELETE' });
+      await loadAdminData();
+    } catch (err) {
+      setAdminError(err.message);
+    }
   };
 
   const loadMaintenanceLogs = useCallback(async () => {
@@ -1099,14 +1200,14 @@ export default function TidalCalendarApp() {
       <main style={{ position: 'relative', zIndex: 10, padding: '0 24px 60px', maxWidth: '1400px', margin: '0 auto' }}>
         {error && <div style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#fca5a5' }}>⚠ {error}</div>}
 
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '20px' }}>
-          {['calendar', 'profile', 'about'].map(page => (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+          {pages.map(page => (
             <button
               key={page}
               onClick={() => setCurrentPage(page)}
               style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(14,165,233,0.25)', background: currentPage === page ? '#e0f2fe' : '#ffffff', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }}
             >
-              {page === 'calendar' ? 'Calendar' : page === 'profile' ? 'Profile' : 'About'}
+              {page === 'calendar' ? 'Calendar' : page === 'profile' ? 'Profile' : page === 'about' ? 'About' : 'Admin'}
             </button>
           ))}
         </div>
@@ -1194,7 +1295,7 @@ export default function TidalCalendarApp() {
                       <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
                       <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
                       <div style={{ marginTop: '4px', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: '#ecfeff', border: '1px solid #bae6fd', borderRadius: '10px', color: '#0f172a', fontSize: '12px', fontWeight: 600 }}>
-                        Role: {role === 'subscriber' ? 'Subscriber (extended data)' : 'User (7-day view)'}
+                        Role: {roleLabel}
                       </div>
                     </div>
                     <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
@@ -1356,6 +1457,182 @@ export default function TidalCalendarApp() {
               )}
             </div>
 
+          </section>
+        )}
+
+        {currentPage === 'admin' && (
+          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div>
+                <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9', margin: 0 }}>Admin Control</p>
+                <h2 style={{ fontSize: '22px', margin: '6px 0 0', color: '#0f172a', fontWeight: 600 }}>User Management</h2>
+              </div>
+              <button
+                onClick={loadAdminData}
+                style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #bae6fd', background: '#e0f2fe', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontWeight: 600 }}
+              >
+                Refresh data
+              </button>
+            </div>
+
+            {adminError && (
+              <div style={{ background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '10px', padding: '12px', color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>
+                {adminError}
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+              {[
+                { label: 'Signed up', value: adminStats?.signed_up },
+                { label: 'Subscribers', value: adminStats?.subscribers },
+                { label: 'Purchasers', value: adminStats?.purchasers },
+                { label: 'Total users', value: adminStats?.total },
+              ].map(card => (
+                <div key={card.label} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', display: 'grid', gap: '6px', boxShadow: '0 4px 12px rgba(15,23,42,0.06)' }}>
+                  <div style={{ fontSize: '12px', color: '#475569', fontWeight: 600 }}>{card.label}</div>
+                  <div style={{ fontSize: '22px', color: '#0f172a', fontWeight: 700 }}>{adminLoading ? '—' : card.value ?? 0}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', alignItems: 'start' }}>
+              <form onSubmit={handleAdminSubmit} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', display: 'grid', gap: '12px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: 600 }}>
+                    {adminForm.id ? 'Edit user' : 'Create user'}
+                  </h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                    {adminForm.id ? 'Update user details, role, or subscription.' : 'Add a new account to the platform.'}
+                  </p>
+                </div>
+                <label style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#475569' }}>
+                  Email
+                  <input
+                    type="email"
+                    value={adminForm.email}
+                    onChange={(event) => setAdminForm(form => ({ ...form, email: event.target.value }))}
+                    required
+                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#475569' }}>
+                  Password {adminForm.id && <span style={{ color: '#94a3b8' }}>(leave blank to keep)</span>}
+                  <input
+                    type="password"
+                    value={adminForm.password}
+                    onChange={(event) => setAdminForm(form => ({ ...form, password: event.target.value }))}
+                    required={!adminForm.id}
+                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#475569' }}>
+                  Role
+                  <select
+                    value={adminForm.role}
+                    onChange={(event) => setAdminForm(form => ({ ...form, role: event.target.value }))}
+                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff' }}
+                  >
+                    {['user', 'subscriber', 'club_admin', 'admin'].map(option => (
+                      <option key={option} value={option}>{option.replace('_', ' ')}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#475569' }}>
+                  Subscription status
+                  <select
+                    value={adminForm.subscriptionStatus}
+                    onChange={(event) => setAdminForm(form => ({ ...form, subscriptionStatus: event.target.value }))}
+                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff' }}
+                  >
+                    {['inactive', 'active'].map(option => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#475569' }}>
+                  Subscription end date
+                  <input
+                    type="date"
+                    value={adminForm.subscriptionPeriodEnd}
+                    onChange={(event) => setAdminForm(form => ({ ...form, subscriptionPeriodEnd: event.target.value }))}
+                    style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  />
+                </label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="submit"
+                    style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    {adminForm.id ? 'Save changes' : 'Create user'}
+                  </button>
+                  {adminForm.id && (
+                    <button
+                      type="button"
+                      onClick={resetAdminForm}
+                      style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      Cancel edit
+                    </button>
+                  )}
+                </div>
+              </form>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', display: 'grid', gap: '12px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: 600 }}>User directory</h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>Edit or remove user accounts.</p>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#0f172a' }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>
+                        <th style={{ padding: '8px' }}>Email</th>
+                        <th style={{ padding: '8px' }}>Role</th>
+                        <th style={{ padding: '8px' }}>Status</th>
+                        <th style={{ padding: '8px' }}>Subscription end</th>
+                        <th style={{ padding: '8px' }}>Created</th>
+                        <th style={{ padding: '8px' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminUsers.length === 0 && (
+                        <tr>
+                          <td colSpan="6" style={{ padding: '12px', color: '#64748b' }}>
+                            {adminLoading ? 'Loading users...' : 'No users found.'}
+                          </td>
+                        </tr>
+                      )}
+                      {adminUsers.map(record => (
+                        <tr key={record.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '8px', fontWeight: 600 }}>{record.email}</td>
+                          <td style={{ padding: '8px', textTransform: 'capitalize' }}>{record.role?.replace('_', ' ')}</td>
+                          <td style={{ padding: '8px' }}>{record.subscription_status}</td>
+                          <td style={{ padding: '8px' }}>{formatAdminDate(record.subscription_period_end)}</td>
+                          <td style={{ padding: '8px' }}>{formatAdminDate(record.created_at)}</td>
+                          <td style={{ padding: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleAdminEdit(record)}
+                              style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #bae6fd', background: '#e0f2fe', cursor: 'pointer', fontWeight: 600 }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAdminDelete(record.id)}
+                              disabled={record.id === user?.id}
+                              style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #fecaca', background: record.id === user?.id ? '#f8fafc' : '#fee2e2', color: record.id === user?.id ? '#94a3b8' : '#b91c1c', cursor: record.id === user?.id ? 'not-allowed' : 'pointer', fontWeight: 600 }}
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </section>
         )}
 
