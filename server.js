@@ -15,6 +15,7 @@ import { createPasswordResetStore } from './src/auth/passwordResetStore.js';
 import {
   InMemoryPasswordResetStore,
   buildPasswordResetUrl,
+  createResetTokenRecord,
   requestPasswordReset,
   resetPasswordWithToken,
 } from './src/auth/passwordResetService.js';
@@ -377,8 +378,21 @@ app.post('/api/auth/signup', async (req, res) => {
     const token = randomUUID();
     await pool.query(`INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, now() + interval '${SESSION_TTL_HOURS} hours')`, [user.id, token]);
     res.cookie(SESSION_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: SESSION_TTL_HOURS * 3600 * 1000 });
+    let welcomeResetUrl;
+    if (process.env.PUBLIC_APP_URL) {
+      try {
+        const { token: resetToken } = await createResetTokenRecord({
+          store: passwordResetStore,
+          userId: user.id,
+          email: user.email,
+        });
+        welcomeResetUrl = buildPasswordResetUrl(process.env.PUBLIC_APP_URL, resetToken);
+      } catch (err) {
+        console.error('Failed to create welcome reset link:', err.message);
+      }
+    }
     try {
-      await sendWelcomeEmail({ to: user.email });
+      await sendWelcomeEmail({ to: user.email, resetUrl: welcomeResetUrl });
     } catch (err) {
       console.error('Failed to send welcome email:', err.message);
     }

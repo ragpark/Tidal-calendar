@@ -25,8 +25,8 @@ const handleSendResult = (emailType, result) => {
   return { id };
 };
 
-export const sendWelcomeEmail = async ({ to, firstName }) => {
-  const { subject, html, text } = buildWelcomeEmail({ firstName });
+export const sendWelcomeEmail = async ({ to, firstName, resetUrl }) => {
+  const { subject, html, text } = buildWelcomeEmail({ firstName, resetUrl });
 
   if (RESEND_USE_TEMPLATES) {
     ensureTemplateId(RESEND_WELCOME_TEMPLATE_ID, 'Welcome');
@@ -35,7 +35,7 @@ export const sendWelcomeEmail = async ({ to, firstName }) => {
       to,
       subject,
       template_id: RESEND_WELCOME_TEMPLATE_ID,
-      template_data: { firstName: firstName || '' },
+      template_data: { firstName: firstName || '', resetUrl: resetUrl || '' },
     });
     return handleSendResult('welcome', result);
   }
