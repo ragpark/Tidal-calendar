@@ -1350,13 +1350,14 @@ export default function TidalCalendarApp() {
                         Email reminders (sent the day before).
                       </label>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <button
-                          onClick={handleSendTestReminder}
-                          disabled={!user}
-                          style={{ padding: '6px 10px', background: user ? '#fef3c7' : '#f8fafc', border: '1px solid #f59e0b', borderRadius: '8px', color: '#92400e', cursor: user ? 'pointer' : 'not-allowed', fontWeight: 700, fontSize: '11px' }}
-                        >
-                          Send test reminder
-                        </button>
+                        {user?.role === 'admin' && (
+                          <button
+                            onClick={handleSendTestReminder}
+                            style={{ padding: '6px 10px', background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px', color: '#92400e', cursor: 'pointer', fontWeight: 700, fontSize: '11px' }}
+                          >
+                            Send test reminder
+                          </button>
+                        )}
                         {!user && <span style={{ fontSize: '11px', color: '#94a3b8' }}>Sign in to enable reminders.</span>}
                       </div>
                     </div>
