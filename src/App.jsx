@@ -1663,9 +1663,6 @@ export default function TidalCalendarApp() {
                     Pick a station to load the calendar. This selection is stored locally on this device and doesn’t affect the profile home port.
                   </p>
                 </div>
-                <button onClick={handleSaveHomePort} style={{ padding: '10px 14px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>
-                  Save home port
-                </button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', alignItems: 'center' }}>
                 <div style={{ position: 'relative' }}>
