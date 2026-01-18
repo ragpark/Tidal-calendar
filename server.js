@@ -295,6 +295,14 @@ const requireAuth = async (req, res, next) => {
   next();
 };
 
+const requireAdmin = (req, res, next) => {
+  if (req.user?.role !== 'admin') {
+    res.status(403).json({ error: 'Admin permission required' });
+    return;
+  }
+  next();
+};
+
 const passwordResetLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -570,6 +578,113 @@ app.post('/api/profile/role', requireAuth, async (req, res) => {
     [role, req.user.id],
   );
   res.json(rows[0]);
+});
+
+// Admin users
+app.get('/api/admin/stats', requireAuth, requireAdmin, async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT
+        COUNT(*)::int AS total,
+        COUNT(*)::int AS signed_up,
+        COUNT(*) FILTER (WHERE role = 'subscriber' OR subscription_status = 'active')::int AS subscribers,
+        COUNT(*) FILTER (WHERE stripe_customer_id IS NOT NULL OR stripe_last_session_id IS NOT NULL)::int AS purchasers
+     FROM users`,
+  );
+  res.json(rows[0]);
+});
+
+app.get('/api/admin/users', requireAuth, requireAdmin, async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, created_at
+     FROM users
+     ORDER BY created_at DESC`,
+  );
+  res.json(rows);
+});
+
+app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
+  const { email, password, role, subscriptionStatus, subscriptionPeriodEnd } = req.body || {};
+  if (!isValidEmail(email)) return res.status(400).json({ error: 'Valid email required' });
+  if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (role && !['user', 'subscriber', 'club_admin', 'admin'].includes(role)) {
+    return res.status(400).json({ error: 'Invalid role' });
+  }
+  if (subscriptionStatus && !['active', 'inactive'].includes(subscriptionStatus)) {
+    return res.status(400).json({ error: 'Invalid subscription status' });
+  }
+  const passwordHash = await bcrypt.hash(password, 10);
+  const { rows } = await pool.query(
+    `INSERT INTO users (email, password_hash, role, subscription_status, subscription_period_end)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, created_at`,
+    [
+      email.toLowerCase(),
+      passwordHash,
+      role || 'user',
+      subscriptionStatus || 'inactive',
+      subscriptionPeriodEnd ? new Date(subscriptionPeriodEnd) : null,
+    ],
+  );
+  res.status(201).json(rows[0]);
+});
+
+app.put('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  const { email, password, role, subscriptionStatus, subscriptionPeriodEnd } = req.body || {};
+  const updates = [];
+  const values = [];
+  let idx = 1;
+
+  if (email !== undefined) {
+    if (!isValidEmail(email)) return res.status(400).json({ error: 'Valid email required' });
+    updates.push(`email = $${idx++}`);
+    values.push(email.toLowerCase());
+  }
+  if (password) {
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    const passwordHash = await bcrypt.hash(password, 10);
+    updates.push(`password_hash = $${idx++}`);
+    values.push(passwordHash);
+  }
+  if (role !== undefined) {
+    if (!['user', 'subscriber', 'club_admin', 'admin'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+    updates.push(`role = $${idx++}`);
+    values.push(role);
+  }
+  if (subscriptionStatus !== undefined) {
+    if (!['active', 'inactive'].includes(subscriptionStatus)) {
+      return res.status(400).json({ error: 'Invalid subscription status' });
+    }
+    updates.push(`subscription_status = $${idx++}`);
+    values.push(subscriptionStatus);
+  }
+  if (subscriptionPeriodEnd !== undefined) {
+    updates.push(`subscription_period_end = $${idx++}`);
+    values.push(subscriptionPeriodEnd ? new Date(subscriptionPeriodEnd) : null);
+  }
+
+  if (updates.length === 0) return res.status(400).json({ error: 'No updates provided' });
+
+  values.push(req.params.id);
+  const { rows } = await pool.query(
+    `UPDATE users
+     SET ${updates.join(', ')}
+     WHERE id = $${idx}
+     RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, created_at`,
+    values,
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+  res.json(rows[0]);
+});
+
+app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  if (req.params.id === req.user.id) {
+    return res.status(400).json({ error: 'Cannot delete your own admin account' });
+  }
+  const { rowCount } = await pool.query(`DELETE FROM users WHERE id = $1`, [req.params.id]);
+  if (rowCount === 0) return res.status(404).json({ error: 'User not found' });
+  res.json({ ok: true });
 });
 
 // Maintenance logs
