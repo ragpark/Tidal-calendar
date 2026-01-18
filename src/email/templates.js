@@ -24,15 +24,25 @@ const wrapHtml = (content) => `
 </html>
 `;
 
-export const buildWelcomeEmail = ({ firstName }) => {
+export const buildWelcomeEmail = ({ firstName, resetUrl }) => {
   const greeting = firstName ? `Hi ${firstName},` : 'Welcome!';
   const subject = 'Welcome to Tidal Calendar';
+  const resetHtml = resetUrl
+    ? `
+    <p>Need to set or reset your password? Use the link below (expires in 45 minutes).</p>
+    <p><a class="button" href="${resetUrl}">Set your password</a></p>
+  `
+    : '';
+  const resetText = resetUrl
+    ? `\n\nNeed to set or reset your password? Use the link below (expires in 45 minutes):\n${resetUrl}`
+    : '';
   const html = wrapHtml(`
     <h2>${greeting}</h2>
     <p>Thanks for signing up. You can now plan your scrubbing days and manage bookings.</p>
+    ${resetHtml}
     <p class="muted">If you did not create this account, you can ignore this email.</p>
   `);
-  const text = `${greeting}\n\nThanks for signing up. You can now plan your scrubbing days and manage bookings.\n\nIf you did not create this account, you can ignore this email.`;
+  const text = `${greeting}\n\nThanks for signing up. You can now plan your scrubbing days and manage bookings.${resetText}\n\nIf you did not create this account, you can ignore this email.`;
   return { subject, html, text };
 };
 
