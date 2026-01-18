@@ -500,7 +500,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/dev/send-test-email', async (req, res) => {
+app.post('/api/dev/send-test-email', requireAuth, requireAdmin, async (req, res) => {
   if (process.env.NODE_ENV === 'production') {
     return res.status(404).json({ error: 'Not found' });
   }
