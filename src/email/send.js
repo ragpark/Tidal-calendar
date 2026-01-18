@@ -74,3 +74,13 @@ export const sendPasswordResetEmail = async ({ to, resetUrl }) => {
   });
   return handleSendResult('password reset', result);
 };
+
+export const sendMaintenanceReminderEmail = async ({ to, subject, text }) => {
+  const result = await resend.emails.send({
+    from: EMAIL_FROM,
+    to,
+    subject,
+    text,
+  });
+  return handleSendResult('maintenance reminder', result);
+};
