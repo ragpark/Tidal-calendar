@@ -36,7 +36,7 @@ export const resend = {
 };
 
 export const EMAIL_FROM =
-  process.env.EMAIL_FROM || 'Your App <no-reply@yourdomain.com>';
+  process.env.EMAIL_FROM || 'Boat Scrub Calendar <alert@boatscrubcalendar.com>';
 
 export const RESEND_USE_TEMPLATES = process.env.RESEND_USE_TEMPLATES === 'true';
 
