@@ -1653,9 +1653,14 @@ export default function TidalCalendarApp() {
             <section style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', boxShadow: '0 8px 20px rgba(15,23,42,0.06)', display: 'grid', gap: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Choose your home port</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Calendar port selection</h3>
+                    <span style={{ padding: '4px 8px', borderRadius: '999px', background: 'rgba(14,165,233,0.12)', color: '#0f172a', fontSize: '11px', fontWeight: 600, fontFamily: "'Outfit', sans-serif" }}>
+                      Guest / not signed in
+                    </span>
+                  </div>
                   <p style={{ margin: '4px 0 0', fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#475569' }}>
-                    Pick a station to load the calendar. Save it locally for quick access — no sign in required.
+                    Pick a station to load the calendar. This selection is stored locally on this device and doesn’t affect the profile home port.
                   </p>
                 </div>
                 <button onClick={handleSaveHomePort} style={{ padding: '10px 14px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.3)' }}>
