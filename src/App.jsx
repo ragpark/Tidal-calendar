@@ -1315,34 +1315,11 @@ export default function TidalCalendarApp() {
                     {user.home_port_name && (
                       <>
                         <div style={{ fontSize: '12px', color: '#334155' }}>Current home port: <strong style={{ color: '#0f172a' }}>{user.home_port_name}</strong></div>
-                        <button onClick={handleDownloadTideBooklet} style={{ padding: '10px', background: '#8b5cf6', border: '1px solid #7c3aed', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(139,92,246,0.25)' }}>📄 Download Year Tide Booklet (PDF)</button>
                       </>
                     )}
                     <div style={{ fontSize: '12px', color: '#334155' }}>Subscription active until <strong style={{ color: '#0f172a' }}>{subscriptionEndLabel}</strong></div>
                   </div>
 
-                  <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
-                    <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
-                    <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • extended Admiralty API access</div>
-                    <div style={{ fontSize: '11px', color: '#475569' }}>Enable test checkout via Stripe Buy Button for extended API coverage. Use Stripe test cards during checkout—successful payment will activate your subscriber role automatically.</div>
-                    <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px' }}>
-                      <stripe-buy-button
-                        buy-button-id="buy_btn_1SjOVhFjPX0L6hdeuSVzQkzK"
-                        publishable-key="pk_test_51SjOPuFjPX0L6hdeZcwi2HKamgScHj7kvkIgMugv7LGNdiCbFaJOCu3BQth2Vo5qgvZgGOcZxYO3xRrychXFn2UT00FcVr2nJ9"
-                        client-reference-id={user?.id || undefined}
-                      ></stripe-buy-button>
-                      <div style={{ fontSize: '11px', color: '#1e293b', lineHeight: 1.5 }}>
-                        Completed Stripe checkouts are verified on return and your subscriber status is stored server-side. If you need a manual override for demos, use the local activation button.
-                      </div>
-                      {subscriptionNotice && <div style={{ fontSize: '11px', color: '#0f172a', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '8px', fontWeight: 600 }}>{subscriptionNotice}</div>}
-                      <div style={{ fontSize: '11px', color: '#475569' }}>
-                        Status: <strong style={{ color: '#0f172a' }}>{user.subscription_status || 'inactive'}</strong> • Renewed through: <strong style={{ color: '#0f172a' }}>{subscriptionEndLabel}</strong>
-                      </div>
-                      <button onClick={handlePurchaseSubscription} disabled={role === 'subscriber'} style={{ padding: '10px', background: role === 'subscriber' ? '#dcfce7' : '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: role === 'subscriber' ? '#166534' : '#ffffff', cursor: role === 'subscriber' ? 'not-allowed' : 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
-                        {role === 'subscriber' ? 'Subscriber active (local mock)' : 'Mark subscription active locally'}
-                      </button>
-                    </div>
-                  </div>
                   <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                       <div>
@@ -1433,6 +1410,41 @@ export default function TidalCalendarApp() {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                  <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                    <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Store</div>
+                    <div style={{ fontSize: '11px', color: '#475569' }}>Manage your Tide plan and downloads in one place.</div>
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                      <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                        <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
+                        <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • extended Admiralty API access</div>
+                        <div style={{ fontSize: '11px', color: '#475569' }}>Enable test checkout via Stripe Buy Button for extended API coverage. Use Stripe test cards during checkout—successful payment will activate your subscriber role automatically.</div>
+                        <div style={{ background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px' }}>
+                          <stripe-buy-button
+                            buy-button-id="buy_btn_1SjOVhFjPX0L6hdeuSVzQkzK"
+                            publishable-key="pk_test_51SjOPuFjPX0L6hdeZcwi2HKamgScHj7kvkIgMugv7LGNdiCbFaJOCu3BQth2Vo5qgvZgGOcZxYO3xRrychXFn2UT00FcVr2nJ9"
+                            client-reference-id={user?.id || undefined}
+                          ></stripe-buy-button>
+                          <div style={{ fontSize: '11px', color: '#1e293b', lineHeight: 1.5 }}>
+                            Completed Stripe checkouts are verified on return and your subscriber status is stored server-side. If you need a manual override for demos, use the local activation button.
+                          </div>
+                          {subscriptionNotice && <div style={{ fontSize: '11px', color: '#0f172a', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '8px', fontWeight: 600 }}>{subscriptionNotice}</div>}
+                          <div style={{ fontSize: '11px', color: '#475569' }}>
+                            Status: <strong style={{ color: '#0f172a' }}>{user.subscription_status || 'inactive'}</strong> • Renewed through: <strong style={{ color: '#0f172a' }}>{subscriptionEndLabel}</strong>
+                          </div>
+                          <button onClick={handlePurchaseSubscription} disabled={role === 'subscriber'} style={{ padding: '10px', background: role === 'subscriber' ? '#dcfce7' : '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: role === 'subscriber' ? '#166534' : '#ffffff', cursor: role === 'subscriber' ? 'not-allowed' : 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
+                            {role === 'subscriber' ? 'Subscriber active (local mock)' : 'Mark subscription active locally'}
+                          </button>
+                        </div>
+                      </div>
+                      {user.home_port_name && (
+                        <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                          <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Download Year Tide Booklet</div>
+                          <div style={{ fontSize: '11px', color: '#475569' }}>Get your annual PDF booklet for offline planning.</div>
+                          <button onClick={handleDownloadTideBooklet} style={{ padding: '10px', background: '#8b5cf6', border: '1px solid #7c3aed', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(139,92,246,0.25)' }}>📄 Download Year Tide Booklet (PDF)</button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   {/*
