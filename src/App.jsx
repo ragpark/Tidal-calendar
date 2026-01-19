@@ -198,6 +198,7 @@ export default function TidalCalendarApp() {
   const [selectedDay, setSelectedDay] = useState(null);
   const [user, setUser] = useState(null);
   const [homePort, setHomePort] = useState('');
+  const [stripePricingReady, setStripePricingReady] = useState(false);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminStats, setAdminStats] = useState(null);
   const [adminForm, setAdminForm] = useState({ id: null, email: '', password: '', role: 'user', subscriptionStatus: 'inactive', subscriptionPeriodEnd: '' });
@@ -345,6 +346,32 @@ export default function TidalCalendarApp() {
   useEffect(() => { fetchStations(); }, [fetchStations]);
   useEffect(() => { if (selectedStation) fetchTidalEvents(selectedStation); }, [selectedStation, fetchTidalEvents]);
   useEffect(() => { loadSession(); }, [loadSession]);
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const scriptSrc = 'https://js.stripe.com/v3/pricing-table.js';
+    const existingScript = document.querySelector(`script[src="${scriptSrc}"]`);
+    if (existingScript) {
+      setStripePricingReady(true);
+      return undefined;
+    }
+
+    const script = document.createElement('script');
+    script.src = scriptSrc;
+    script.async = true;
+    const handleLoad = () => setStripePricingReady(true);
+    const handleError = () => setStripePricingReady(false);
+    script.addEventListener('load', handleLoad);
+    script.addEventListener('error', handleError);
+    document.body.appendChild(script);
+
+    return () => {
+      script.removeEventListener('load', handleLoad);
+      script.removeEventListener('error', handleError);
+    };
+  }, []);
   useEffect(() => {
     if (isEmbed || typeof window === 'undefined' || stations.length === 0) return;
     if (user?.home_port_id) {
@@ -1422,12 +1449,15 @@ export default function TidalCalendarApp() {
                         <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • extended Admiralty API access</div>
                         <div style={{ fontSize: '11px', color: '#475569' }}>Enable test checkout via Stripe Buy Button for extended API coverage. Use Stripe test cards during checkout—successful payment will activate your subscriber role automatically.</div>
                         <div style={{ background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px' }}>
-                          <script async src="https://js.stripe.com/v3/pricing-table.js"></script>
-                          <stripe-pricing-table
-                            pricing-table-id="prctbl_1SrLpcFjPX0L6hdeggD1Vpn0"
-                            publishable-key="pk_test_51SjOPuFjPX0L6hdeZcwi2HKamgScHj7kvkIgMugv7LGNdiCbFaJOCu3BQth2Vo5qgvZgGOcZxYO3xRrychXFn2UT00FcVr2nJ9"
-                          >
-                          </stripe-pricing-table>
+                          {stripePricingReady ? (
+                            <stripe-pricing-table
+                              pricing-table-id="prctbl_1SrLpcFjPX0L6hdeggD1Vpn0"
+                              publishable-key="pk_test_51SjOPuFjPX0L6hdeZcwi2HKamgScHj7kvkIgMugv7LGNdiCbFaJOCu3BQth2Vo5qgvZgGOcZxYO3xRrychXFn2UT00FcVr2nJ9"
+                            >
+                            </stripe-pricing-table>
+                          ) : (
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>Loading Stripe pricing table…</div>
+                          )}
                           <div style={{ fontSize: '11px', color: '#1e293b', lineHeight: 1.5 }}>
                             Completed Stripe checkouts are verified on return and your subscriber status is stored server-side. If you need a manual override for demos, use the local activation button.
                           </div>
