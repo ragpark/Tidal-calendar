@@ -1422,11 +1422,12 @@ export default function TidalCalendarApp() {
                         <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • extended Admiralty API access</div>
                         <div style={{ fontSize: '11px', color: '#475569' }}>Enable test checkout via Stripe Buy Button for extended API coverage. Use Stripe test cards during checkout—successful payment will activate your subscriber role automatically.</div>
                         <div style={{ background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px' }}>
-                          <stripe-buy-button
-                            buy-button-id="buy_btn_1SjOVhFjPX0L6hdeuSVzQkzK"
+                          <script async src="https://js.stripe.com/v3/pricing-table.js"></script>
+                          <stripe-pricing-table
+                            pricing-table-id="prctbl_1SrLpcFjPX0L6hdeggD1Vpn0"
                             publishable-key="pk_test_51SjOPuFjPX0L6hdeZcwi2HKamgScHj7kvkIgMugv7LGNdiCbFaJOCu3BQth2Vo5qgvZgGOcZxYO3xRrychXFn2UT00FcVr2nJ9"
-                            client-reference-id={user?.id || undefined}
-                          ></stripe-buy-button>
+                          >
+                          </stripe-pricing-table>
                           <div style={{ fontSize: '11px', color: '#1e293b', lineHeight: 1.5 }}>
                             Completed Stripe checkouts are verified on return and your subscriber status is stored server-side. If you need a manual override for demos, use the local activation button.
                           </div>
