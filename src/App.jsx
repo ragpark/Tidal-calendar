@@ -1278,6 +1278,15 @@ export default function TidalCalendarApp() {
                     'Predictions supplement data only when UKHO coverage is unavailable.',
                   ],
                 },
+                {
+                  title: 'Partners',
+                  emoji: '🤝',
+                  points: [
+                    'Embed our app services inside partner sites as a streamlined widget.',
+                    'Launch agent icon flows that hand off context and scheduling to Tidal.',
+                    'Use MCP to connect data and actions between partner tools and our calendar.',
+                  ],
+                },
               ].map((card, idx) => (
                 <div key={idx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxShadow: '0 4px 12px rgba(15,23,42,0.06)', display: 'grid', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
