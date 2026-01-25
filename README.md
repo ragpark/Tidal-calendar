@@ -149,6 +149,32 @@ To use real Admiralty API data for the first 7 days:
 2. Subscribe to "UK Tidal API - Discovery" (free tier)
 3. Add your key in the app interface
 
+## Model Context Protocol (MCP)
+
+This repo includes a standalone MCP server that proxies the existing HTTP API so other agents can use Tidal Calendar tools without modifying the main app.
+
+### Run the MCP server
+
+1. Start the web server (so the MCP server can reach it):
+   ```bash
+   npm run dev
+   ```
+2. In a separate terminal, run:
+   ```bash
+   npm run mcp
+   ```
+
+### MCP environment variables
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `TIDAL_API_BASE_URL` | ➖ | Base URL for the Tidal Calendar API (default: `http://localhost:3000`). |
+| `TIDAL_SESSION_COOKIE` | ➖ | Pre-authenticated `tc_session` cookie value (e.g. `tc_session=...`). |
+| `TIDAL_EMAIL` | ➖ | Email used to log in when no session cookie is provided. |
+| `TIDAL_PASSWORD` | ➖ | Password used to log in when no session cookie is provided. |
+
+Authenticated MCP tools (profile updates, bookings, PDF generation) require either `TIDAL_SESSION_COOKIE` or `TIDAL_EMAIL`/`TIDAL_PASSWORD`.
+
 ## Tech Stack
 
 - React 18
