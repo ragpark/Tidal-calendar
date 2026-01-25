@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "node server.js",
     "build": "node scripts/build.mjs",
-    "start": "node server.js"
+    "start": "node server.js",
+    "mcp": "node mcp/server.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
