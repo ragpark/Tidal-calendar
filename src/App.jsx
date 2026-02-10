@@ -235,7 +235,7 @@ export default function TidalCalendarApp() {
     return 'User (7-day view)';
   }, [role]);
   const pages = useMemo(() => {
-    const base = ['calendar', 'profile', 'about'];
+    const base = ['calendar', 'profile', 'about', 'blog'];
     if (user?.role === 'admin') base.push('admin');
     return base;
   }, [user]);
@@ -1234,7 +1234,7 @@ export default function TidalCalendarApp() {
               onClick={() => setCurrentPage(page)}
               style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(14,165,233,0.25)', background: currentPage === page ? '#e0f2fe' : '#ffffff', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }}
             >
-              {page === 'calendar' ? 'Calendar' : page === 'profile' ? 'Profile' : page === 'about' ? 'About' : 'Admin'}
+              {page === 'calendar' ? 'Calendar' : page === 'profile' ? 'Account' : page === 'about' ? 'Subscribe' : page === 'blog' ? 'Blog' : 'Admin'}
             </button>
           ))}
         </div>
@@ -1242,7 +1242,7 @@ export default function TidalCalendarApp() {
         {currentPage === 'about' && (
           <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9', margin: 0 }}>About</p>
+              <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9', margin: 0 }}>Subscribe</p>
               <h2 style={{ fontSize: '22px', margin: 0, color: '#0f172a', fontWeight: 600 }}>Why we built the Scrubbing off Calendar</h2>
               <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155', margin: 0 }}>
                 This Calendar keeps boaters informed with a monthly tide view, scrubbing guidance, and maintenance reminders for your chosen home port. We blend UKHO data where available with harmonic predictions so you can plan confidently—even when connectivity is limited.
@@ -1306,12 +1306,49 @@ export default function TidalCalendarApp() {
           </section>
         )}
 
+        {currentPage === 'blog' && (
+          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '16px', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
+            <article style={{ display: 'grid', gap: '16px', maxWidth: '900px', margin: '0 auto' }}>
+              <header style={{ display: 'grid', gap: '8px' }}>
+                <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9', margin: 0 }}>Seasonal maintenance journal</p>
+                <h2 style={{ fontSize: '30px', margin: 0, color: '#0f172a', fontWeight: 600 }}>Spring Sail Boat Maintenance in the UK</h2>
+                <p style={{ margin: 0, color: '#334155', fontSize: '15px', fontFamily: "'Outfit', sans-serif" }}>
+                  A practical March-to-May refresh plan to get your yacht safe, efficient, and ready for longer coastal passages.
+                </p>
+              </header>
+
+              <figure style={{ margin: 0, borderRadius: '14px', overflow: 'hidden', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                <img
+                  src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1400&q=80"
+                  alt="A sail boat being prepared in a UK marina during spring"
+                  style={{ width: '100%', maxHeight: '340px', objectFit: 'cover', display: 'block' }}
+                />
+                <figcaption style={{ padding: '10px 12px', color: '#475569', fontSize: '12px', fontFamily: "'Outfit', sans-serif" }}>
+                  Supporting image area for seasonal marina checks and deck preparation.
+                </figcaption>
+              </figure>
+
+              <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: 1.7, fontFamily: "'Outfit', sans-serif", display: 'grid', gap: '10px' }}>
+                <p style={{ margin: 0 }}>
+                  Start with a full topside and hull inspection while the weather is still cool. Look for gelcoat cracks, tired antifoul patches, anode wear, and any signs of water ingress around deck fittings. Spring is ideal for resealing deck hardware because surfaces are drier and cure conditions are generally stable before summer heat arrives.
+                </p>
+                <p style={{ margin: 0 }}>
+                  Move on to rigging and sail systems. UK winter moisture can accelerate corrosion on terminals and turnbuckles, so clean and inspect standing rigging carefully. Re-lubricate winches, replace worn control lines, and test reefing setups before your first longer trip. If your sails were stored damp, air them fully and check stitching at batten pockets and UV strips.
+                </p>
+                <p style={{ margin: 0 }}>
+                  Finally, review safety and engine essentials: service filters, belts, and impellers, confirm navigation lights and VHF operation, and renew flares that are near expiry. Pair this with spring tide planning in your home port so haul-out, scrub-off, and relaunch tasks line up with the most practical tidal windows.
+                </p>
+              </div>
+            </article>
+          </section>
+        )}
+
         {currentPage === 'profile' && (
           <section className="profile-section" style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
             <div style={{ display: 'grid', gap: '16px' }}>
               <div className="profile-card" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)', display: 'grid', gap: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Profile</h3>
+                  <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Account</h3>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button onClick={() => setAuthMode('signin')} style={{ padding: '6px 10px', background: authMode === 'signin' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign In</button>
                     <button onClick={() => setAuthMode('signup')} style={{ padding: '6px 10px', background: authMode === 'signup' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign Up</button>
