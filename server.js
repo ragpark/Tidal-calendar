@@ -73,6 +73,121 @@ app.use(express.json());
 app.use(cookieParser());
 
 const isValidEmail = (value) => typeof value === 'string' && /\S+@\S+\.\S+/.test(value);
+const OVERPASS_API_URL = process.env.OVERPASS_API_URL || 'https://overpass-api.de/api/interpreter';
+const NOMINATIM_SEARCH_URL = process.env.NOMINATIM_SEARCH_URL || 'https://nominatim.openstreetmap.org/search';
+
+const toRadians = (deg) => (deg * Math.PI) / 180;
+const haversineKm = (aLat, aLon, bLat, bLon) => {
+  const earthKm = 6371;
+  const dLat = toRadians(bLat - aLat);
+  const dLon = toRadians(bLon - aLon);
+  const p = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRadians(aLat)) * Math.cos(toRadians(bLat)) * Math.sin(dLon / 2) ** 2;
+  return earthKm * 2 * Math.atan2(Math.sqrt(p), Math.sqrt(1 - p));
+};
+
+const parseMetricValue = (value) => {
+  if (!value) return null;
+  const match = String(value).match(/-?\d+(\.\d+)?/);
+  return match ? Number(match[0]) : null;
+};
+
+const resolveUkLocation = async (locationQuery) => {
+  const trimmed = String(locationQuery || '').trim();
+  if (!trimmed) throw new Error('Location is required');
+
+  const normalized = trimmed.toUpperCase().replace(/\s+/g, '');
+  const postcodePattern = /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/;
+  if (postcodePattern.test(normalized)) {
+    const postcode = `${normalized.slice(0, -3)} ${normalized.slice(-3)}`;
+    const response = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(postcode)}`);
+    const data = await response.json();
+    if (response.ok && data?.status === 200 && data?.result) {
+      return { lat: data.result.latitude, lon: data.result.longitude, label: data.result.postcode };
+    }
+  }
+
+  const searchUrl = new URL(NOMINATIM_SEARCH_URL);
+  searchUrl.searchParams.set('q', trimmed);
+  searchUrl.searchParams.set('format', 'jsonv2');
+  searchUrl.searchParams.set('limit', '1');
+  searchUrl.searchParams.set('countrycodes', 'gb');
+
+  const response = await fetch(searchUrl, {
+    headers: { 'User-Agent': 'TidalCalendar/1.0 (facility-search)' },
+  });
+  const data = await response.json();
+  if (!response.ok || !Array.isArray(data) || data.length === 0) {
+    throw new Error('Could not geocode that UK location');
+  }
+  return { lat: Number(data[0].lat), lon: Number(data[0].lon), label: data[0].display_name };
+};
+
+const inferFacilityType = (tags = {}) => {
+  if (tags.waterway === 'boatyard') return 'boatyard';
+  if (tags.leisure === 'marina') return 'marina';
+  if (tags.sport === 'sailing' || tags.club === 'sailing' || tags.seamark_type === 'yacht_club') return 'club';
+  return 'marine_facility';
+};
+
+const searchMarineFacilities = async ({ location, draft, loa, scrubNeed }) => {
+  const origin = await resolveUkLocation(location);
+  const radiusMeters = 160000;
+  const overpassQuery = `
+[out:json][timeout:30];
+(
+  nwr(around:${radiusMeters},${origin.lat},${origin.lon})[leisure=marina];
+  nwr(around:${radiusMeters},${origin.lat},${origin.lon})[waterway=boatyard];
+  nwr(around:${radiusMeters},${origin.lat},${origin.lon})[sport=sailing];
+  nwr(around:${radiusMeters},${origin.lat},${origin.lon})[seamark:type=yacht_club];
+);
+out center tags;
+  `.trim();
+
+  const response = await fetch(OVERPASS_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+    body: new URLSearchParams({ data: overpassQuery }),
+  });
+  const payload = await response.json();
+  if (!response.ok || !Array.isArray(payload?.elements)) {
+    throw new Error('Unable to load facilities from Overpass');
+  }
+
+  const results = payload.elements
+    .map((item) => {
+      const lat = item.lat ?? item.center?.lat;
+      const lon = item.lon ?? item.center?.lon;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      const tags = item.tags || {};
+      const name = tags.name || tags.operator || 'Unnamed marine facility';
+      const maxDraft = parseMetricValue(tags.maxdraught || tags.maxdraft || tags.depth) || 99;
+      const maxLoa = parseMetricValue(tags.maxlength || tags['maxlength:physical'] || tags.length) || 99;
+      const distanceKm = haversineKm(origin.lat, origin.lon, lat, lon);
+      const supportsBoat = maxDraft >= draft && maxLoa >= loa;
+      const urgentBoost = scrubNeed === 'urgent' ? (distanceKm <= 40 ? 20 : 0) : 0;
+      const capabilityScore = (supportsBoat ? 120 : -400) + Math.max(0, Math.min(40, (maxDraft - draft) * 10)) + Math.max(0, Math.min(30, (maxLoa - loa) * 2));
+      return {
+        id: `${item.type}-${item.id}`,
+        name,
+        type: inferFacilityType(tags),
+        lat,
+        lon,
+        distanceKm,
+        maxDraft: Number(maxDraft.toFixed(1)),
+        maxLoa: Number(maxLoa.toFixed(1)),
+        supportsBoat,
+        score: capabilityScore + urgentBoost - distanceKm,
+        source: 'OpenStreetMap/Overpass',
+      };
+    })
+    .filter(Boolean)
+    .filter((item) => item.supportsBoat)
+    .sort((a, b) => b.score - a.score || a.distanceKm - b.distanceKm)
+    .slice(0, 8);
+
+  return { origin, facilities: results };
+};
 
 const createRateLimiter = ({ windowMs, max, message }) => {
   const hits = new Map();
@@ -905,6 +1020,24 @@ const hydrateClubs = async () => {
 app.get('/api/clubs', async (_req, res) => {
   const clubs = await hydrateClubs();
   res.json(clubs);
+});
+
+app.get('/api/facilities/search', async (req, res) => {
+  try {
+    const draft = Number(req.query.draft);
+    const loa = Number(req.query.loa);
+    const scrubNeed = req.query.scrubNeed === 'urgent' ? 'urgent' : 'planned';
+    const location = String(req.query.location || '').trim();
+    if (!location) return res.status(400).json({ error: 'Location is required' });
+    if (!Number.isFinite(draft) || draft <= 0) return res.status(400).json({ error: 'Draft must be a positive number' });
+    if (!Number.isFinite(loa) || loa <= 0) return res.status(400).json({ error: 'LOA must be a positive number' });
+
+    const data = await searchMarineFacilities({ location, draft, loa, scrubNeed });
+    res.json(data);
+  } catch (err) {
+    console.error('Facility search failed:', err);
+    res.status(502).json({ error: err.message || 'Facility search failed' });
+  }
 });
 
 app.post('/api/clubs', requireAuth, async (req, res) => {

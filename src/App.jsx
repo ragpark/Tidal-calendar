@@ -213,7 +213,7 @@ export default function TidalCalendarApp() {
   const [subscriptionNotice, setSubscriptionNotice] = useState('');
   const SUBSCRIPTION_PRICE_GBP = 5;
   const mcpCapabilities = useMemo(
-    () => ['list_clubs', 'create_scrub_window', 'book_scrub_window', 'update_profile'],
+    () => ['search_facilities', 'list_clubs', 'create_scrub_window', 'book_scrub_window', 'update_profile'],
     [],
   );
 
