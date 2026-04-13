@@ -194,7 +194,7 @@ export default function TidalCalendarApp() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isDemo, setIsDemo] = useState(!DEFAULT_API_KEY);
-  const [viewMode, setViewMode] = useState(embedConfig.view || 'monthly');
+  const [viewMode, setViewMode] = useState(isEmbed ? (embedConfig.view || 'monthly') : 'scrubbing');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null);
   const [user, setUser] = useState(null);
@@ -391,10 +391,10 @@ export default function TidalCalendarApp() {
       setHomePort(stored);
       const match = stations.find(s => s.id === stored);
       if (match) setSelectedStation(match);
-    } else if (!selectedStation && stations.length > 0) {
-      setSelectedStation(stations[0]);
+    } else if (stations.length > 0) {
+      setSelectedStation((current) => current || stations[0]);
     }
-  }, [stations, user, selectedStation, persistHomePortSelection, isEmbed]);
+  }, [stations, user, persistHomePortSelection, isEmbed]);
 
   useEffect(() => {
     if (isEmbed) return;
@@ -964,7 +964,7 @@ export default function TidalCalendarApp() {
     const month = currentMonth.getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
-    const startPadding = firstDay.getDay();
+    const startPadding = (firstDay.getDay() + 6) % 7;
     const daysInMonth = lastDay.getDate();
     
     const days = [];
@@ -1747,24 +1747,35 @@ export default function TidalCalendarApp() {
                   </p>
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', alignItems: 'center' }}>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                <div style={{ display: 'grid', gap: '12px' }}>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search stations..."
                     style={{ width: '100%', padding: '12px 14px 12px 42px', background: '#ffffff', border: '1px solid rgba(15,23,42,0.1)', borderRadius: '10px', color: '#0f172a', fontSize: '14px', fontFamily: "'Outfit', sans-serif" }}
                   />
                   <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px', opacity: 0.35 }}>⚓</span>
                 </div>
-                <select value={homePort} onChange={(e) => applySelectedStation(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '10px', color: '#0f172a', fontFamily: "'Outfit', sans-serif", boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
-                  <option value="">Select a station</option>
-                  {filteredStations.slice(0, 40).map(s => (
-                    <option key={s.id} value={s.id}>{s.name} — {s.country}</option>
+                {!user && !homePort && (
+                  <p style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#0369a1' }}>
+                    Search for your nearest port to load your tidal calendar.
+                  </p>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+                  {filteredStations.slice(0, 16).map(station => (
+                    <button
+                      key={station.id}
+                      className="station-card"
+                      onClick={() => applySelectedStation(station.id)}
+                      style={{ background: selectedStation?.id === station.id ? '#e0f2fe' : '#ffffff', border: `1px solid ${selectedStation?.id === station.id ? '#0ea5e9' : '#cbd5e1'}`, borderRadius: '10px', padding: '12px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}
+                    >
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a', marginBottom: '2px' }}>{station.name}</div>
+                      <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#475569', letterSpacing: '1px', textTransform: 'uppercase' }}>{station.country}</div>
+                    </button>
                   ))}
-                </select>
-                
+                </div>
               </div>
             </section>
             {/* Calendar & Detail */}
@@ -1777,18 +1788,25 @@ export default function TidalCalendarApp() {
                     <div className="station-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                       <div>
                         <h2 style={{ fontSize: 'clamp(24px, 5vw, 36px)', fontWeight: 500, margin: '0 0 4px', color: '#0f172a' }}>{selectedStation.name}</h2>
-                        <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#475569', margin: 0 }}>Station {selectedStation.id} • {selectedStation.country}</p>
+                        <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#475569', margin: 0 }}>{selectedStation.country}</p>
                       </div>
                       
                       <div className="station-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                        {homePortStation && (
+                        {homePortStation?.id === selectedStation.id ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'rgba(14,165,233,0.08)', borderRadius: '12px', border: '1px solid rgba(14,165,233,0.18)', fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#0f172a' }}>
-                            🏠 Home port: <strong style={{ fontWeight: 700 }}>{homePortStation.name}</strong>
+                            🏠 Home port: <strong style={{ fontWeight: 700 }}>{selectedStation.name}</strong>
                           </span>
+                        ) : (
+                          <button
+                            onClick={() => applySelectedStation(selectedStation.id)}
+                            style={{ padding: '8px 12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '12px', color: '#ffffff', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Set as home port
+                          </button>
                         )}
                         <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px' }}>
                           {['monthly', 'scrubbing'].map(mode => (
-                            <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 600, transition: 'all 0.3s' }}>
+                            <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : mode === 'scrubbing' ? '#dbeafe' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : mode === 'scrubbing' ? '#1d4ed8' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 700, transition: 'all 0.3s' }}>
                               {mode === 'monthly' ? '📅 Month view' : '🧽 Scrubbing Day Finder'}
                             </button>
                           ))}
@@ -1838,7 +1856,7 @@ export default function TidalCalendarApp() {
 
                 {/* Calendar Grid */}
               <div className="calendar-weekdays" style={{ marginBottom: '8px' }}>
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
                   <div key={day} style={{ padding: '12px 8px', textAlign: 'center', fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: '#475569' }}>{day}</div>
                 ))}
               </div>
@@ -1913,8 +1931,11 @@ export default function TidalCalendarApp() {
 
                         {/* Data source indicator */}
                         {isCurrentMonth && (
-                          <div style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: hasUkhoEvents ? '#0ea5e9' : '#b45309', opacity: 0.9 }}>
-                            {hasUkhoEvents ? (hasUkhoAccess ? 'UKHO' : 'UKHO 7d') : (hasPredictedEvents ? 'pred' : '—')}
+                          <div
+                            style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: hasUkhoEvents ? '#0ea5e9' : '#b45309', opacity: 0.9 }}
+                            title={hasPredictedEvents ? 'Predicted tidal data' : undefined}
+                          >
+                            {hasUkhoEvents ? (hasUkhoAccess ? 'UKHO' : 'UKHO 7d') : (hasPredictedEvents ? 'Pred.' : '—')}
                           </div>
                         )}
                       </div>
@@ -1930,7 +1951,7 @@ export default function TidalCalendarApp() {
                     <span style={{ color: '#475569', marginLeft: '8px' }}>▼</span> Low Water
                   </div>
                   <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#b45309', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '8px', padding: '2px 6px', background: '#fef3c7', borderRadius: '4px', color: '#b45309' }}>pred</span> Algorithmically predicted (beyond 7-day API)
+                    <span style={{ fontSize: '8px', padding: '2px 6px', background: '#fef3c7', borderRadius: '4px', color: '#b45309' }} title="Predicted tidal data">Pred.</span> Predicted tidal data (typically beyond the 7-day API window)
                   </div>
                   <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#334155' }}>
                     🌑🌕 = Spring tides (larger range) • 🌓🌗 = Neap tides (smaller range)
