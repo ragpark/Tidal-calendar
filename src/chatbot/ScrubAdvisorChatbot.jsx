@@ -61,7 +61,6 @@ const ScrubAdvisorChatbot = ({ adapter = overpassFacilityAdapter, mcpCapabilitie
             <span>{BOT_AVATAR}</span>
             <div>
               <div style={{ fontSize: '13px', fontWeight: 700 }}>Scrub Planner Assistant</div>
-              <div style={{ fontSize: '11px', opacity: 0.9 }}>Overpass + MCP handoff</div>
             </div>
           </div>
           <button onClick={() => setIsMinimized((v) => !v)} style={{ border: '1px solid rgba(255,255,255,0.45)', background: 'rgba(255,255,255,0.15)', color: '#fff', borderRadius: '8px', cursor: 'pointer', padding: '4px 10px', fontWeight: 700 }}>
