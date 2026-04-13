@@ -81,6 +81,7 @@ const OVERPASS_API_URLS = (process.env.OVERPASS_API_URL
     'https://overpass.private.coffee/api/interpreter',
   ]);
 const NOMINATIM_SEARCH_URL = process.env.NOMINATIM_SEARCH_URL || 'https://nominatim.openstreetmap.org/search';
+const FACILITY_LOOKUP_USER_AGENT = process.env.FACILITY_LOOKUP_USER_AGENT || 'BoatScrubCalendar/1.0 (+https://boatscrubcalendar.com)';
 
 const toRadians = (deg) => (deg * Math.PI) / 180;
 const haversineKm = (aLat, aLon, bLat, bLon) => {
@@ -130,7 +131,7 @@ const resolveUkLocation = async (locationQuery) => {
   searchUrl.searchParams.set('countrycodes', 'gb');
 
   const response = await fetch(searchUrl, {
-    headers: { 'User-Agent': 'TidalCalendar/1.0 (facility-search)' },
+    headers: { 'User-Agent': FACILITY_LOOKUP_USER_AGENT },
   });
   const data = await parseJsonResponse(response, 'Nominatim');
   if (!response.ok || !Array.isArray(data) || data.length === 0) {
@@ -166,7 +167,11 @@ out center tags;
     try {
       const response = await fetch(overpassUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          Accept: 'application/json',
+          'User-Agent': FACILITY_LOOKUP_USER_AGENT,
+        },
         body: new URLSearchParams({ data: overpassQuery }),
       });
       const data = await parseJsonResponse(response, `Overpass (${overpassUrl})`);
