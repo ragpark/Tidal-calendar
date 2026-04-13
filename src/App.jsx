@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import ScrubAdvisorChatbot from './chatbot/ScrubAdvisorChatbot';
 
 // UK Admiralty Tidal API Configuration
 const API_BASE_URL = '/api';
@@ -211,6 +212,10 @@ export default function TidalCalendarApp() {
   const [subscriptionEnd, setSubscriptionEnd] = useState('');
   const [subscriptionNotice, setSubscriptionNotice] = useState('');
   const SUBSCRIPTION_PRICE_GBP = 5;
+  const mcpCapabilities = useMemo(
+    () => ['search_facilities', 'list_clubs', 'create_scrub_window', 'book_scrub_window', 'update_profile'],
+    [],
+  );
 
   const [maintenanceLogs, setMaintenanceLogs] = useState([]);
   const [maintenanceForm, setMaintenanceForm] = useState({ date: '', activityType: 'planned', title: '', notes: '', completed: false });
@@ -2247,6 +2252,7 @@ export default function TidalCalendarApp() {
       </footer>
 
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, pointerEvents: 'none', zIndex: 5 }}><TideWave height={100} /></div>
+      {!isEmbed && <ScrubAdvisorChatbot mcpCapabilities={mcpCapabilities} />}
     </div>
   );
 }
