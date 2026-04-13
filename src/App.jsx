@@ -391,10 +391,10 @@ export default function TidalCalendarApp() {
       setHomePort(stored);
       const match = stations.find(s => s.id === stored);
       if (match) setSelectedStation(match);
-    } else if (!selectedStation && stations.length > 0) {
-      setSelectedStation(stations[0]);
+    } else if (stations.length > 0) {
+      setSelectedStation((current) => current || stations[0]);
     }
-  }, [stations, user, selectedStation, persistHomePortSelection, isEmbed]);
+  }, [stations, user, persistHomePortSelection, isEmbed]);
 
   useEffect(() => {
     if (isEmbed) return;
@@ -1768,7 +1768,7 @@ export default function TidalCalendarApp() {
                     <button
                       key={station.id}
                       className="station-card"
-                      onClick={() => setSelectedStation(station)}
+                      onClick={() => applySelectedStation(station.id)}
                       style={{ background: selectedStation?.id === station.id ? '#e0f2fe' : '#ffffff', border: `1px solid ${selectedStation?.id === station.id ? '#0ea5e9' : '#cbd5e1'}`, borderRadius: '10px', padding: '12px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}
                     >
                       <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a', marginBottom: '2px' }}>{station.name}</div>
