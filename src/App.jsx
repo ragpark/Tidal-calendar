@@ -1281,6 +1281,17 @@ export default function TidalCalendarApp() {
           .profile-card { padding: 14px; gap: 10px; background: #ffffff; box-shadow: 0 2px 10px rgba(15,23,42,0.06); }
           .profile-card-nested { padding: 12px; box-shadow: none; background: #ffffff; border-color: #e2e8f0; border-left: 3px solid #bae6fd; }
           .profile-card-nested + .profile-card-nested { margin-top: 8px; }
+          .profile-account-header { flex-direction: column; align-items: flex-start !important; gap: 10px; }
+          .profile-auth-toggle { width: 100%; }
+          .profile-auth-toggle button { flex: 1; }
+          .profile-signed-in { flex-direction: column; align-items: flex-start !important; gap: 12px; }
+          .profile-signed-in button { width: 100%; }
+          .profile-maintenance-header { flex-direction: column; align-items: flex-start !important; }
+          .profile-maintenance-header-actions { width: 100%; justify-content: stretch !important; }
+          .profile-maintenance-header-actions button { flex: 1; }
+          .profile-log-row { flex-direction: column; align-items: flex-start !important; }
+          .profile-log-actions { width: 100%; }
+          .profile-log-actions button { flex: 1; }
         }
         ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); } ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 4px; }
       `}</style>
@@ -1423,12 +1434,12 @@ export default function TidalCalendarApp() {
         )}
 
         {currentPage === 'profile' && (
-          <section className="profile-section" style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
+          <section className="profile-section" style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
             <div style={{ display: 'grid', gap: '16px' }}>
               <div className="profile-card" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)', display: 'grid', gap: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="profile-account-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Account</h3>
-                  <div style={{ display: 'flex', gap: '6px' }}>
+                  <div className="profile-auth-toggle" style={{ display: 'flex', gap: '6px' }}>
                     <button onClick={() => setAuthMode('signin')} style={{ padding: '6px 10px', background: authMode === 'signin' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign In</button>
                     <button onClick={() => setAuthMode('signup')} style={{ padding: '6px 10px', background: authMode === 'signup' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign Up</button>
                   </div>
@@ -1442,7 +1453,7 @@ export default function TidalCalendarApp() {
                     <button type="submit" style={{ padding: '12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>{authMode === 'signup' ? 'Create Account' : 'Sign In'}</button>
                   </form>
                 ) : (
-                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}>
+                  <div className="profile-signed-in" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}>
                     <div>
                       <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Signed in as</div>
                       <div style={{ fontSize: '13px', color: '#334155' }}>{user.email}</div>
@@ -1473,12 +1484,12 @@ export default function TidalCalendarApp() {
                   </div>
 
                   <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                    <div className="profile-maintenance-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <div>
                         <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Maintenance Logs</div>
                         <div style={{ fontSize: '11px', color: '#475569' }}>Track scrubbing days and boat maintenance.</div>
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <div className="profile-maintenance-header-actions" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <button
                           onClick={handleExportMaintenanceLogs}
                           style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}
@@ -1541,7 +1552,7 @@ export default function TidalCalendarApp() {
                       {maintenanceLogs.length === 0 && <div style={{ fontSize: '12px', color: '#475569' }}>No maintenance logs yet. Create your first entry.</div>}
                       {maintenanceLogs.map(log => (
                         <div key={log.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px', display: 'grid', gap: '6px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '10px' }}>
+                          <div className="profile-log-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '10px' }}>
                             <div style={{ flex: 1 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
                                 <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{log.title}</span>
@@ -1552,7 +1563,7 @@ export default function TidalCalendarApp() {
                               </div>
                               {log.notes && <div style={{ fontSize: '11px', color: '#334155', marginTop: '4px' }}>{log.notes}</div>}
                             </div>
-                            <div style={{ display: 'flex', gap: '4px' }}>
+                            <div className="profile-log-actions" style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                               <button onClick={() => editMaintenanceLog(log)} style={{ padding: '4px 8px', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, fontSize: '11px' }}>
                                 Edit
                               </button>
