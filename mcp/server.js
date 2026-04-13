@@ -91,6 +91,20 @@ const tools = [
     },
   },
   {
+    name: 'search_facilities',
+    description: 'Search nearby UK marinas/clubs/boatyards via Overpass-backed adapter.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        location: { type: 'string', description: 'UK postcode or town name.' },
+        draft: { type: 'number', description: 'Boat draft in metres.' },
+        loa: { type: 'number', description: 'Boat LOA in metres.' },
+        scrubNeed: { type: 'string', enum: ['urgent', 'planned'] },
+      },
+      required: ['location', 'draft', 'loa'],
+    },
+  },
+  {
     name: 'generate_tide_booklet',
     description: 'Generate a PDF tide booklet for the user home port.',
     inputSchema: { type: 'object', properties: {}, required: [] },
@@ -256,6 +270,17 @@ const handleToolCall = async (name, args) => {
       const data = await requestJson(`/api/clubs/${args.club_id}/windows/${args.window_id}/book`, {
         method: 'POST',
         auth: true,
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(data) }] };
+    }
+    case 'search_facilities': {
+      const data = await requestJson('/api/facilities/search', {
+        query: {
+          location: args.location,
+          draft: args.draft,
+          loa: args.loa,
+          scrubNeed: args.scrubNeed || 'planned',
+        },
       });
       return { content: [{ type: 'text', text: JSON.stringify(data) }] };
     }
