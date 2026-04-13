@@ -155,7 +155,7 @@ const searchMarineFacilities = async ({ location, draft, loa, scrubNeed }) => {
   nwr(around:${radiusMeters},${origin.lat},${origin.lon})[leisure=marina];
   nwr(around:${radiusMeters},${origin.lat},${origin.lon})[waterway=boatyard];
   nwr(around:${radiusMeters},${origin.lat},${origin.lon})[sport=sailing];
-  nwr(around:${radiusMeters},${origin.lat},${origin.lon})[seamark:type=yacht_club];
+  nwr(around:${radiusMeters},${origin.lat},${origin.lon})["seamark:type"="yacht_club"];
 );
 out center tags;
   `.trim();
