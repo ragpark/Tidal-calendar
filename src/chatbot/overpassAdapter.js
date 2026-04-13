@@ -13,7 +13,13 @@ export const createOverpassFacilityAdapter = ({ baseUrl = '/api/facilities/searc
       credentials: 'include',
     });
 
-    const payload = await response.json();
+    const bodyText = await response.text();
+    let payload = null;
+    try {
+      payload = bodyText ? JSON.parse(bodyText) : null;
+    } catch (_err) {
+      throw new Error(`Facility search returned unexpected response (${response.status}). Please retry.`);
+    }
     if (!response.ok) {
       throw new Error(payload?.error || 'Unable to load scrub facilities');
     }

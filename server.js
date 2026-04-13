@@ -73,7 +73,13 @@ app.use(express.json());
 app.use(cookieParser());
 
 const isValidEmail = (value) => typeof value === 'string' && /\S+@\S+\.\S+/.test(value);
-const OVERPASS_API_URL = process.env.OVERPASS_API_URL || 'https://overpass-api.de/api/interpreter';
+const OVERPASS_API_URLS = (process.env.OVERPASS_API_URL
+  ? process.env.OVERPASS_API_URL.split(',').map((item) => item.trim()).filter(Boolean)
+  : [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
+  ]);
 const NOMINATIM_SEARCH_URL = process.env.NOMINATIM_SEARCH_URL || 'https://nominatim.openstreetmap.org/search';
 
 const toRadians = (deg) => (deg * Math.PI) / 180;
@@ -92,6 +98,16 @@ const parseMetricValue = (value) => {
   return match ? Number(match[0]) : null;
 };
 
+const parseJsonResponse = async (response, context) => {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch (_err) {
+    const preview = text.slice(0, 140).replace(/\s+/g, ' ');
+    throw new Error(`${context} returned non-JSON response (${response.status}): ${preview || 'empty body'}`);
+  }
+};
+
 const resolveUkLocation = async (locationQuery) => {
   const trimmed = String(locationQuery || '').trim();
   if (!trimmed) throw new Error('Location is required');
@@ -101,7 +117,7 @@ const resolveUkLocation = async (locationQuery) => {
   if (postcodePattern.test(normalized)) {
     const postcode = `${normalized.slice(0, -3)} ${normalized.slice(-3)}`;
     const response = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(postcode)}`);
-    const data = await response.json();
+    const data = await parseJsonResponse(response, 'Postcodes.io');
     if (response.ok && data?.status === 200 && data?.result) {
       return { lat: data.result.latitude, lon: data.result.longitude, label: data.result.postcode };
     }
@@ -116,7 +132,7 @@ const resolveUkLocation = async (locationQuery) => {
   const response = await fetch(searchUrl, {
     headers: { 'User-Agent': 'TidalCalendar/1.0 (facility-search)' },
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response, 'Nominatim');
   if (!response.ok || !Array.isArray(data) || data.length === 0) {
     throw new Error('Could not geocode that UK location');
   }
@@ -144,14 +160,30 @@ const searchMarineFacilities = async ({ location, draft, loa, scrubNeed }) => {
 out center tags;
   `.trim();
 
-  const response = await fetch(OVERPASS_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-    body: new URLSearchParams({ data: overpassQuery }),
-  });
-  const payload = await response.json();
-  if (!response.ok || !Array.isArray(payload?.elements)) {
-    throw new Error('Unable to load facilities from Overpass');
+  let payload = null;
+  let overpassError = null;
+  for (const overpassUrl of OVERPASS_API_URLS) {
+    try {
+      const response = await fetch(overpassUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: new URLSearchParams({ data: overpassQuery }),
+      });
+      const data = await parseJsonResponse(response, `Overpass (${overpassUrl})`);
+      if (!response.ok) {
+        throw new Error(data?.remark || `HTTP ${response.status}`);
+      }
+      if (!Array.isArray(data?.elements)) {
+        throw new Error('Missing elements in Overpass response');
+      }
+      payload = data;
+      break;
+    } catch (err) {
+      overpassError = err;
+    }
+  }
+  if (!payload) {
+    throw new Error(`Unable to load facilities from Overpass: ${overpassError?.message || 'all endpoints failed'}`);
   }
 
   const results = payload.elements
