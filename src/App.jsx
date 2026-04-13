@@ -605,10 +605,71 @@ export default function TidalCalendarApp() {
     return selectedStation;
   }, [homePort, selectedStation, stations]);
 
+  const weatherQueryCandidates = useMemo(() => {
+    if (!weatherStation) return [];
+    const queries = [];
+    const lat = Number(weatherStation.lat);
+    const lon = Number(weatherStation.lon);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      queries.push({
+        query: `${lat},${lon}`,
+        label: `${weatherStation.name} coordinates`,
+      });
+    }
+
+    const stationName = (weatherStation.name || '').trim();
+    const stationCountry = (weatherStation.country || '').trim();
+    if (stationName) {
+      queries.push({ query: `${stationName}, UK`, label: `${stationName}, UK` });
+      if (stationCountry) {
+        queries.push({ query: `${stationName}, ${stationCountry}, UK`, label: `${stationName}, ${stationCountry}` });
+      }
+    }
+
+    const normalize = (value = '') => value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const targetTokens = new Set(normalize(stationName).split(' ').filter(token => token.length > 2));
+    const countryNorm = normalize(stationCountry);
+
+    const candidates = stations
+      .filter(s => s?.id !== weatherStation?.id)
+      .map((candidate) => {
+        const cLat = Number(candidate.lat);
+        const cLon = Number(candidate.lon);
+        if (!Number.isFinite(cLat) || !Number.isFinite(cLon)) return null;
+        const candidateTokens = new Set(normalize(candidate.name).split(' ').filter(token => token.length > 2));
+        let overlap = 0;
+        targetTokens.forEach(token => {
+          if (candidateTokens.has(token)) overlap += 1;
+        });
+        const countryScore = countryNorm && normalize(candidate.country) === countryNorm ? 0.5 : 0;
+        return {
+          candidate,
+          score: overlap + countryScore,
+          query: `${cLat},${cLon}`,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score);
+
+    candidates.slice(0, 3).forEach((item) => {
+      queries.push({
+        query: item.query,
+        label: `Nearby weather fallback: ${item.candidate.name}`,
+      });
+    });
+
+    const deduped = [];
+    const seen = new Set();
+    queries.forEach((item) => {
+      if (!item?.query || seen.has(item.query)) return;
+      seen.add(item.query);
+      deduped.push(item);
+    });
+    return deduped;
+  }, [weatherStation, stations]);
+
   useEffect(() => {
-    const lat = Number(weatherStation?.lat);
-    const lon = Number(weatherStation?.lon);
-    if (!scrubModal || !selectedDay || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+    if (!scrubModal || !selectedDay || weatherQueryCandidates.length === 0) {
       setWeatherForecast(null);
       setWeatherError('');
       return;
@@ -621,29 +682,41 @@ export default function TidalCalendarApp() {
       setWeatherLoading(true);
       setWeatherError('');
       try {
-        const response = await fetch(
-          `${WEATHER_API_BASE_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${lat},${lon}&days=7&aqi=no&alerts=no`,
-          { signal: controller.signal }
-        );
-        if (!response.ok) throw new Error('Failed to fetch weather forecast.');
-        const data = await response.json();
-        const forecastDay = data?.forecast?.forecastday?.find(day => day.date === dateKey);
+        let lastError = null;
+        for (const weatherCandidate of weatherQueryCandidates) {
+          try {
+            const response = await fetch(
+              `${WEATHER_API_BASE_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(weatherCandidate.query)}&days=7&aqi=no&alerts=no`,
+              { signal: controller.signal }
+            );
+            if (!response.ok) {
+              lastError = new Error(`Weather lookup failed for ${weatherCandidate.label}.`);
+              continue;
+            }
+            const data = await response.json();
+            const forecastDay = data?.forecast?.forecastday?.find(day => day.date === dateKey);
 
-        if (!forecastDay) {
-          setWeatherForecast({
-            date: dateKey,
-            location: data?.location,
-            missing: true,
-          });
-          return;
+            if (!forecastDay) {
+              setWeatherForecast({
+                date: dateKey,
+                location: data?.location,
+                missing: true,
+              });
+              return;
+            }
+
+            setWeatherForecast({
+              date: dateKey,
+              location: data?.location,
+              day: forecastDay.day,
+              astro: forecastDay.astro,
+            });
+            return;
+          } catch (candidateError) {
+            lastError = candidateError;
+          }
         }
-
-        setWeatherForecast({
-          date: dateKey,
-          location: data?.location,
-          day: forecastDay.day,
-          astro: forecastDay.astro,
-        });
+        throw lastError || new Error('Unable to match this port to a weather station.');
       } catch (err) {
         if (err.name === 'AbortError') return;
         setWeatherError(err.message || 'Unable to load weather forecast.');
@@ -656,7 +729,7 @@ export default function TidalCalendarApp() {
     fetchWeather();
 
     return () => controller.abort();
-  }, [scrubModal, selectedDay, weatherStation]);
+  }, [scrubModal, selectedDay, weatherQueryCandidates]);
 
   const createMaintenanceLog = async (payload) => {
     if (!user) {
