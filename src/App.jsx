@@ -7,6 +7,7 @@ const DEFAULT_API_KEY = 'baec423358314e4e8f527980f959295d';
 const WEATHER_API_BASE_URL = 'https://api.weatherapi.com/v1';
 const WEATHER_API_KEY = '34c6cb97a9cb4f0c89e85256261401';
 const LOCAL_HOME_PORT_KEY = 'tidal-calendar-home-port';
+const CHATBOT_ENABLED = false;
 
 const parseEmbedConfig = () => {
   if (typeof window === 'undefined') {
@@ -2273,7 +2274,7 @@ export default function TidalCalendarApp() {
       </footer>
 
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, pointerEvents: 'none', zIndex: 5 }}><TideWave height={100} /></div>
-      {!isEmbed && <ScrubAdvisorChatbot mcpCapabilities={mcpCapabilities} />}
+      {!isEmbed && CHATBOT_ENABLED && <ScrubAdvisorChatbot mcpCapabilities={mcpCapabilities} />}
     </div>
   );
 }
