@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ScrubAdvisorChatbot from './chatbot/ScrubAdvisorChatbot';
+import BlogPostKnowYourWaters from './blogPostKnowYourWaters';
 
 // UK Admiralty Tidal API Configuration
 const API_BASE_URL = '/api';
@@ -1429,6 +1430,14 @@ export default function TidalCalendarApp() {
                   Finally, review safety and engine essentials: service filters, belts, and impellers, confirm navigation lights and VHF operation, and renew flares that are near expiry. Pair this with spring tide planning in your home port so haul-out, scrub-off, and relaunch tasks line up with the most practical tidal windows.
                 </p>
               </div>
+            </article>
+
+            <article style={{ display: 'grid', gap: '12px', maxWidth: '900px', margin: '0 auto' }}>
+              <header style={{ display: 'grid', gap: '8px' }}>
+                <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9', margin: 0 }}>Featured long read</p>
+                <h2 style={{ fontSize: '30px', margin: 0, color: '#0f172a', fontWeight: 600 }}>Know Your Waters: Hull Fouling Around the UK and When to Scrub</h2>
+              </header>
+              <BlogPostKnowYourWaters />
             </article>
           </section>
         )}
