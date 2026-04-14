@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import ScrubAdvisorChatbot from './chatbot/ScrubAdvisorChatbot';
-import BlogPostKnowYourWaters from './blogPostKnowYourWaters';
 
 // UK Admiralty Tidal API Configuration
 const API_BASE_URL = '/api';
@@ -207,6 +206,12 @@ export default function TidalCalendarApp() {
   const [adminForm, setAdminForm] = useState({ id: null, email: '', password: '', role: 'user', subscriptionStatus: 'inactive', subscriptionPeriodEnd: '' });
   const [adminError, setAdminError] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
+  const [blogPosts, setBlogPosts] = useState([]);
+  const [blogLoading, setBlogLoading] = useState(false);
+  const [blogError, setBlogError] = useState('');
+  const [blogAdminError, setBlogAdminError] = useState('');
+  const [selectedBlogPostId, setSelectedBlogPostId] = useState(null);
+  const [blogEditor, setBlogEditor] = useState({ id: null, title: '', excerpt: '', coverImageUrl: '', contentHtml: '' });
   const [currentPage, setCurrentPage] = useState('calendar');
   const [authMode, setAuthMode] = useState('signin');
   const [authForm, setAuthForm] = useState({ email: '', password: '' });
@@ -521,6 +526,26 @@ export default function TidalCalendarApp() {
     }
   }, [apiRequest, user]);
 
+  const loadBlogPosts = useCallback(async () => {
+    setBlogLoading(true);
+    setBlogError('');
+    try {
+      const posts = await apiRequest('/api/blog-posts');
+      const normalized = Array.isArray(posts) ? posts : [];
+      setBlogPosts(normalized);
+      setSelectedBlogPostId(current => current || normalized[0]?.id || null);
+    } catch (err) {
+      setBlogError(err.message || 'Unable to load blog posts.');
+    } finally {
+      setBlogLoading(false);
+    }
+  }, [apiRequest]);
+
+  const resetBlogEditor = useCallback(() => {
+    setBlogEditor({ id: null, title: '', excerpt: '', coverImageUrl: '', contentHtml: '' });
+    setBlogAdminError('');
+  }, []);
+
   useEffect(() => {
     if (currentPage === 'admin' && user?.role !== 'admin') {
       setCurrentPage('profile');
@@ -532,6 +557,12 @@ export default function TidalCalendarApp() {
       loadAdminData();
     }
   }, [currentPage, loadAdminData]);
+
+  useEffect(() => {
+    if (currentPage === 'blog' || currentPage === 'admin') {
+      loadBlogPosts();
+    }
+  }, [currentPage, loadBlogPosts]);
 
   const formatAdminDate = (value) => {
     if (!value) return '—';
@@ -581,6 +612,56 @@ export default function TidalCalendarApp() {
       await loadAdminData();
     } catch (err) {
       setAdminError(err.message);
+    }
+  };
+
+  const handleBlogEdit = (post) => {
+    setBlogEditor({
+      id: post.id,
+      title: post.title || '',
+      excerpt: post.excerpt || '',
+      coverImageUrl: post.coverImageUrl || '',
+      contentHtml: post.contentHtml || '',
+    });
+    setBlogAdminError('');
+  };
+
+  const handleBlogSubmit = async (event) => {
+    event.preventDefault();
+    setBlogAdminError('');
+    try {
+      const payload = {
+        title: blogEditor.title,
+        excerpt: blogEditor.excerpt,
+        coverImageUrl: blogEditor.coverImageUrl,
+        contentHtml: blogEditor.contentHtml,
+      };
+      if (blogEditor.id) {
+        await apiRequest(`/api/admin/blog-posts/${blogEditor.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await apiRequest('/api/admin/blog-posts', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      }
+      resetBlogEditor();
+      await loadBlogPosts();
+    } catch (err) {
+      setBlogAdminError(err.message || 'Unable to save blog post.');
+    }
+  };
+
+  const handleBlogDelete = async (id) => {
+    setBlogAdminError('');
+    try {
+      await apiRequest(`/api/admin/blog-posts/${id}`, { method: 'DELETE' });
+      if (blogEditor.id === id) resetBlogEditor();
+      await loadBlogPosts();
+    } catch (err) {
+      setBlogAdminError(err.message || 'Unable to delete blog post.');
     }
   };
 
@@ -1250,6 +1331,8 @@ export default function TidalCalendarApp() {
     );
   }
 
+  const selectedBlogPost = blogPosts.find((post) => post.id === selectedBlogPostId) || blogPosts[0] || null;
+
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #f7fafc 0%, #eef2f7 40%, #e5ecf5 100%)', color: '#0f172a', fontFamily: "'Outfit', sans-serif", position: 'relative', overflow: 'hidden' }}>
       
@@ -1399,46 +1482,58 @@ export default function TidalCalendarApp() {
 
         {currentPage === 'blog' && (
           <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '16px', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
-            <article style={{ display: 'grid', gap: '16px', maxWidth: '900px', margin: '0 auto' }}>
-              <header style={{ display: 'grid', gap: '8px' }}>
-                <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9', margin: 0 }}>Seasonal maintenance journal</p>
-                <h2 style={{ fontSize: '30px', margin: 0, color: '#0f172a', fontWeight: 600 }}>Spring Sail Boat Maintenance in the UK</h2>
-                <p style={{ margin: 0, color: '#334155', fontSize: '15px', fontFamily: "'Outfit', sans-serif" }}>
-                  A practical March-to-May refresh plan to get your yacht safe, efficient, and ready for longer coastal passages.
-                </p>
-              </header>
+            <header style={{ display: 'grid', gap: '6px' }}>
+              <p style={{ margin: 0, fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9' }}>Tidal Blog</p>
+              <h2 style={{ margin: 0, color: '#0f172a' }}>Latest marine maintenance articles</h2>
+            </header>
+            {blogError && <div style={{ color: '#b91c1c', fontWeight: 600 }}>{blogError}</div>}
+            {blogLoading && <div style={{ color: '#334155' }}>Loading blog posts…</div>}
+            {!blogLoading && blogPosts.length === 0 && <div style={{ color: '#334155' }}>No blog posts have been published yet.</div>}
 
-              <figure style={{ margin: 0, borderRadius: '14px', overflow: 'hidden', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                <img
-                  src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1400&q=80"
-                  alt="A sail boat being prepared in a UK marina during spring"
-                  style={{ width: '100%', maxHeight: '340px', objectFit: 'cover', display: 'block' }}
-                />
-                <figcaption style={{ padding: '10px 12px', color: '#475569', fontSize: '12px', fontFamily: "'Outfit', sans-serif" }}>
-                  Supporting image area for seasonal marina checks and deck preparation.
-                </figcaption>
-              </figure>
+            {!blogLoading && blogPosts.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 340px) 1fr', gap: '18px' }}>
+                <aside style={{ display: 'grid', gap: '10px', alignContent: 'start' }}>
+                  {blogPosts.map((post) => (
+                    <button
+                      key={post.id}
+                      onClick={() => setSelectedBlogPostId(post.id)}
+                      style={{
+                        textAlign: 'left',
+                        border: selectedBlogPost?.id === post.id ? '1px solid #0ea5e9' : '1px solid #e2e8f0',
+                        background: selectedBlogPost?.id === post.id ? '#eff6ff' : '#f8fafc',
+                        borderRadius: '12px',
+                        padding: '12px',
+                        cursor: 'pointer',
+                        display: 'grid',
+                        gap: '6px',
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, color: '#0f172a' }}>{post.title}</div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>{new Date(post.publishedAt).toLocaleDateString('en-GB')}</div>
+                      <div style={{ fontSize: '13px', color: '#334155' }}>{post.excerpt}</div>
+                    </button>
+                  ))}
+                </aside>
 
-              <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: 1.7, fontFamily: "'Outfit', sans-serif", display: 'grid', gap: '10px' }}>
-                <p style={{ margin: 0 }}>
-                  Start with a full topside and hull inspection while the weather is still cool. Look for gelcoat cracks, tired antifoul patches, anode wear, and any signs of water ingress around deck fittings. Spring is ideal for resealing deck hardware because surfaces are drier and cure conditions are generally stable before summer heat arrives.
-                </p>
-                <p style={{ margin: 0 }}>
-                  Move on to rigging and sail systems. UK winter moisture can accelerate corrosion on terminals and turnbuckles, so clean and inspect standing rigging carefully. Re-lubricate winches, replace worn control lines, and test reefing setups before your first longer trip. If your sails were stored damp, air them fully and check stitching at batten pockets and UV strips.
-                </p>
-                <p style={{ margin: 0 }}>
-                  Finally, review safety and engine essentials: service filters, belts, and impellers, confirm navigation lights and VHF operation, and renew flares that are near expiry. Pair this with spring tide planning in your home port so haul-out, scrub-off, and relaunch tasks line up with the most practical tidal windows.
-                </p>
+                {selectedBlogPost && (
+                  <article style={{ display: 'grid', gap: '12px', alignContent: 'start' }}>
+                    <header style={{ display: 'grid', gap: '6px' }}>
+                      <h3 style={{ margin: 0, fontSize: '30px', color: '#0f172a' }}>{selectedBlogPost.title}</h3>
+                      <div style={{ color: '#64748b', fontSize: '13px' }}>
+                        {new Date(selectedBlogPost.publishedAt).toLocaleDateString('en-GB')} • {selectedBlogPost.authorEmail || 'Admin'}
+                      </div>
+                    </header>
+                    {selectedBlogPost.coverImageUrl && (
+                      <img src={selectedBlogPost.coverImageUrl} alt={selectedBlogPost.title} style={{ width: '100%', borderRadius: '12px', maxHeight: '340px', objectFit: 'cover', border: '1px solid #e2e8f0' }} />
+                    )}
+                    <div
+                      style={{ color: '#1e293b', fontSize: '15px', lineHeight: 1.7, display: 'grid', gap: '10px' }}
+                      dangerouslySetInnerHTML={{ __html: selectedBlogPost.contentHtml }}
+                    />
+                  </article>
+                )}
               </div>
-            </article>
-
-            <article style={{ display: 'grid', gap: '12px', maxWidth: '900px', margin: '0 auto' }}>
-              <header style={{ display: 'grid', gap: '8px' }}>
-                <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9', margin: 0 }}>Featured long read</p>
-                <h2 style={{ fontSize: '30px', margin: 0, color: '#0f172a', fontWeight: 600 }}>Know Your Waters: Hull Fouling Around the UK and When to Scrub</h2>
-              </header>
-              <BlogPostKnowYourWaters />
-            </article>
+            )}
           </section>
         )}
 
@@ -1820,6 +1915,93 @@ export default function TidalCalendarApp() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', display: 'grid', gap: '16px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Blog CMS</h3>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>Create, edit, and publish blog posts with rich text content stored in the database.</p>
+              </div>
+              {blogAdminError && (
+                <div style={{ background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '10px', padding: '10px', color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>
+                  {blogAdminError}
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 330px) 1fr', gap: '16px', alignItems: 'start' }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '14px', display: 'grid', gap: '10px' }}>
+                  <button type="button" onClick={resetBlogEditor} style={{ padding: '10px', borderRadius: '10px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                    + New post
+                  </button>
+                  {blogPosts.map((post) => (
+                    <div key={post.id} style={{ border: '1px solid #e2e8f0', background: blogEditor.id === post.id ? '#eff6ff' : '#fff', borderRadius: '10px', padding: '10px', display: 'grid', gap: '8px' }}>
+                      <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '13px' }}>{post.title}</div>
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>{new Date(post.publishedAt).toLocaleDateString('en-GB')}</div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button type="button" onClick={() => handleBlogEdit(post)} style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid #bae6fd', background: '#e0f2fe', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Edit</button>
+                        <button type="button" onClick={() => handleBlogDelete(post.id)} style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid #fecaca', background: '#fee2e2', color: '#b91c1c', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <form onSubmit={handleBlogSubmit} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', display: 'grid', gap: '10px' }}>
+                  <label style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#475569' }}>
+                    Title
+                    <input value={blogEditor.title} onChange={(event) => setBlogEditor((form) => ({ ...form, title: event.target.value }))} required style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                  </label>
+                  <label style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#475569' }}>
+                    Excerpt
+                    <textarea value={blogEditor.excerpt} onChange={(event) => setBlogEditor((form) => ({ ...form, excerpt: event.target.value }))} rows={3} style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                  </label>
+                  <label style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#475569' }}>
+                    Cover image URL (optional)
+                    <input value={blogEditor.coverImageUrl} onChange={(event) => setBlogEditor((form) => ({ ...form, coverImageUrl: event.target.value }))} style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                  </label>
+                  <div style={{ display: 'grid', gap: '6px' }}>
+                    <div style={{ fontSize: '12px', color: '#475569' }}>Content</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {[
+                        ['Bold', 'bold'],
+                        ['Italic', 'italic'],
+                        ['H2', 'formatBlock', '<h2>'],
+                        ['Paragraph', 'formatBlock', '<p>'],
+                        ['Bullet list', 'insertUnorderedList'],
+                      ].map(([label, cmd, value]) => (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => {
+                            document.execCommand(cmd, false, value);
+                            const html = document.getElementById('blog-editor-area')?.innerHTML || '';
+                            setBlogEditor((form) => ({ ...form, contentHtml: html }));
+                          }}
+                          style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div
+                      id="blog-editor-area"
+                      contentEditable
+                      suppressContentEditableWarning
+                      onInput={(event) => setBlogEditor((form) => ({ ...form, contentHtml: event.currentTarget.innerHTML }))}
+                      style={{ minHeight: '220px', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff', lineHeight: 1.6 }}
+                      dangerouslySetInnerHTML={{ __html: blogEditor.contentHtml }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="submit" style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                      {blogEditor.id ? 'Update post' : 'Publish post'}
+                    </button>
+                    {blogEditor.id && (
+                      <button type="button" onClick={resetBlogEditor} style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 600, cursor: 'pointer' }}>
+                        Cancel edit
+                      </button>
+                    )}
+                  </div>
+                </form>
               </div>
             </div>
           </section>

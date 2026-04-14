@@ -99,6 +99,36 @@ const parseMetricValue = (value) => {
   return match ? Number(match[0]) : null;
 };
 
+const stripHtml = (value = '') => String(value).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+const sanitizeBlogHtml = (value = '') => String(value)
+  .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+  .replace(/\son\w+="[^"]*"/gi, '')
+  .replace(/\son\w+='[^']*'/gi, '')
+  .trim();
+
+const initialBlogPosts = [
+  {
+    title: 'Spring Sail Boat Maintenance in the UK',
+    excerpt: 'A practical March-to-May refresh plan to keep your yacht safe, efficient, and ready for longer coastal passages.',
+    coverImageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1400&q=80',
+    contentHtml: `
+      <p>Start with a full topside and hull inspection while the weather is still cool. Look for gelcoat cracks, tired antifoul patches, anode wear, and any signs of water ingress around deck fittings.</p>
+      <p>Move on to rigging and sail systems. Winter moisture can accelerate corrosion on terminals and turnbuckles, so clean and inspect standing rigging carefully. Re-lubricate winches, replace worn control lines, and test reefing setups before your first longer trip.</p>
+      <p>Finally, review safety and engine essentials: service filters, belts, and impellers, confirm navigation lights and VHF operation, and renew flares near expiry. Pair this with spring tide planning in your home port so haul-out and relaunch tasks line up with practical tidal windows.</p>
+    `.trim(),
+  },
+  {
+    title: 'Know Your Waters: Hull Fouling Around the UK and When to Scrub',
+    excerpt: 'Understand growth pressure by region and season so you can schedule cleaning around the right tidal windows.',
+    coverImageUrl: '',
+    contentHtml: `
+      <p>Hull fouling is not uniform around the UK. In warmer, nutrient-rich marinas, slime and weed can build quickly. In higher-energy or colder waters, buildup may be slower, but barnacle spikes still appear if inspections are delayed.</p>
+      <p>Track your own performance indicators: reduced speed at normal RPM, higher fuel burn, and sluggish acceleration are often the earliest signs. A light clean early in the season can prevent heavy fouling later.</p>
+      <p>Use local low-water opportunities and club scrubbing slots to stay ahead of growth. Planning by tide and weather windows avoids rushed maintenance and keeps your hull efficient over longer passages.</p>
+    `.trim(),
+  },
+];
+
 const parseJsonResponse = async (response, context) => {
   const text = await response.text();
   try {
@@ -357,6 +387,17 @@ const ensureSchema = async () => {
         reminder_sent_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT now()
       );
+      CREATE TABLE IF NOT EXISTS blog_posts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title TEXT NOT NULL,
+        excerpt TEXT,
+        cover_image_url TEXT,
+        content_html TEXT NOT NULL,
+        author_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        published_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        created_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now()
+      );
     `);
     console.log('Database schema created successfully');
   } catch (err) {
@@ -371,6 +412,20 @@ const ensureSchema = async () => {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_last_session_id TEXT;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS maintenance_reminders_enabled BOOLEAN NOT NULL DEFAULT false;`);
   await pool.query(`ALTER TABLE maintenance_logs ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS excerpt TEXT;`);
+  await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS cover_image_url TEXT;`);
+  await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();`);
+
+  const { rows: blogRows } = await pool.query(`SELECT id FROM blog_posts LIMIT 1`);
+  if (blogRows.length === 0) {
+    for (const post of initialBlogPosts) {
+      await pool.query(
+        `INSERT INTO blog_posts (title, excerpt, cover_image_url, content_html, published_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, now(), now(), now())`,
+        [post.title, post.excerpt, post.coverImageUrl || null, sanitizeBlogHtml(post.contentHtml)],
+      );
+    }
+  }
 
   const { rows } = await pool.query(`SELECT id FROM clubs LIMIT 1`);
   if (rows.length === 0) {
@@ -836,6 +891,71 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) =
   }
   const { rowCount } = await pool.query(`DELETE FROM users WHERE id = $1`, [req.params.id]);
   if (rowCount === 0) return res.status(404).json({ error: 'User not found' });
+  res.json({ ok: true });
+});
+
+app.get('/api/blog-posts', async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT p.id, p.title, p.excerpt, p.cover_image_url, p.content_html, p.published_at, p.created_at, p.updated_at,
+            u.email AS author_email
+     FROM blog_posts p
+     LEFT JOIN users u ON u.id = p.author_id
+     ORDER BY p.published_at DESC, p.created_at DESC`,
+  );
+  const posts = rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    excerpt: row.excerpt || stripHtml(row.content_html).slice(0, 220),
+    coverImageUrl: row.cover_image_url || '',
+    contentHtml: row.content_html,
+    publishedAt: row.published_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    authorEmail: row.author_email || 'Admin',
+  }));
+  res.json(posts);
+});
+
+app.post('/api/admin/blog-posts', requireAuth, requireAdmin, async (req, res) => {
+  const { title, excerpt, coverImageUrl, contentHtml } = req.body || {};
+  if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title is required' });
+  if (!contentHtml || !String(contentHtml).trim()) return res.status(400).json({ error: 'Post content is required' });
+  const cleanContent = sanitizeBlogHtml(contentHtml);
+  const cleanExcerpt = excerpt ? stripHtml(excerpt).slice(0, 400) : stripHtml(cleanContent).slice(0, 220);
+  const { rows } = await pool.query(
+    `INSERT INTO blog_posts (title, excerpt, cover_image_url, content_html, author_id, published_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, now(), now(), now())
+     RETURNING id, title, excerpt, cover_image_url, content_html, published_at, created_at, updated_at`,
+    [String(title).trim(), cleanExcerpt, coverImageUrl ? String(coverImageUrl).trim() : null, cleanContent, req.user.id],
+  );
+  res.status(201).json(rows[0]);
+});
+
+app.put('/api/admin/blog-posts/:id', requireAuth, requireAdmin, async (req, res) => {
+  const { title, excerpt, coverImageUrl, contentHtml } = req.body || {};
+  if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title is required' });
+  if (!contentHtml || !String(contentHtml).trim()) return res.status(400).json({ error: 'Post content is required' });
+  const cleanContent = sanitizeBlogHtml(contentHtml);
+  const cleanExcerpt = excerpt ? stripHtml(excerpt).slice(0, 400) : stripHtml(cleanContent).slice(0, 220);
+  const { rows } = await pool.query(
+    `UPDATE blog_posts
+     SET title = $1,
+         excerpt = $2,
+         cover_image_url = $3,
+         content_html = $4,
+         author_id = $5,
+         updated_at = now()
+     WHERE id = $6
+     RETURNING id, title, excerpt, cover_image_url, content_html, published_at, created_at, updated_at`,
+    [String(title).trim(), cleanExcerpt, coverImageUrl ? String(coverImageUrl).trim() : null, cleanContent, req.user.id, req.params.id],
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'Blog post not found' });
+  res.json(rows[0]);
+});
+
+app.delete('/api/admin/blog-posts/:id', requireAuth, requireAdmin, async (req, res) => {
+  const { rowCount } = await pool.query(`DELETE FROM blog_posts WHERE id = $1`, [req.params.id]);
+  if (rowCount === 0) return res.status(404).json({ error: 'Blog post not found' });
   res.json({ ok: true });
 });
 
