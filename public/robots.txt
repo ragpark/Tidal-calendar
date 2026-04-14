@@ -2,3 +2,6 @@ User-agent: *
 Allow: /
 
 Sitemap: https://boatscrubcalendar.com/sitemap.xml
+
+# AI crawler discovery
+LLMs: https://boatscrubcalendar.com/llms.txt
