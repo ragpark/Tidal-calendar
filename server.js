@@ -515,6 +515,16 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+const hasPaidCalendarAccess = (user) => {
+  if (!user) return false;
+  const subscriptionStatus = String(user.subscription_status || '').toLowerCase();
+  if (!['active', 'trialing'].includes(subscriptionStatus)) return false;
+  if (!user.subscription_period_end) return true;
+  const periodEnd = new Date(user.subscription_period_end);
+  if (Number.isNaN(periodEnd.getTime())) return false;
+  return periodEnd.getTime() > Date.now();
+};
+
 const passwordResetLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -1454,6 +1464,10 @@ const predictTidalEvents = (station, startDate, days) => {
 // PDF Tide Booklet Generation
 app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
   try {
+    if (!hasPaidCalendarAccess(req.user)) {
+      return res.status(403).json({ error: 'An active subscription is required to download PDF tide booklets.' });
+    }
+
     // Get user's home port
     if (!req.user.home_port_id || !req.user.home_port_name) {
       return res.status(400).json({ error: 'No home port configured. Please set your home port first.' });
