@@ -1185,12 +1185,28 @@ const activateSubscriptionForUser = async ({ userId = null, customerId = null, e
     });
     return null;
   }
+  if (customerId) {
+    const { rows: existingRows } = await pool.query(
+      `SELECT stripe_customer_id FROM users WHERE id = $1 LIMIT 1`,
+      [resolvedUserId],
+    );
+    const existingCustomerId = existingRows[0]?.stripe_customer_id || null;
+    if (existingCustomerId && existingCustomerId !== customerId) {
+      console.warn('Stripe activation blocked due to conflicting customer mapping', {
+        resolvedUserId,
+        existingCustomerId,
+        incomingCustomerId: customerId,
+        sessionId: sessionId || null,
+      });
+      return null;
+    }
+  }
   const { rows } = await pool.query(
     `UPDATE users
      SET role = 'subscriber',
          subscription_status = 'active',
          subscription_period_end = GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $1::timestamptz),
-         stripe_customer_id = COALESCE($2, stripe_customer_id),
+         stripe_customer_id = COALESCE(stripe_customer_id, $2),
          stripe_last_session_id = COALESCE($3, stripe_last_session_id)
      WHERE id = $4
      RETURNING id`,
@@ -1273,12 +1289,22 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
       ? session.subscription.current_period_end * 1000
       : Date.now() + 365 * 24 * 60 * 60 * 1000;
     const periodEndIso = new Date(periodEndMs).toISOString();
+    if (session.customer) {
+      const { rows: existingRows } = await pool.query(
+        `SELECT stripe_customer_id FROM users WHERE id = $1 LIMIT 1`,
+        [req.user.id],
+      );
+      const existingCustomerId = existingRows[0]?.stripe_customer_id || null;
+      if (existingCustomerId && existingCustomerId !== session.customer) {
+        return res.status(409).json({ error: 'Stripe customer mismatch for this account' });
+      }
+    }
     const { rows } = await pool.query(
       `UPDATE users
        SET role = 'subscriber',
            subscription_status = 'active',
            subscription_period_end = GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $1::timestamptz),
-           stripe_customer_id = COALESCE($2, stripe_customer_id),
+           stripe_customer_id = COALESCE(stripe_customer_id, $2),
            stripe_last_session_id = $3
        WHERE id = $4
        RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
