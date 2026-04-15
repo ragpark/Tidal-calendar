@@ -1155,6 +1155,14 @@ const activateSubscriptionForUser = async ({ userId = null, customerId = null, e
      RETURNING id`,
     values,
   );
+  if (!rows.length) {
+    console.warn('Stripe activation did not match any users', {
+      userId: userId || null,
+      customerId: customerId || null,
+      email: email || null,
+      sessionId: sessionId || null,
+    });
+  }
   return rows[0] || null;
 };
 
@@ -1182,17 +1190,27 @@ const verifyStripeWebhookSignature = (req) => {
   if (!signatureHeader || !body) return false;
   const parts = signatureHeader.split(',').reduce((acc, part) => {
     const [key, value] = part.split('=');
-    if (key && value) acc[key.trim()] = value.trim();
+    if (!key || !value) return acc;
+    const normalizedKey = key.trim();
+    const normalizedValue = value.trim();
+    if (normalizedKey === 'v1') {
+      if (!acc.v1) acc.v1 = [];
+      acc.v1.push(normalizedValue);
+    } else {
+      acc[normalizedKey] = normalizedValue;
+    }
     return acc;
   }, {});
-  if (!parts.t || !parts.v1) return false;
+  if (!parts.t || !Array.isArray(parts.v1) || parts.v1.length === 0) return false;
   const signedPayload = `${parts.t}.${body}`;
   const expected = createHmac('sha256', STRIPE_WEBHOOK_SECRET).update(signedPayload, 'utf8').digest('hex');
-  try {
-    return timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1));
-  } catch (_err) {
-    return false;
-  }
+  return parts.v1.some((signature) => {
+    try {
+      return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+    } catch (_err) {
+      return false;
+    }
+  });
 };
 
 app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
@@ -1218,7 +1236,7 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
       `UPDATE users
        SET role = 'subscriber',
            subscription_status = 'active',
-           subscription_period_end = $1,
+           subscription_period_end = GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $1::timestamptz),
            stripe_customer_id = COALESCE($2, stripe_customer_id),
            stripe_last_session_id = $3
        WHERE id = $4
@@ -1245,7 +1263,7 @@ app.post('/api/payments/stripe/webhook', async (req, res) => {
         if (!isPaid) break;
         const periodEndMs = parseStripeTimestampMs(session.subscription_details?.current_period_end, Date.now() + 365 * 24 * 60 * 60 * 1000);
         await activateSubscriptionForUser({
-          userId: session.client_reference_id ? Number(session.client_reference_id) : null,
+          userId: session.client_reference_id || session.metadata?.user_id || null,
           customerId: session.customer || null,
           email: session.customer_details?.email || null,
           periodEndIso: new Date(periodEndMs).toISOString(),
