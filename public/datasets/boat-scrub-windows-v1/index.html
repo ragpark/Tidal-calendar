@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Boat Scrub Windows (UK) v1.0 | BoatScrubCalendar</title>
+    <meta name="description" content="Dataset landing page for UK boat scrub-window planning with JSON and CSV downloads, methodology, and schema details." />
+    <link rel="canonical" href="https://boatscrubcalendar.com/datasets/boat-scrub-windows-v1/" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Dataset",
+        "name": "Boat Scrub Windows (UK) v1.0",
+        "description": "Sample dataset for UK tidal scrub-window planning derived from station characteristics and modelled suitability scoring.",
+        "url": "https://boatscrubcalendar.com/datasets/boat-scrub-windows-v1/",
+        "keywords": ["uk tides", "boat scrubbing", "maintenance planning", "tidal windows"],
+        "creator": {
+          "@type": "Organization",
+          "name": "BoatScrubCalendar"
+        },
+        "license": "https://creativecommons.org/licenses/by/4.0/",
+        "datePublished": "2026-04-15",
+        "dateModified": "2026-04-15",
+        "spatialCoverage": {
+          "@type": "Place",
+          "name": "United Kingdom"
+        },
+        "distribution": [
+          {
+            "@type": "DataDownload",
+            "encodingFormat": "application/json",
+            "contentUrl": "https://boatscrubcalendar.com/data/boat-scrub-windows-v1.json"
+          },
+          {
+            "@type": "DataDownload",
+            "encodingFormat": "text/csv",
+            "contentUrl": "https://boatscrubcalendar.com/data/boat-scrub-windows-v1.csv"
+          }
+        ],
+        "isAccessibleForFree": true
+      }
+    </script>
+    <style>
+      body { font-family: Inter, Arial, sans-serif; max-width: 900px; margin: 2rem auto; line-height: 1.6; color: #0f172a; padding: 0 1rem; }
+      h1, h2 { line-height: 1.2; }
+      table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+      th, td { border: 1px solid #cbd5e1; padding: 0.6rem; text-align: left; }
+      th { background: #f8fafc; }
+      .meta { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Boat Scrub Windows (UK) v1.0</h1>
+    <p>Planning dataset for UK boat maintenance teams who schedule scrubbing around tidal suitability windows.</p>
+
+    <div class="meta">
+      <p><strong>Version:</strong> v1.0</p>
+      <p><strong>Last updated:</strong> 2026-04-15</p>
+      <p><strong>License:</strong> <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a></p>
+      <p><strong>Downloads:</strong> <a href="/data/boat-scrub-windows-v1.json">JSON</a> · <a href="/data/boat-scrub-windows-v1.csv">CSV</a></p>
+    </div>
+
+    <h2>Schema</h2>
+    <table>
+      <thead>
+        <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>station_id</td><td>string</td><td>Unique station identifier used by the app</td></tr>
+        <tr><td>station_name</td><td>string</td><td>Station display name</td></tr>
+        <tr><td>country_region</td><td>string</td><td>UK country or region</td></tr>
+        <tr><td>lat</td><td>number</td><td>Latitude in decimal degrees</td></tr>
+        <tr><td>lon</td><td>number</td><td>Longitude in decimal degrees</td></tr>
+        <tr><td>mhws_m</td><td>number</td><td>Mean high water springs (m)</td></tr>
+        <tr><td>mhwn_m</td><td>number</td><td>Mean high water neaps (m)</td></tr>
+        <tr><td>mlwn_m</td><td>number</td><td>Mean low water neaps (m)</td></tr>
+        <tr><td>mlws_m</td><td>number</td><td>Mean low water springs (m)</td></tr>
+        <tr><td>recommended_scrub_window</td><td>string</td><td>Suggested local time window for planning</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Methodology</h2>
+    <p>
+      Values are derived from BoatScrubCalendar station profiles and modelled tide suitability heuristics intended for
+      maintenance planning workflows. This dataset is not a navigation safety source.
+    </p>
+  </body>
+</html>
