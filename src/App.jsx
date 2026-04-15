@@ -443,16 +443,6 @@ export default function TidalCalendarApp() {
     }
   }, [user]);
 
-  const updateRole = async (nextRole) => {
-    try {
-      const updated = await apiRequest('/api/profile/role', { method: 'POST', body: JSON.stringify({ role: nextRole }) });
-      setUser(updated);
-      if (updated?.subscription_period_end) setSubscriptionEnd(updated.subscription_period_end);
-    } catch (err) {
-      setAuthError(err.message);
-    }
-  };
-
   const confirmStripeSession = useCallback(async (sessionId) => {
     setSubscriptionNotice('Confirming payment with Stripe…');
     setAuthError('');
@@ -983,14 +973,6 @@ export default function TidalCalendarApp() {
     });
     setMaintenanceError('');
     setShowMaintenanceModal(true);
-  };
-
-  const handlePurchaseSubscription = () => {
-    const nextEnd = new Date();
-    nextEnd.setFullYear(nextEnd.getFullYear() + 1);
-    setSubscriptionEnd(nextEnd.toISOString());
-    setSubscriptionNotice('Subscription marked active locally for testing.');
-    updateRole('subscriber');
   };
 
   const handleSaveHomePort = async () => {
@@ -1724,15 +1706,12 @@ export default function TidalCalendarApp() {
                             </div>
                           )}
                           <div style={{ fontSize: '11px', color: '#1e293b', lineHeight: 1.5 }}>
-                            Completed Stripe checkouts are verified on return and your subscriber status is stored server-side. If you need a manual override for demos, use the local activation button.
+                            Completed Stripe checkouts are verified on return and by secure Stripe webhook events, then stored server-side for product unlocks.
                           </div>
                           {subscriptionNotice && <div style={{ fontSize: '11px', color: '#0f172a', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '8px', fontWeight: 600 }}>{subscriptionNotice}</div>}
                           <div style={{ fontSize: '11px', color: '#475569' }}>
                             Status: <strong style={{ color: '#0f172a' }}>{user.subscription_status || 'inactive'}</strong> • Renewed through: <strong style={{ color: '#0f172a' }}>{subscriptionEndLabel}</strong>
                           </div>
-                          <button onClick={handlePurchaseSubscription} disabled={role === 'subscriber'} style={{ padding: '10px', background: role === 'subscriber' ? '#dcfce7' : '#22c55e', border: '1px solid #16a34a', borderRadius: '8px', color: role === 'subscriber' ? '#166534' : '#ffffff', cursor: role === 'subscriber' ? 'not-allowed' : 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
-                            {role === 'subscriber' ? 'Subscriber active (local mock)' : 'Mark subscription active locally'}
-                          </button>
                         </div>
                       </div>
                       {user.home_port_name && (
