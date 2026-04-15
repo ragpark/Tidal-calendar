@@ -1,6 +1,32 @@
 User-agent: *
 Allow: /
 
+# Block private or non-index utility paths
+Disallow: /admin/
+Disallow: /login/
+Disallow: /account/
+Disallow: /api/private/
+Disallow: /search?
+
+# Explicitly allow key discoverability surfaces
+Allow: /blog/
+Allow: /datasets/
+Allow: /data/
+Allow: /llms.txt
+
+# AI crawler policy
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
 Sitemap: https://boatscrubcalendar.com/sitemap.xml
 
 # AI crawler discovery

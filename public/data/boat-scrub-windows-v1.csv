@@ -1,0 +1,5 @@
+station_id,station_name,country_region,lat,lon,mhws_m,mhwn_m,mlwn_m,mlws_m,recommended_scrub_window
+0001,Aberdeen,Scotland,57.143,-2.079,4.3,3.4,1.3,0.5,04:30-09:00
+0113,London Bridge,England,51.507,-0.087,7.1,6.0,1.5,0.5,05:00-09:30
+0240,Southampton,England,50.899,-1.391,4.5,3.7,1.8,0.5,04:45-09:15
+0503,Cardiff,Wales,51.461,-3.165,12.4,9.2,3.6,0.8,04:15-08:45
