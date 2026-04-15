@@ -259,6 +259,11 @@ export default function TidalCalendarApp() {
     const end = subscriptionEnd ? new Date(subscriptionEnd) : null;
     return role === 'subscriber' && end && !Number.isNaN(end.getTime()) && end.getTime() > Date.now();
   }, [subscriptionEnd, role, user]);
+  const hasPaidCalendarProduct = useMemo(() => {
+    if (!user) return false;
+    const subscriptionStatus = String(user.subscription_status || '').toLowerCase();
+    return ['active', 'trialing'].includes(subscriptionStatus);
+  }, [user]);
 
   const apiRequest = useCallback(async (url, options = {}) => {
     const res = await fetch(url, {
@@ -999,6 +1004,10 @@ export default function TidalCalendarApp() {
       alert('Please set your home port first before downloading the tide booklet.');
       return;
     }
+    if (!hasPaidCalendarProduct) {
+      alert('Complete checkout from the pricing table to unlock PDF downloads.');
+      return;
+    }
     try {
       const response = await fetch('/api/generate-tide-booklet', {
         method: 'GET',
@@ -1020,7 +1029,7 @@ export default function TidalCalendarApp() {
     } catch (err) {
       alert(`Failed to download tide booklet: ${err.message}`);
     }
-  }, [user]);
+  }, [hasPaidCalendarProduct, user]);
 
   const applySelectedStation = (stationId) => {
     setHomePort(stationId);
@@ -1716,8 +1725,28 @@ export default function TidalCalendarApp() {
                       {user.home_port_name && (
                         <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                           <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Download Year Tide Booklet</div>
-                          <div style={{ fontSize: '11px', color: '#475569' }}>Get your annual PDF booklet for offline planning.</div>
-                          <button onClick={handleDownloadTideBooklet} style={{ padding: '10px', background: '#8b5cf6', border: '1px solid #7c3aed', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(139,92,246,0.25)' }}>📄 Download Year Tide Booklet (PDF)</button>
+                          <div style={{ fontSize: '11px', color: '#475569' }}>Get your annual PDF booklet for offline planning once your pricing-table purchase is active.</div>
+                          <button
+                            onClick={handleDownloadTideBooklet}
+                            disabled={!hasPaidCalendarProduct}
+                            style={{
+                              padding: '10px',
+                              background: hasPaidCalendarProduct ? '#8b5cf6' : '#e2e8f0',
+                              border: `1px solid ${hasPaidCalendarProduct ? '#7c3aed' : '#cbd5e1'}`,
+                              borderRadius: '8px',
+                              color: hasPaidCalendarProduct ? '#ffffff' : '#64748b',
+                              cursor: hasPaidCalendarProduct ? 'pointer' : 'not-allowed',
+                              fontWeight: 700,
+                              boxShadow: hasPaidCalendarProduct ? '0 4px 12px rgba(139,92,246,0.25)' : 'none',
+                            }}
+                          >
+                            📄 Download Year Tide Booklet (PDF)
+                          </button>
+                          {!hasPaidCalendarProduct && (
+                            <div style={{ fontSize: '11px', color: '#92400e', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: '8px', padding: '8px' }}>
+                              PDF download unlocks after a successful checkout from the pricing table above.
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
