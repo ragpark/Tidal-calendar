@@ -154,22 +154,18 @@ const CompassRose = ({ size = 80 }) => (
   </svg>
 );
 
-const ScrubbingBadge = ({ rating, small = false }) => {
-  const config = {
-    excellent: { color: '#22c55e', bg: 'rgba(34, 197, 94, 0.2)', label: 'Excellent', icon: '★★★' },
-    good: { color: '#84cc16', bg: 'rgba(132, 204, 22, 0.2)', label: 'Good', icon: '★★' },
-    fair: { color: '#eab308', bg: 'rgba(234, 179, 8, 0.2)', label: 'Fair', icon: '★' },
-    poor: { color: '#64748b', bg: 'rgba(100, 116, 139, 0.2)', label: 'Not Ideal', icon: '—' },
-  };
-  const { color, bg, label, icon } = config[rating] || config.poor;
-  
+const ScrubbingBadge = ({ small = false }) => {
+  const color = '#22c55e';
+  const bg = 'rgba(34, 197, 94, 0.2)';
+  const label = 'Suitable';
+
   if (small) {
     return <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}` }} title={label} />;
   }
   
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: bg, border: `1px solid ${color}40`, color, padding: '4px 10px', borderRadius: '12px', fontFamily: "'Outfit', sans-serif", fontSize: '11px', fontWeight: 500 }}>
-      <span>{icon}</span>{label}
+      <span>✓</span>{label}
     </span>
   );
 };
@@ -1072,13 +1068,10 @@ export default function TidalCalendarApp() {
             const refloatTime = nextHigh ? new Date(nextHigh.DateTime) : null;
             const refloatBeforeEvening = refloatTime ? refloatTime.getHours() < 20 : true;
             
-            let rating = 'fair';
-            if (tidalRange >= 4.5 && refloatBeforeEvening) rating = 'excellent';
-            else if (tidalRange >= 3.5 && refloatBeforeEvening) rating = 'good';
-            
-            if (!results[dateStr] || (rating === 'excellent' || (rating === 'good' && results[dateStr].rating !== 'excellent'))) {
+            const score = (refloatBeforeEvening ? 1 : 0) * 100 + tidalRange;
+
+            if (!results[dateStr] || score > results[dateStr].score) {
               results[dateStr] = {
-                rating,
                 highWater: hw,
                 lowWater: followingLow,
                 nextHighWater: nextHigh,
@@ -1086,6 +1079,7 @@ export default function TidalCalendarApp() {
                 hwTime: hwDate,
                 lwTime: new Date(followingLow.DateTime),
                 refloatTime,
+                score,
               };
             }
           }
@@ -1181,10 +1175,7 @@ export default function TidalCalendarApp() {
   const scrubbingEntries = useMemo(() => {
     return Object.entries(scrubbingByDate)
       .map(([dateStr, data]) => ({ date: new Date(dateStr), data }))
-      .sort((a, b) => {
-        const order = { excellent: 0, good: 1, fair: 2 };
-        return (order[a.data.rating] - order[b.data.rating]) || (a.date - b.date);
-      })
+      .sort((a, b) => b.data.score - a.data.score || (a.date - b.date))
       .slice(0, embedConfig.compact ? 4 : 8);
   }, [embedConfig.compact, scrubbingByDate]);
 
@@ -1310,7 +1301,7 @@ export default function TidalCalendarApp() {
                           <div style={{ fontWeight: 700 }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
                           <div style={{ fontSize: '12px', color: secondaryText }}>HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m</div>
                         </div>
-                        <ScrubbingBadge rating={data.rating} />
+                        <ScrubbingBadge />
                       </div>
                       <div style={{ fontSize: '11px', color: secondaryText }}>
                         {data.highWater.IsPredicted ? 'Predicted window' : data.highWater.Source === 'UKHO' ? (hasUkhoAccess ? 'UKHO data' : 'UKHO preview (7d)') : 'Predicted'}
@@ -2179,7 +2170,7 @@ export default function TidalCalendarApp() {
                         {/* Scrubbing indicator */}
                         {scrubData && (
                           <div style={{ position: 'absolute', top: '8px', right: '8px' }}>
-                            <ScrubbingBadge rating={scrubData.rating} small />
+                            <ScrubbingBadge small />
                           </div>
                         )}
 
@@ -2254,7 +2245,7 @@ export default function TidalCalendarApp() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {Object.entries(scrubbingByDate)
-                      .sort((a, b) => { const order = { excellent: 0, good: 1, fair: 2 }; return order[a[1].rating] - order[b[1].rating] || new Date(a[0]) - new Date(b[0]); })
+                      .sort((a, b) => b[1].score - a[1].score || new Date(a[0]) - new Date(b[0]))
                       .map(([dateStr, data], i) => {
                         const date = new Date(dateStr);
                         const isPredicted = data.highWater.IsPredicted;
@@ -2263,7 +2254,7 @@ export default function TidalCalendarApp() {
                         return (
                           <div key={i} onClick={() => handleDaySelect(date, true)} style={{
                             background: '#ffffff',
-                            border: `1px solid ${data.rating === 'excellent' ? '#22c55e' : data.rating === 'good' ? '#84cc16' : '#cbd5e1'}`,
+                            border: '1px solid #22c55e',
                             borderRadius: '12px', padding: '20px', cursor: 'pointer', transition: 'all 0.3s', boxShadow: '0 4px 12px rgba(15,23,42,0.06)'
                           }}>
                   <div className="scrub-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
@@ -2275,7 +2266,7 @@ export default function TidalCalendarApp() {
                         {isPredicted && <span style={{ color: '#b45309', marginLeft: '8px' }}>• Predicted</span>}
                                 </div>
                               </div>
-                              <ScrubbingBadge rating={data.rating} />
+                              <ScrubbingBadge />
                             </div>
                           </div>
                         );
@@ -2304,7 +2295,7 @@ export default function TidalCalendarApp() {
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                {scrubModal.data && <ScrubbingBadge rating={scrubModal.data.rating} />}
+                {scrubModal.data && <ScrubbingBadge />}
                 <button onClick={() => setScrubModal(null)} style={{ padding: '8px 10px', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '10px', color: '#0f172a', cursor: 'pointer', fontWeight: 600 }}>Close</button>
               </div>
             </div>
@@ -2421,7 +2412,7 @@ export default function TidalCalendarApp() {
                       await createMaintenanceLog({
                         date: scrubModal.date.toISOString(),
                         activityType: 'planned',
-                        title: `Scrub boat - ${scrubModal.data.rating} scrubbing day`,
+                        title: 'Scrub boat - suitable scrubbing day',
                         notes: `HW: ${formatTime(scrubModal.data.hwTime)}, LW: ${formatTime(scrubModal.data.lwTime)}, Range: ${scrubModal.data.tidalRange.toFixed(1)}m`,
                         completed: false,
                       });
