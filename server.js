@@ -1129,7 +1129,7 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
     const session = await retrieveStripeSession(sessionId);
     const isPaid = session.payment_status === 'paid' || session.status === 'complete';
     if (!isPaid) return res.status(402).json({ error: 'Payment not completed' });
-    if (session.client_reference_id && session.client_reference_id !== req.user.id) {
+    if (session.client_reference_id && String(session.client_reference_id) !== String(req.user.id)) {
       return res.status(409).json({ error: 'Session does not match user' });
     }
     if (session.customer_details?.email && session.customer_details.email.toLowerCase() !== req.user.email.toLowerCase()) {

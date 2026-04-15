@@ -475,13 +475,24 @@ export default function TidalCalendarApp() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const sessionId = params.get('session_id') || params.get('stripe_session_id');
+    const hashParams = new URLSearchParams(window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '');
+    const sessionId = params.get('session_id')
+      || params.get('stripe_session_id')
+      || params.get('checkout_session_id')
+      || hashParams.get('session_id')
+      || hashParams.get('stripe_session_id')
+      || hashParams.get('checkout_session_id');
     if (!sessionId || !user) return;
     confirmStripeSession(sessionId).finally(() => {
       params.delete('session_id');
       params.delete('stripe_session_id');
+      params.delete('checkout_session_id');
+      hashParams.delete('session_id');
+      hashParams.delete('stripe_session_id');
+      hashParams.delete('checkout_session_id');
       const newSearch = params.toString();
-      const nextUrl = `${window.location.pathname}${newSearch ? `?${newSearch}` : ''}${window.location.hash}`;
+      const newHash = hashParams.toString();
+      const nextUrl = `${window.location.pathname}${newSearch ? `?${newSearch}` : ''}${newHash ? `#${newHash}` : ''}`;
       window.history.replaceState({}, document.title, nextUrl);
     });
   }, [confirmStripeSession, user]);
@@ -1698,6 +1709,8 @@ export default function TidalCalendarApp() {
                               <stripe-pricing-table
                                 pricing-table-id={STRIPE_PRICING_TABLE_ID}
                                 publishable-key={STRIPE_PUBLISHABLE_KEY}
+                                client-reference-id={String(user.id)}
+                                customer-email={user.email}
                               >
                               </stripe-pricing-table>
                             ) : (
