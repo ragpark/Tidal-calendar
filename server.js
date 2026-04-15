@@ -1136,24 +1136,52 @@ const retrieveStripeSession = async (sessionId) => {
   return res.json();
 };
 
+const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const resolveStripeUserId = async ({ userId = null, customerId = null, email = null, sessionId = null }) => {
+  if (userId) return userId;
+
+  const lookups = [
+    customerId
+      ? {
+        sql: `SELECT id FROM users WHERE stripe_customer_id = $1 LIMIT 1`,
+        value: customerId,
+      }
+      : null,
+    email
+      ? {
+        sql: `SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1`,
+        value: normalizeEmail(email),
+      }
+      : null,
+    sessionId
+      ? {
+        sql: `SELECT id FROM users WHERE stripe_last_session_id = $1 LIMIT 1`,
+        value: sessionId,
+      }
+      : null,
+  ].filter(Boolean);
+
+  for (const lookup of lookups) {
+    const { rows } = await pool.query(lookup.sql, [lookup.value]);
+    if (rows[0]?.id) return rows[0].id;
+  }
+
+  return null;
+};
+
 const activateSubscriptionForUser = async ({ userId = null, customerId = null, email = null, periodEndIso, sessionId = null }) => {
   if (!periodEndIso) return null;
-  const clauses = [];
-  const values = [periodEndIso, customerId, sessionId];
-  let idx = 4;
-  if (userId) {
-    clauses.push(`id = $${idx++}`);
-    values.push(userId);
+  const resolvedUserId = await resolveStripeUserId({ userId, customerId, email, sessionId });
+  if (!resolvedUserId) {
+    console.warn('Stripe activation did not match any users', {
+      userId: userId || null,
+      customerId: customerId || null,
+      email: email || null,
+      sessionId: sessionId || null,
+    });
+    return null;
   }
-  if (customerId) {
-    clauses.push(`stripe_customer_id = $${idx++}`);
-    values.push(customerId);
-  }
-  if (email) {
-    clauses.push(`LOWER(email) = LOWER($${idx++})`);
-    values.push(email);
-  }
-  if (!clauses.length) return null;
   const { rows } = await pool.query(
     `UPDATE users
      SET role = 'subscriber',
@@ -1161,18 +1189,10 @@ const activateSubscriptionForUser = async ({ userId = null, customerId = null, e
          subscription_period_end = GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $1::timestamptz),
          stripe_customer_id = COALESCE($2, stripe_customer_id),
          stripe_last_session_id = COALESCE($3, stripe_last_session_id)
-     WHERE ${clauses.join(' OR ')}
+     WHERE id = $4
      RETURNING id`,
-    values,
+    [periodEndIso, customerId, sessionId, resolvedUserId],
   );
-  if (!rows.length) {
-    console.warn('Stripe activation did not match any users', {
-      userId: userId || null,
-      customerId: customerId || null,
-      email: email || null,
-      sessionId: sessionId || null,
-    });
-  }
   return rows[0] || null;
 };
 
@@ -1253,6 +1273,9 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
        RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
       [periodEndIso, session.customer || null, session.id, req.user.id],
     );
+    if (!rows.length) {
+      return res.status(404).json({ error: 'Could not update subscription for this account' });
+    }
     res.status(200).json({ ok: true, user: rows[0] });
   } catch (err) {
     console.error('Stripe confirmation failed', err);
@@ -1268,14 +1291,18 @@ app.post('/api/payments/stripe/webhook', async (req, res) => {
     switch (event.type) {
       case 'checkout.session.completed':
       case 'checkout.session.async_payment_succeeded': {
-        const session = event.data?.object || {};
+        const webhookSession = event.data?.object || {};
+        const session = webhookSession.id ? await retrieveStripeSession(webhookSession.id) : webhookSession;
         const isPaid = session.payment_status === 'paid' || session.status === 'complete';
         if (!isPaid) break;
-        const periodEndMs = parseStripeTimestampMs(session.subscription_details?.current_period_end, Date.now() + 365 * 24 * 60 * 60 * 1000);
+        const periodEndMs = parseStripeTimestampMs(
+          session.subscription?.current_period_end || session.subscription_details?.current_period_end,
+          Date.now() + 365 * 24 * 60 * 60 * 1000,
+        );
         await activateSubscriptionForUser({
           userId: session.client_reference_id || session.metadata?.user_id || null,
           customerId: session.customer || null,
-          email: session.customer_details?.email || null,
+          email: session.customer_details?.email || session.customer_email || null,
           periodEndIso: new Date(periodEndMs).toISOString(),
           sessionId: session.id || null,
         });
@@ -1289,7 +1316,7 @@ app.post('/api/payments/stripe/webhook', async (req, res) => {
         );
         await activateSubscriptionForUser({
           customerId: invoice.customer || null,
-          email: invoice.customer_email || null,
+          email: invoice.customer_email || invoice.customer_details?.email || null,
           periodEndIso: new Date(periodEndMs).toISOString(),
           sessionId: null,
         });
