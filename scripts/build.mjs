@@ -10,6 +10,11 @@ const outDir = path.join(rootDir, 'public', 'assets');
 
 await mkdir(outDir, { recursive: true });
 
+const define = {
+  'process.env.VITE_STRIPE_PUBLISHABLE_KEY': JSON.stringify(process.env.VITE_STRIPE_PUBLISHABLE_KEY || ''),
+  'process.env.VITE_STRIPE_PRICING_TABLE_ID': JSON.stringify(process.env.VITE_STRIPE_PRICING_TABLE_ID || ''),
+};
+
 await build({
   entryPoints: [path.join(rootDir, 'src', 'main.jsx')],
   bundle: true,
@@ -19,4 +24,5 @@ await build({
   jsx: 'transform',
   sourcemap: true,
   outfile: path.join(outDir, 'bundle.js'),
+  define,
 });

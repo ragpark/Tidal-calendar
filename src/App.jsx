@@ -215,6 +215,10 @@ export default function TidalCalendarApp() {
   const [subscriptionEnd, setSubscriptionEnd] = useState('');
   const [subscriptionNotice, setSubscriptionNotice] = useState('');
   const SUBSCRIPTION_PRICE_GBP = 5;
+  const STRIPE_PRICING_TABLE_ID = process.env.VITE_STRIPE_PRICING_TABLE_ID || '';
+  const STRIPE_PUBLISHABLE_KEY = process.env.VITE_STRIPE_PUBLISHABLE_KEY || '';
+  const stripeUsingTestPublishableKey = STRIPE_PUBLISHABLE_KEY.startsWith('pk_test_');
+  const stripePricingConfigured = Boolean(STRIPE_PRICING_TABLE_ID && STRIPE_PUBLISHABLE_KEY) && !stripeUsingTestPublishableKey;
   const mcpCapabilities = useMemo(
     () => ['search_facilities', 'list_clubs', 'create_scrub_window', 'book_scrub_window', 'update_profile'],
     [],
@@ -1678,16 +1682,24 @@ export default function TidalCalendarApp() {
                       <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                         <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
                         <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • extended Admiralty API access</div>
-                        <div style={{ fontSize: '11px', color: '#475569' }}>Enable test checkout via Stripe Buy Button for extended API coverage. Use Stripe test cards during checkout—successful payment will activate your subscriber role automatically.</div>
+                        <div style={{ fontSize: '11px', color: '#475569' }}>Live Stripe checkout activates your subscriber role automatically after successful payment confirmation.</div>
                         <div style={{ background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px' }}>
-                          {stripePricingReady ? (
-                            <stripe-pricing-table
-                              pricing-table-id="prctbl_1SrLpcFjPX0L6hdeggD1Vpn0"
-                              publishable-key="pk_test_51SjOPuFjPX0L6hdeZcwi2HKamgScHj7kvkIgMugv7LGNdiCbFaJOCu3BQth2Vo5qgvZgGOcZxYO3xRrychXFn2UT00FcVr2nJ9"
-                            >
-                            </stripe-pricing-table>
+                          {stripePricingConfigured ? (
+                            stripePricingReady ? (
+                              <stripe-pricing-table
+                                pricing-table-id={STRIPE_PRICING_TABLE_ID}
+                                publishable-key={STRIPE_PUBLISHABLE_KEY}
+                              >
+                              </stripe-pricing-table>
+                            ) : (
+                              <div style={{ fontSize: '11px', color: '#64748b' }}>Loading Stripe pricing table…</div>
+                            )
                           ) : (
-                            <div style={{ fontSize: '11px', color: '#64748b' }}>Loading Stripe pricing table…</div>
+                            <div style={{ fontSize: '11px', color: '#92400e', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: '8px', padding: '8px' }}>
+                              {stripeUsingTestPublishableKey
+                                ? 'Stripe is configured with a test publishable key. Set VITE_STRIPE_PUBLISHABLE_KEY to a live pk_live key and VITE_STRIPE_PRICING_TABLE_ID to your live pricing table ID.'
+                                : 'Stripe pricing table is not configured. Set VITE_STRIPE_PUBLISHABLE_KEY and VITE_STRIPE_PRICING_TABLE_ID to enable live checkout.'}
+                            </div>
                           )}
                           <div style={{ fontSize: '11px', color: '#1e293b', lineHeight: 1.5 }}>
                             Completed Stripe checkouts are verified on return and your subscriber status is stored server-side. If you need a manual override for demos, use the local activation button.
