@@ -38,6 +38,13 @@ const createLondonDate = (year, month, day, hour, minute) => {
   return new Date(utcMs);
 };
 
+const ensureUtcDateTimeString = (value) => {
+  if (typeof value !== 'string') return value;
+  if (!value.includes('T')) return value;
+  if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(value)) return value;
+  return `${value}Z`;
+};
+
 const parseEmbedConfig = () => {
   if (typeof window === 'undefined') {
     return { enabled: false, stationId: '', view: 'monthly', theme: 'light', accent: '#0ea5e9', compact: false };
@@ -386,6 +393,7 @@ export default function TidalCalendarApp() {
       try {
         const parseApiEvents = (payload) => (Array.isArray(payload) ? payload : []).map(event => ({
           ...event,
+          DateTime: ensureUtcDateTimeString(event.DateTime),
           IsPredicted: false,
           Source: 'UKHO',
         }));
@@ -402,6 +410,7 @@ export default function TidalCalendarApp() {
           const fallbackEvents = await fallbackResponse.json();
           apiEvents = (Array.isArray(fallbackEvents) ? fallbackEvents : []).map(event => ({
             ...event,
+            DateTime: ensureUtcDateTimeString(event.DateTime),
             IsPredicted: false,
             Source: 'UKHO',
           }));
