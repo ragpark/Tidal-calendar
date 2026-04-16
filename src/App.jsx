@@ -1211,6 +1211,10 @@ export default function TidalCalendarApp() {
     const date = typeof dateOrString === 'string' ? new Date(dateOrString) : dateOrString;
     return londonTimeFormatter.format(date);
   };
+  const formatLondonDate = useCallback((dateOrString, options = {}) => {
+    const date = typeof dateOrString === 'string' ? new Date(dateOrString) : dateOrString;
+    return date.toLocaleDateString('en-GB', { timeZone: UK_TIME_ZONE, ...options });
+  }, []);
 
   const eventsByDay = useMemo(() => {
     const grouped = {};
@@ -1343,7 +1347,7 @@ export default function TidalCalendarApp() {
                   {upcomingDays.map(({ date, events }) => (
                     <div key={date.toISOString()} style={{ background: cardSurface, border: `1px solid ${accentColor}26`, borderRadius: '12px', padding: '12px', color: primaryText, boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px' }}>
-                        <div style={{ fontWeight: 700 }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                        <div style={{ fontWeight: 700 }}>{formatLondonDate(date, { weekday: 'short', day: 'numeric', month: 'short' })}</div>
                         <div style={{ fontSize: '11px', color: secondaryText }}>{getMoonPhaseName(date).icon} {getMoonPhaseName(date).name}</div>
                       </div>
                       <div style={{ display: 'grid', gap: '6px' }}>
@@ -1373,7 +1377,7 @@ export default function TidalCalendarApp() {
                     <div key={i} style={{ background: cardSurface, border: `1px solid ${accentColor}26`, borderRadius: '12px', padding: '12px', display: 'grid', gap: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.06)', color: primaryText }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                         <div style={{ display: 'grid', gap: '4px' }}>
-                          <div style={{ fontWeight: 700 }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                          <div style={{ fontWeight: 700 }}>{formatLondonDate(date, { weekday: 'short', day: 'numeric', month: 'short' })}</div>
                           <div style={{ fontSize: '12px', color: secondaryText }}>HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m</div>
                         </div>
                         <ScrubbingBadge />
@@ -2214,7 +2218,7 @@ export default function TidalCalendarApp() {
                   <button onClick={() => navigateMonth(-1)} style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 20px', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600, flex: '1 1 160px' }}>← Previous</button>
                   
                   <div style={{ textAlign: 'center' }}>
-                    <h3 style={{ fontSize: '28px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>{currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h3>
+                    <h3 style={{ fontSize: '28px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>{formatLondonDate(currentMonth, { month: 'long', year: 'numeric' })}</h3>
                     <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155', margin: 0 }}>
                       {getMoonPhaseName(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 15)).icon} {getMoonPhaseName(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 15)).name} mid-month
                     </p>
@@ -2263,7 +2267,7 @@ export default function TidalCalendarApp() {
                       >
                         {/* Date Number */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-                          <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: isToday ? 700 : 500, color: isToday ? '#0ea5e9' : '#0f172a' }}>{date.getDate()}</span>
+                          <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: isToday ? 700 : 500, color: isToday ? '#0ea5e9' : '#0f172a' }}>{formatLondonDate(date, { day: 'numeric' })}</span>
                           {(moonPhase.isSpring || moonPhase.name.includes('Quarter')) && (
                             <span style={{ fontSize: '12px', color: '#0f172a' }} title={moonPhase.name}>{moonPhase.icon}</span>
                           )}
@@ -2336,7 +2340,7 @@ export default function TidalCalendarApp() {
             {!loading && viewMode === 'scrubbing' && (
               <div>
                 <h3 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600, color: '#0f172a', marginBottom: '16px' }}>
-                  Suitable Scrubbing Days in {currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+                  Suitable Scrubbing Days in {formatLondonDate(currentMonth, { month: 'long', year: 'numeric' })}
                 </h3>
                 
                 {Object.keys(scrubbingByDate).length === 0 ? (
@@ -2361,7 +2365,7 @@ export default function TidalCalendarApp() {
                           }}>
                   <div className="scrub-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                     <div>
-                      <div style={{ fontSize: '20px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                      <div style={{ fontSize: '20px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{formatLondonDate(date, { weekday: 'short', day: 'numeric', month: 'short' })}</div>
                       <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155' }}>
                         HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m
                         {!isPredicted && isUkhoEvent && <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>• UKHO</span>}
@@ -2390,7 +2394,7 @@ export default function TidalCalendarApp() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', gap: '12px', flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 700 }}>
-                  {scrubModal.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                  {formatLondonDate(scrubModal.date, { weekday: 'long', day: 'numeric', month: 'long' })}
                 </div>
                 <div style={{ fontSize: '12px', color: '#475569' }}>
                   {getMoonPhaseName(scrubModal.date).icon} {getMoonPhaseName(scrubModal.date).name} • {selectedDayHasUkhoApi ? 'UKHO data' : (selectedDayHasPredicted ? 'Predicted' : 'API Data')}
