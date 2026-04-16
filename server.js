@@ -515,6 +515,16 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+const hasPaidCalendarAccess = (user) => {
+  if (!user) return false;
+  const subscriptionStatus = String(user.subscription_status || '').toLowerCase();
+  if (!['active', 'trialing'].includes(subscriptionStatus)) return false;
+  if (!user.subscription_period_end) return true;
+  const periodEnd = new Date(user.subscription_period_end);
+  if (Number.isNaN(periodEnd.getTime())) return false;
+  return periodEnd.getTime() > Date.now();
+};
+
 const passwordResetLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -1111,6 +1121,7 @@ const scheduleMaintenanceReminderChecks = () => {
 };
 
 const retrieveStripeSession = async (sessionId) => {
+  console.info('Stripe session retrieval started', { sessionId });
   const params = new URLSearchParams();
   params.append('expand[]', 'subscription');
   const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}?${params.toString()}`, {
@@ -1121,9 +1132,205 @@ const retrieveStripeSession = async (sessionId) => {
   });
   if (!res.ok) {
     const text = await res.text();
+    console.error('Stripe session retrieval failed', { sessionId, status: res.status, body: text });
     throw new Error(`Stripe responded with ${res.status}: ${text}`);
   }
-  return res.json();
+  const payload = await res.json();
+  console.info('Stripe session retrieval succeeded', {
+    sessionId: payload?.id || sessionId,
+    status: payload?.status || null,
+    paymentStatus: payload?.payment_status || null,
+    clientReferenceId: payload?.client_reference_id || null,
+    customerId: payload?.customer || null,
+    customerEmail: payload?.customer_details?.email || payload?.customer_email || null,
+  });
+  return payload;
+};
+
+const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const resolveStripeUserId = async ({ userId = null, customerId = null, email = null, sessionId = null }) => {
+  if (userId) {
+    const { rows } = await pool.query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [userId]);
+    if (rows[0]?.id) return rows[0].id;
+  }
+
+  const lookups = [
+    customerId
+      ? {
+        sql: `SELECT id FROM users WHERE stripe_customer_id = $1 LIMIT 1`,
+        value: customerId,
+      }
+      : null,
+    email
+      ? {
+        sql: `SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1`,
+        value: normalizeEmail(email),
+      }
+      : null,
+    sessionId
+      ? {
+        sql: `SELECT id FROM users WHERE stripe_last_session_id = $1 LIMIT 1`,
+        value: sessionId,
+      }
+      : null,
+  ].filter(Boolean);
+
+  for (const lookup of lookups) {
+    const { rows } = await pool.query(lookup.sql, [lookup.value]);
+    if (rows[0]?.id) return rows[0].id;
+  }
+
+  return null;
+};
+
+const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const resolveStripeUserId = async ({ userId = null, customerId = null, email = null, sessionId = null }) => {
+  if (userId) {
+    const { rows } = await pool.query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [userId]);
+    if (rows[0]?.id) return rows[0].id;
+  }
+
+  const lookups = [
+    customerId
+      ? {
+        sql: `SELECT id FROM users WHERE stripe_customer_id = $1 LIMIT 1`,
+        value: customerId,
+      }
+      : null,
+    email
+      ? {
+        sql: `SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1`,
+        value: normalizeEmail(email),
+      }
+      : null,
+    sessionId
+      ? {
+        sql: `SELECT id FROM users WHERE stripe_last_session_id = $1 LIMIT 1`,
+        value: sessionId,
+      }
+      : null,
+  ].filter(Boolean);
+
+  for (const lookup of lookups) {
+    const { rows } = await pool.query(lookup.sql, [lookup.value]);
+    if (rows[0]?.id) return rows[0].id;
+  }
+
+  return null;
+};
+
+const activateSubscriptionForUser = async ({ userId = null, customerId = null, email = null, periodEndIso, sessionId = null }) => {
+  console.info('Stripe activation attempt started', {
+    userId: userId || null,
+    customerId: customerId || null,
+    email: email || null,
+    sessionId: sessionId || null,
+    periodEndIso: periodEndIso || null,
+  });
+  if (!periodEndIso) return null;
+  const resolvedUserId = await resolveStripeUserId({ userId, customerId, email, sessionId });
+  if (!resolvedUserId) {
+    console.warn('Stripe activation did not match any users', {
+      userId: userId || null,
+      customerId: customerId || null,
+      email: email || null,
+      sessionId: sessionId || null,
+    });
+    return null;
+  }
+  if (customerId) {
+    const { rows: existingRows } = await pool.query(
+      `SELECT stripe_customer_id FROM users WHERE id = $1 LIMIT 1`,
+      [resolvedUserId],
+    );
+    const existingCustomerId = existingRows[0]?.stripe_customer_id || null;
+    if (existingCustomerId && existingCustomerId !== customerId) {
+      console.warn('Stripe activation blocked due to conflicting customer mapping', {
+        resolvedUserId,
+        existingCustomerId,
+        incomingCustomerId: customerId,
+        sessionId: sessionId || null,
+      });
+      return null;
+    }
+  }
+  const { rows } = await pool.query(
+    `UPDATE users
+     SET role = 'subscriber',
+         subscription_status = 'active',
+         subscription_period_end = GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $1::timestamptz),
+         stripe_customer_id = COALESCE(stripe_customer_id, $2),
+         stripe_last_session_id = COALESCE($3, stripe_last_session_id)
+     WHERE id = $4
+     RETURNING id`,
+    [periodEndIso, customerId, sessionId, resolvedUserId],
+  );
+  if (!rows.length) {
+    console.warn('Stripe activation update matched user id but did not update a row', {
+      resolvedUserId,
+      customerId: customerId || null,
+      email: email || null,
+      sessionId: sessionId || null,
+    });
+  }
+  if (rows.length) {
+    console.info('Stripe activation update succeeded', {
+      resolvedUserId,
+      customerId: customerId || null,
+      sessionId: sessionId || null,
+      subscriptionStatus: 'active',
+    });
+  }
+  return rows[0] || null;
+};
+
+const deactivateSubscriptionByCustomerId = async (customerId) => {
+  if (!customerId) return;
+  await pool.query(
+    `UPDATE users
+     SET subscription_status = 'inactive'
+     WHERE stripe_customer_id = $1`,
+    [customerId],
+  );
+};
+
+const parseStripeTimestampMs = (value, fallbackMs = null) => {
+  if (!value) return fallbackMs;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return fallbackMs;
+  return seconds * 1000;
+};
+
+const verifyStripeWebhookSignature = (req) => {
+  if (!STRIPE_WEBHOOK_SECRET) return true;
+  const signatureHeader = req.get('stripe-signature') || '';
+  const body = req.rawBody?.toString('utf8') || '';
+  if (!signatureHeader || !body) return false;
+  const parts = signatureHeader.split(',').reduce((acc, part) => {
+    const [key, value] = part.split('=');
+    if (!key || !value) return acc;
+    const normalizedKey = key.trim();
+    const normalizedValue = value.trim();
+    if (normalizedKey === 'v1') {
+      if (!acc.v1) acc.v1 = [];
+      acc.v1.push(normalizedValue);
+    } else {
+      acc[normalizedKey] = normalizedValue;
+    }
+    return acc;
+  }, {});
+  if (!parts.t || !Array.isArray(parts.v1) || parts.v1.length === 0) return false;
+  const signedPayload = `${parts.t}.${body}`;
+  const expected = createHmac('sha256', STRIPE_WEBHOOK_SECRET).update(signedPayload, 'utf8').digest('hex');
+  return parts.v1.some((signature) => {
+    try {
+      return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+    } catch (_err) {
+      return false;
+    }
+  });
 };
 
 const activateSubscriptionForUser = async ({ userId = null, customerId = null, email = null, periodEndIso, sessionId = null }) => {
@@ -1199,14 +1406,34 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
   if (!STRIPE_SECRET_KEY) return res.status(501).json({ error: 'Stripe not configured' });
   const { sessionId } = req.body || {};
   if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
+  console.info('Stripe confirm started', { sessionId, userId: req.user.id, email: req.user.email });
   try {
     const session = await retrieveStripeSession(sessionId);
     const isPaid = session.payment_status === 'paid' || session.status === 'complete';
-    if (!isPaid) return res.status(402).json({ error: 'Payment not completed' });
+    if (!isPaid) {
+      console.warn('Stripe confirm rejected: payment not completed', {
+        sessionId,
+        userId: req.user.id,
+        status: session.status || null,
+        paymentStatus: session.payment_status || null,
+      });
+      return res.status(402).json({ error: 'Payment not completed' });
+    }
     if (session.client_reference_id && String(session.client_reference_id) !== String(req.user.id)) {
+      console.warn('Stripe confirm rejected: client reference mismatch', {
+        sessionId,
+        userId: req.user.id,
+        clientReferenceId: session.client_reference_id,
+      });
       return res.status(409).json({ error: 'Session does not match user' });
     }
     if (session.customer_details?.email && session.customer_details.email.toLowerCase() !== req.user.email.toLowerCase()) {
+      console.warn('Stripe confirm rejected: email mismatch', {
+        sessionId,
+        userId: req.user.id,
+        sessionEmail: session.customer_details.email,
+        userEmail: req.user.email,
+      });
       return res.status(409).json({ error: 'Session email does not match user' });
     }
 
@@ -1214,17 +1441,45 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
       ? session.subscription.current_period_end * 1000
       : Date.now() + 365 * 24 * 60 * 60 * 1000;
     const periodEndIso = new Date(periodEndMs).toISOString();
+    if (session.customer) {
+      const { rows: existingRows } = await pool.query(
+        `SELECT stripe_customer_id FROM users WHERE id = $1 LIMIT 1`,
+        [req.user.id],
+      );
+      const existingCustomerId = existingRows[0]?.stripe_customer_id || null;
+      if (existingCustomerId && existingCustomerId !== session.customer) {
+        console.warn('Stripe confirm rejected: customer id mismatch', {
+          sessionId,
+          userId: req.user.id,
+          existingCustomerId,
+          incomingCustomerId: session.customer,
+        });
+        return res.status(409).json({ error: 'Stripe customer mismatch for this account' });
+      }
+    }
     const { rows } = await pool.query(
       `UPDATE users
        SET role = 'subscriber',
            subscription_status = 'active',
-           subscription_period_end = $1,
-           stripe_customer_id = COALESCE($2, stripe_customer_id),
+           subscription_period_end = GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $1::timestamptz),
+           stripe_customer_id = COALESCE(stripe_customer_id, $2),
            stripe_last_session_id = $3
        WHERE id = $4
        RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
       [periodEndIso, session.customer || null, session.id, req.user.id],
     );
+    if (!rows.length) {
+      console.error('Stripe confirm failed: no user row updated', { sessionId, userId: req.user.id });
+      return res.status(404).json({ error: 'Could not update subscription for this account' });
+    }
+    console.info('Stripe confirm succeeded', {
+      sessionId,
+      userId: rows[0].id,
+      email: rows[0].email,
+      subscriptionStatus: rows[0].subscription_status,
+      subscriptionPeriodEnd: rows[0].subscription_period_end,
+      stripeCustomerId: rows[0].stripe_customer_id,
+    });
     res.status(200).json({ ok: true, user: rows[0] });
   } catch (err) {
     console.error('Stripe confirmation failed', err);
@@ -1436,6 +1691,10 @@ const predictTidalEvents = (station, startDate, days) => {
 // PDF Tide Booklet Generation
 app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
   try {
+    if (!hasPaidCalendarAccess(req.user)) {
+      return res.status(403).json({ error: 'An active subscription is required to download PDF tide booklets.' });
+    }
+
     // Get user's home port
     if (!req.user.home_port_id || !req.user.home_port_name) {
       return res.status(400).json({ error: 'No home port configured. Please set your home port first.' });
