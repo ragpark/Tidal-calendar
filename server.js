@@ -1334,6 +1334,15 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
     if (!rows.length) {
       return res.status(404).json({ error: 'Could not update subscription for this account' });
     }
+    console.info('Stripe confirm user update succeeded', {
+      sessionId,
+      userId: rows[0].id,
+      email: rows[0].email,
+      subscriptionStatus: rows[0].subscription_status,
+      subscriptionPeriodEnd: rows[0].subscription_period_end,
+      stripeCustomerId: rows[0].stripe_customer_id || null,
+      stripeLastSessionId: rows[0].stripe_last_session_id || null,
+    });
     res.status(200).json({ ok: true, user: rows[0] });
   } catch (err) {
     console.error('Stripe confirmation failed', err);
@@ -1342,9 +1351,25 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
 });
 
 app.post('/api/payments/stripe/webhook', async (req, res) => {
-  if (!verifyStripeWebhookSignature(req)) return res.status(400).json({ error: 'Invalid Stripe signature' });
-  const event = req.body;
-  if (!event?.type) return res.status(400).json({ error: 'Invalid Stripe event payload' });
+  const event = req.body || {};
+  console.info('Stripe webhook received', {
+    eventId: event.id || null,
+    eventType: event.type || null,
+  });
+  if (!verifyStripeWebhookSignature(req)) {
+    console.info('Stripe webhook signature verification failed', {
+      eventId: event.id || null,
+      eventType: event.type || null,
+      hasSignatureHeader: Boolean(req.get('stripe-signature')),
+    });
+    return res.status(400).json({ error: 'Invalid Stripe signature' });
+  }
+  if (!event?.type) {
+    console.info('Stripe webhook rejected: invalid payload (missing event type)', {
+      eventId: event.id || null,
+    });
+    return res.status(400).json({ error: 'Invalid Stripe event payload' });
+  }
   try {
     switch (event.type) {
       case 'checkout.session.completed':
