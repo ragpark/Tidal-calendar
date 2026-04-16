@@ -9,6 +9,34 @@ const WEATHER_API_KEY = '34c6cb97a9cb4f0c89e85256261401';
 const LOCAL_HOME_PORT_KEY = 'tidal-calendar-home-port';
 const UK_TIME_ZONE = 'Europe/London';
 const CHATBOT_ENABLED = false;
+const LONDON_OFFSET_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  timeZone: UK_TIME_ZONE,
+  timeZoneName: 'shortOffset',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+const getLondonOffsetMinutes = (date) => {
+  const tzPart = LONDON_OFFSET_FORMATTER.formatToParts(date).find((part) => part.type === 'timeZoneName')?.value || 'GMT';
+  if (tzPart === 'GMT') return 0;
+  const match = tzPart.match(/^GMT([+-])(\d{1,2})(?::?(\d{2}))?$/);
+  if (!match) return 0;
+  const sign = match[1] === '-' ? -1 : 1;
+  const hours = Number(match[2] || 0);
+  const minutes = Number(match[3] || 0);
+  return sign * (hours * 60 + minutes);
+};
+
+const createLondonDate = (year, month, day, hour, minute) => {
+  let utcMs = Date.UTC(year, month, day, hour, minute, 0, 0);
+  for (let i = 0; i < 3; i += 1) {
+    const offsetMinutes = getLondonOffsetMinutes(new Date(utcMs));
+    const nextUtcMs = Date.UTC(year, month, day, hour, minute, 0, 0) - offsetMinutes * 60 * 1000;
+    if (nextUtcMs === utcMs) break;
+    utcMs = nextUtcMs;
+  }
+  return new Date(utcMs);
+};
 
 const parseEmbedConfig = () => {
   if (typeof window === 'undefined') {
@@ -77,15 +105,14 @@ const predictTidalEvents = (station, startDate, days) => {
   const M2_PERIOD = 12.4206;
   const isPredictedSource = true;
   
-  const referenceDate = new Date(startDate);
-  referenceDate.setHours(0, 0, 0, 0);
+  const referenceDate = new Date(Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()));
   
   const lunarPhase = getLunarPhase(referenceDate);
   const initialHWOffset = (lunarPhase * 24 * 0.5 + 2) % M2_PERIOD;
   
   for (let day = 0; day < days; day++) {
     const currentDate = new Date(referenceDate);
-    currentDate.setDate(currentDate.getDate() + day);
+    currentDate.setUTCDate(currentDate.getUTCDate() + day);
     
     const laggedDate = new Date(currentDate);
     laggedDate.setDate(laggedDate.getDate() - 2);
@@ -104,9 +131,20 @@ const predictTidalEvents = (station, startDate, days) => {
     
     const addEvent = (hour, type, baseHeight) => {
       if (hour >= 0 && hour < 24) {
-        const time = new Date(currentDate);
         const isLongRange = day > 6;
-        time.setHours(Math.floor(hour), Math.round((hour % 1) * 60), 0, 0);
+        let eventHour = Math.floor(hour);
+        let eventMinute = Math.round((hour % 1) * 60);
+        if (eventMinute === 60) {
+          eventHour = (eventHour + 1) % 24;
+          eventMinute = 0;
+        }
+        const time = createLondonDate(
+          currentDate.getUTCFullYear(),
+          currentDate.getUTCMonth(),
+          currentDate.getUTCDate(),
+          eventHour,
+          eventMinute,
+        );
         events.push({
           EventType: type,
           DateTime: time.toISOString(),
