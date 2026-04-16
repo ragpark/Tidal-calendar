@@ -515,6 +515,16 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+const hasPaidCalendarAccess = (user) => {
+  if (!user) return false;
+  const subscriptionStatus = String(user.subscription_status || '').toLowerCase();
+  if (!['active', 'trialing'].includes(subscriptionStatus)) return false;
+  if (!user.subscription_period_end) return true;
+  const periodEnd = new Date(user.subscription_period_end);
+  if (Number.isNaN(periodEnd.getTime())) return false;
+  return periodEnd.getTime() > Date.now();
+};
+
 const passwordResetLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -1111,6 +1121,7 @@ const scheduleMaintenanceReminderChecks = () => {
 };
 
 const retrieveStripeSession = async (sessionId) => {
+  console.info('Stripe session retrieval started', { sessionId });
   const params = new URLSearchParams();
   params.append('expand[]', 'subscription');
   const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}?${params.toString()}`, {
@@ -1121,46 +1132,118 @@ const retrieveStripeSession = async (sessionId) => {
   });
   if (!res.ok) {
     const text = await res.text();
+    console.error('Stripe session retrieval failed', { sessionId, status: res.status, body: text });
     throw new Error(`Stripe responded with ${res.status}: ${text}`);
   }
-  return res.json();
+  const payload = await res.json();
+  console.info('Stripe session retrieval succeeded', {
+    sessionId: payload?.id || sessionId,
+    status: payload?.status || null,
+    paymentStatus: payload?.payment_status || null,
+    clientReferenceId: payload?.client_reference_id || null,
+    customerId: payload?.customer || null,
+    customerEmail: payload?.customer_details?.email || payload?.customer_email || null,
+  });
+  return payload;
+};
+
+const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const resolveStripeUserId = async ({ userId = null, customerId = null, email = null, sessionId = null }) => {
+  if (userId) {
+    const { rows } = await pool.query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [userId]);
+    if (rows[0]?.id) return rows[0].id;
+  }
+
+  const lookups = [
+    customerId
+      ? {
+        sql: `SELECT id FROM users WHERE stripe_customer_id = $1 LIMIT 1`,
+        value: customerId,
+      }
+      : null,
+    email
+      ? {
+        sql: `SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1`,
+        value: normalizeEmail(email),
+      }
+      : null,
+    sessionId
+      ? {
+        sql: `SELECT id FROM users WHERE stripe_last_session_id = $1 LIMIT 1`,
+        value: sessionId,
+      }
+      : null,
+  ].filter(Boolean);
+
+  for (const lookup of lookups) {
+    const { rows } = await pool.query(lookup.sql, [lookup.value]);
+    if (rows[0]?.id) return rows[0].id;
+  }
+
+  return null;
 };
 
 const activateSubscriptionForUser = async ({ userId = null, customerId = null, email = null, periodEndIso, sessionId = null }) => {
+  console.info('Stripe activation attempt started', {
+    userId: userId || null,
+    customerId: customerId || null,
+    email: email || null,
+    sessionId: sessionId || null,
+    periodEndIso: periodEndIso || null,
+  });
   if (!periodEndIso) return null;
-  const clauses = [];
-  const values = [periodEndIso, customerId, sessionId];
-  let idx = 4;
-  if (userId) {
-    clauses.push(`id = $${idx++}`);
-    values.push(userId);
-  }
-  if (customerId) {
-    clauses.push(`stripe_customer_id = $${idx++}`);
-    values.push(customerId);
-  }
-  if (email) {
-    clauses.push(`LOWER(email) = LOWER($${idx++})`);
-    values.push(email);
-  }
-  if (!clauses.length) return null;
-  const { rows } = await pool.query(
-    `UPDATE users
-     SET role = 'subscriber',
-         subscription_status = 'active',
-         subscription_period_end = GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $1::timestamptz),
-         stripe_customer_id = COALESCE($2, stripe_customer_id),
-         stripe_last_session_id = COALESCE($3, stripe_last_session_id)
-     WHERE ${clauses.join(' OR ')}
-     RETURNING id`,
-    values,
-  );
-  if (!rows.length) {
+  const resolvedUserId = await resolveStripeUserId({ userId, customerId, email, sessionId });
+  if (!resolvedUserId) {
     console.warn('Stripe activation did not match any users', {
       userId: userId || null,
       customerId: customerId || null,
       email: email || null,
       sessionId: sessionId || null,
+    });
+    return null;
+  }
+  if (customerId) {
+    const { rows: existingRows } = await pool.query(
+      `SELECT stripe_customer_id FROM users WHERE id = $1 LIMIT 1`,
+      [resolvedUserId],
+    );
+    const existingCustomerId = existingRows[0]?.stripe_customer_id || null;
+    if (existingCustomerId && existingCustomerId !== customerId) {
+      console.warn('Stripe activation blocked due to conflicting customer mapping', {
+        resolvedUserId,
+        existingCustomerId,
+        incomingCustomerId: customerId,
+        sessionId: sessionId || null,
+      });
+      return null;
+    }
+  }
+  const { rows } = await pool.query(
+    `UPDATE users
+     SET role = 'subscriber',
+         subscription_status = 'active',
+         subscription_period_end = GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $1::timestamptz),
+         stripe_customer_id = COALESCE(stripe_customer_id, $2),
+         stripe_last_session_id = COALESCE($3, stripe_last_session_id)
+     WHERE id = $4
+     RETURNING id`,
+    [periodEndIso, customerId, sessionId, resolvedUserId],
+  );
+  if (!rows.length) {
+    console.warn('Stripe activation update matched user id but did not update a row', {
+      resolvedUserId,
+      customerId: customerId || null,
+      email: email || null,
+      sessionId: sessionId || null,
+    });
+  }
+  if (rows.length) {
+    console.info('Stripe activation update succeeded', {
+      resolvedUserId,
+      customerId: customerId || null,
+      sessionId: sessionId || null,
+      subscriptionStatus: 'active',
     });
   }
   return rows[0] || null;
@@ -1217,14 +1300,34 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
   if (!STRIPE_SECRET_KEY) return res.status(501).json({ error: 'Stripe not configured' });
   const { sessionId } = req.body || {};
   if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
+  console.info('Stripe confirm started', { sessionId, userId: req.user.id, email: req.user.email });
   try {
     const session = await retrieveStripeSession(sessionId);
     const isPaid = session.payment_status === 'paid' || session.status === 'complete';
-    if (!isPaid) return res.status(402).json({ error: 'Payment not completed' });
+    if (!isPaid) {
+      console.warn('Stripe confirm rejected: payment not completed', {
+        sessionId,
+        userId: req.user.id,
+        status: session.status || null,
+        paymentStatus: session.payment_status || null,
+      });
+      return res.status(402).json({ error: 'Payment not completed' });
+    }
     if (session.client_reference_id && String(session.client_reference_id) !== String(req.user.id)) {
+      console.warn('Stripe confirm rejected: client reference mismatch', {
+        sessionId,
+        userId: req.user.id,
+        clientReferenceId: session.client_reference_id,
+      });
       return res.status(409).json({ error: 'Session does not match user' });
     }
     if (session.customer_details?.email && session.customer_details.email.toLowerCase() !== req.user.email.toLowerCase()) {
+      console.warn('Stripe confirm rejected: email mismatch', {
+        sessionId,
+        userId: req.user.id,
+        sessionEmail: session.customer_details.email,
+        userEmail: req.user.email,
+      });
       return res.status(409).json({ error: 'Session email does not match user' });
     }
 
@@ -1232,17 +1335,45 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
       ? session.subscription.current_period_end * 1000
       : Date.now() + 365 * 24 * 60 * 60 * 1000;
     const periodEndIso = new Date(periodEndMs).toISOString();
+    if (session.customer) {
+      const { rows: existingRows } = await pool.query(
+        `SELECT stripe_customer_id FROM users WHERE id = $1 LIMIT 1`,
+        [req.user.id],
+      );
+      const existingCustomerId = existingRows[0]?.stripe_customer_id || null;
+      if (existingCustomerId && existingCustomerId !== session.customer) {
+        console.warn('Stripe confirm rejected: customer id mismatch', {
+          sessionId,
+          userId: req.user.id,
+          existingCustomerId,
+          incomingCustomerId: session.customer,
+        });
+        return res.status(409).json({ error: 'Stripe customer mismatch for this account' });
+      }
+    }
     const { rows } = await pool.query(
       `UPDATE users
        SET role = 'subscriber',
            subscription_status = 'active',
            subscription_period_end = GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $1::timestamptz),
-           stripe_customer_id = COALESCE($2, stripe_customer_id),
+           stripe_customer_id = COALESCE(stripe_customer_id, $2),
            stripe_last_session_id = $3
        WHERE id = $4
        RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
       [periodEndIso, session.customer || null, session.id, req.user.id],
     );
+    if (!rows.length) {
+      console.error('Stripe confirm failed: no user row updated', { sessionId, userId: req.user.id });
+      return res.status(404).json({ error: 'Could not update subscription for this account' });
+    }
+    console.info('Stripe confirm succeeded', {
+      sessionId,
+      userId: rows[0].id,
+      email: rows[0].email,
+      subscriptionStatus: rows[0].subscription_status,
+      subscriptionPeriodEnd: rows[0].subscription_period_end,
+      stripeCustomerId: rows[0].stripe_customer_id,
+    });
     res.status(200).json({ ok: true, user: rows[0] });
   } catch (err) {
     console.error('Stripe confirmation failed', err);
@@ -1254,50 +1385,102 @@ app.post('/api/payments/stripe/webhook', async (req, res) => {
   if (!verifyStripeWebhookSignature(req)) return res.status(400).json({ error: 'Invalid Stripe signature' });
   const event = req.body;
   if (!event?.type) return res.status(400).json({ error: 'Invalid Stripe event payload' });
+  console.info('Stripe webhook received', {
+    eventType: event.type,
+    eventId: event.id || null,
+  });
   try {
     switch (event.type) {
       case 'checkout.session.completed':
       case 'checkout.session.async_payment_succeeded': {
-        const session = event.data?.object || {};
+        const webhookSession = event.data?.object || {};
+        const session = webhookSession.id ? await retrieveStripeSession(webhookSession.id) : webhookSession;
         const isPaid = session.payment_status === 'paid' || session.status === 'complete';
-        if (!isPaid) break;
-        const periodEndMs = parseStripeTimestampMs(session.subscription_details?.current_period_end, Date.now() + 365 * 24 * 60 * 60 * 1000);
-        await activateSubscriptionForUser({
+        if (!isPaid) {
+          console.info('Stripe webhook checkout skipped: payment not completed', {
+            eventType: event.type,
+            sessionId: session.id || webhookSession.id || null,
+            status: session.status || null,
+            paymentStatus: session.payment_status || null,
+          });
+          break;
+        }
+        const periodEndMs = parseStripeTimestampMs(
+          session.subscription?.current_period_end || session.subscription_details?.current_period_end,
+          Date.now() + 365 * 24 * 60 * 60 * 1000,
+        );
+        const activated = await activateSubscriptionForUser({
           userId: session.client_reference_id || session.metadata?.user_id || null,
           customerId: session.customer || null,
-          email: session.customer_details?.email || null,
+          email: session.customer_details?.email || session.customer_email || null,
           periodEndIso: new Date(periodEndMs).toISOString(),
           sessionId: session.id || null,
         });
+        if (!activated) {
+          console.warn('Stripe checkout webhook did not activate a user', {
+            eventType: event.type,
+            sessionId: session.id || null,
+            userId: session.client_reference_id || session.metadata?.user_id || null,
+            customerId: session.customer || null,
+            email: session.customer_details?.email || session.customer_email || null,
+          });
+        }
         break;
       }
       case 'invoice.paid': {
         const invoice = event.data?.object || {};
+        console.info('Stripe invoice.paid processing', {
+          invoiceId: invoice.id || null,
+          customerId: invoice.customer || null,
+          customerEmail: invoice.customer_email || invoice.customer_details?.email || null,
+        });
         const periodEndMs = parseStripeTimestampMs(
           invoice.lines?.data?.[0]?.period?.end,
           Date.now() + 365 * 24 * 60 * 60 * 1000,
         );
-        await activateSubscriptionForUser({
+        const activated = await activateSubscriptionForUser({
           customerId: invoice.customer || null,
-          email: invoice.customer_email || null,
+          email: invoice.customer_email || invoice.customer_details?.email || null,
           periodEndIso: new Date(periodEndMs).toISOString(),
           sessionId: null,
         });
+        if (!activated) {
+          console.warn('Stripe invoice webhook did not activate a user', {
+            eventType: event.type,
+            customerId: invoice.customer || null,
+            email: invoice.customer_email || invoice.customer_details?.email || null,
+          });
+        }
         break;
       }
       case 'customer.subscription.updated': {
         const subscription = event.data?.object || {};
+        console.info('Stripe customer.subscription.updated processing', {
+          subscriptionId: subscription.id || null,
+          customerId: subscription.customer || null,
+          currentPeriodEnd: subscription.current_period_end || null,
+        });
         const periodEndMs = parseStripeTimestampMs(subscription.current_period_end);
         if (!periodEndMs) break;
-        await activateSubscriptionForUser({
+        const activated = await activateSubscriptionForUser({
           customerId: subscription.customer || null,
           periodEndIso: new Date(periodEndMs).toISOString(),
           sessionId: null,
         });
+        if (!activated) {
+          console.warn('Stripe subscription update webhook did not activate a user', {
+            eventType: event.type,
+            customerId: subscription.customer || null,
+          });
+        }
         break;
       }
       case 'customer.subscription.deleted': {
         const subscription = event.data?.object || {};
+        console.info('Stripe customer.subscription.deleted processing', {
+          subscriptionId: subscription.id || null,
+          customerId: subscription.customer || null,
+        });
         await deactivateSubscriptionByCustomerId(subscription.customer || null);
         break;
       }
@@ -1454,6 +1637,10 @@ const predictTidalEvents = (station, startDate, days) => {
 // PDF Tide Booklet Generation
 app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
   try {
+    if (!hasPaidCalendarAccess(req.user)) {
+      return res.status(403).json({ error: 'An active subscription is required to download PDF tide booklets.' });
+    }
+
     // Get user's home port
     if (!req.user.home_port_id || !req.user.home_port_name) {
       return res.status(400).json({ error: 'No home port configured. Please set your home port first.' });
