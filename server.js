@@ -1221,14 +1221,44 @@ const resolveStripeUserId = async ({ userId = null, customerId = null, email = n
   return null;
 };
 
+const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const resolveStripeUserId = async ({ userId = null, customerId = null, email = null, sessionId = null }) => {
+  if (userId) {
+    const { rows } = await pool.query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [userId]);
+    if (rows[0]?.id) return rows[0].id;
+  }
+
+  const lookups = [
+    customerId
+      ? {
+        sql: `SELECT id FROM users WHERE stripe_customer_id = $1 LIMIT 1`,
+        value: customerId,
+      }
+      : null,
+    email
+      ? {
+        sql: `SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1`,
+        value: normalizeEmail(email),
+      }
+      : null,
+    sessionId
+      ? {
+        sql: `SELECT id FROM users WHERE stripe_last_session_id = $1 LIMIT 1`,
+        value: sessionId,
+      }
+      : null,
+  ].filter(Boolean);
+
+  for (const lookup of lookups) {
+    const { rows } = await pool.query(lookup.sql, [lookup.value]);
+    if (rows[0]?.id) return rows[0].id;
+  }
+
+  return null;
+};
+
 const activateSubscriptionForUser = async ({ userId = null, customerId = null, email = null, periodEndIso, sessionId = null }) => {
-  console.info('Stripe activation attempt started', {
-    userId: userId || null,
-    customerId: customerId || null,
-    email: email || null,
-    sessionId: sessionId || null,
-    periodEndIso: periodEndIso || null,
-  });
   if (!periodEndIso) return null;
   const resolvedUserId = await resolveStripeUserId({ userId, customerId, email, sessionId });
   if (!resolvedUserId) {
@@ -1239,22 +1269,6 @@ const activateSubscriptionForUser = async ({ userId = null, customerId = null, e
       sessionId: sessionId || null,
     });
     return null;
-  }
-  if (customerId) {
-    const { rows: existingRows } = await pool.query(
-      `SELECT stripe_customer_id FROM users WHERE id = $1 LIMIT 1`,
-      [resolvedUserId],
-    );
-    const existingCustomerId = existingRows[0]?.stripe_customer_id || null;
-    if (existingCustomerId && existingCustomerId !== customerId) {
-      console.warn('Stripe activation blocked due to conflicting customer mapping', {
-        resolvedUserId,
-        existingCustomerId,
-        incomingCustomerId: customerId,
-        sessionId: sessionId || null,
-      });
-      return null;
-    }
   }
   const { rows } = await pool.query(
     `UPDATE users
@@ -1469,17 +1483,8 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
       [periodEndIso, session.customer || null, session.id, req.user.id],
     );
     if (!rows.length) {
-      console.error('Stripe confirm failed: no user row updated', { sessionId, userId: req.user.id });
       return res.status(404).json({ error: 'Could not update subscription for this account' });
     }
-    console.info('Stripe confirm succeeded', {
-      sessionId,
-      userId: rows[0].id,
-      email: rows[0].email,
-      subscriptionStatus: rows[0].subscription_status,
-      subscriptionPeriodEnd: rows[0].subscription_period_end,
-      stripeCustomerId: rows[0].stripe_customer_id,
-    });
     res.status(200).json({ ok: true, user: rows[0] });
   } catch (err) {
     console.error('Stripe confirmation failed', err);
@@ -1495,17 +1500,30 @@ app.post('/api/payments/stripe/webhook', async (req, res) => {
     switch (event.type) {
       case 'checkout.session.completed':
       case 'checkout.session.async_payment_succeeded': {
-        const session = event.data?.object || {};
+        const webhookSession = event.data?.object || {};
+        const session = webhookSession.id ? await retrieveStripeSession(webhookSession.id) : webhookSession;
         const isPaid = session.payment_status === 'paid' || session.status === 'complete';
         if (!isPaid) break;
-        const periodEndMs = parseStripeTimestampMs(session.subscription_details?.current_period_end, Date.now() + 365 * 24 * 60 * 60 * 1000);
-        await activateSubscriptionForUser({
-          userId: session.client_reference_id ? Number(session.client_reference_id) : null,
+        const periodEndMs = parseStripeTimestampMs(
+          session.subscription?.current_period_end || session.subscription_details?.current_period_end,
+          Date.now() + 365 * 24 * 60 * 60 * 1000,
+        );
+        const activated = await activateSubscriptionForUser({
+          userId: session.client_reference_id || session.metadata?.user_id || null,
           customerId: session.customer || null,
-          email: session.customer_details?.email || null,
+          email: session.customer_details?.email || session.customer_email || null,
           periodEndIso: new Date(periodEndMs).toISOString(),
           sessionId: session.id || null,
         });
+        if (!activated) {
+          console.warn('Stripe checkout webhook did not activate a user', {
+            eventType: event.type,
+            sessionId: session.id || null,
+            userId: session.client_reference_id || session.metadata?.user_id || null,
+            customerId: session.customer || null,
+            email: session.customer_details?.email || session.customer_email || null,
+          });
+        }
         break;
       }
       case 'invoice.paid': {
@@ -1514,23 +1532,36 @@ app.post('/api/payments/stripe/webhook', async (req, res) => {
           invoice.lines?.data?.[0]?.period?.end,
           Date.now() + 365 * 24 * 60 * 60 * 1000,
         );
-        await activateSubscriptionForUser({
+        const activated = await activateSubscriptionForUser({
           customerId: invoice.customer || null,
-          email: invoice.customer_email || null,
+          email: invoice.customer_email || invoice.customer_details?.email || null,
           periodEndIso: new Date(periodEndMs).toISOString(),
           sessionId: null,
         });
+        if (!activated) {
+          console.warn('Stripe invoice webhook did not activate a user', {
+            eventType: event.type,
+            customerId: invoice.customer || null,
+            email: invoice.customer_email || invoice.customer_details?.email || null,
+          });
+        }
         break;
       }
       case 'customer.subscription.updated': {
         const subscription = event.data?.object || {};
         const periodEndMs = parseStripeTimestampMs(subscription.current_period_end);
         if (!periodEndMs) break;
-        await activateSubscriptionForUser({
+        const activated = await activateSubscriptionForUser({
           customerId: subscription.customer || null,
           periodEndIso: new Date(periodEndMs).toISOString(),
           sessionId: null,
         });
+        if (!activated) {
+          console.warn('Stripe subscription update webhook did not activate a user', {
+            eventType: event.type,
+            customerId: subscription.customer || null,
+          });
+        }
         break;
       }
       case 'customer.subscription.deleted': {
