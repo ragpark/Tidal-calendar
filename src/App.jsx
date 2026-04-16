@@ -244,7 +244,7 @@ export default function TidalCalendarApp() {
     if (role === 'subscriber') return 'Subscriber (extended data)';
     if (role === 'admin') return 'Admin';
     if (role === 'club_admin') return 'Club admin';
-    return 'User (7-day view)';
+    return 'User';
   }, [role]);
   const pages = useMemo(() => {
     const base = ['calendar', 'profile', 'about', 'blog'];
@@ -254,11 +254,6 @@ export default function TidalCalendarApp() {
   const subscriptionEndLabel = subscriptionEnd && !Number.isNaN(new Date(subscriptionEnd).getTime())
     ? new Date(subscriptionEnd).toLocaleDateString('en-GB')
     : 'Not set';
-  const hasUkhoAccess = useMemo(() => {
-    if (!user) return false;
-    const end = subscriptionEnd ? new Date(subscriptionEnd) : null;
-    return role === 'subscriber' && end && !Number.isNaN(end.getTime()) && end.getTime() > Date.now();
-  }, [subscriptionEnd, role, user]);
   const hasPaidCalendarProduct = useMemo(() => {
     if (!user) return false;
     return Boolean(user.has_pdf_calendar_access);
@@ -324,22 +319,38 @@ export default function TidalCalendarApp() {
     
     const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
     const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-    const apiDuration = hasUkhoAccess ? daysInMonth + 7 : 7;
+    const apiDuration = daysInMonth + 7;
+    const fallbackApiDuration = 7;
     const predictionDays = daysInMonth + 7;
     
     let apiEvents = [];
     if (apiKey && !isDemo) {
       try {
+        const parseApiEvents = (payload) => (Array.isArray(payload) ? payload : []).map(event => ({
+          ...event,
+          IsPredicted: false,
+          Source: 'UKHO',
+        }));
+
         const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=${apiDuration}`, { method: 'GET', cache: 'no-store' });
         if (!response.ok) throw new Error(`TidalEvents fetch failed (${response.status})`);
         const rawApiEvents = await response.json();
-        apiEvents = (Array.isArray(rawApiEvents) ? rawApiEvents : [])
-          .map(event => ({
+        apiEvents = parseApiEvents(rawApiEvents);
+      } catch (err) {
+        console.warn('Extended UKHO fetch failed; retrying with fallback duration.', err);
+        try {
+          const fallbackResponse = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=${fallbackApiDuration}`, { method: 'GET', cache: 'no-store' });
+          if (!fallbackResponse.ok) throw new Error(`Fallback TidalEvents fetch failed (${fallbackResponse.status})`);
+          const fallbackEvents = await fallbackResponse.json();
+          apiEvents = (Array.isArray(fallbackEvents) ? fallbackEvents : []).map(event => ({
             ...event,
             IsPredicted: false,
             Source: 'UKHO',
           }));
-      } catch (err) { console.warn('API fetch failed:', err); }
+        } catch (fallbackErr) {
+          console.warn('Fallback UKHO fetch failed:', fallbackErr);
+        }
+      }
     }
     
     const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
@@ -348,7 +359,7 @@ export default function TidalCalendarApp() {
     
     setTidalEvents(merged.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)));
     setLoading(false);
-  }, [apiKey, isDemo, currentMonth, hasUkhoAccess]);
+  }, [apiKey, isDemo, currentMonth]);
 
   const persistHomePortSelection = useCallback((portId) => {
     if (typeof window === 'undefined') return;
@@ -1283,7 +1294,7 @@ export default function TidalCalendarApp() {
                             <span style={{ color: primaryText, fontWeight: 600 }}>{formatTime(event.DateTime)}</span>
                             <span>{event.Height?.toFixed(1)}m</span>
                             {event.IsPredicted && <span style={{ fontSize: '11px', color: '#b45309' }}>Predicted</span>}
-                            {!event.IsPredicted && event.Source === 'UKHO' && <span style={{ fontSize: '11px', color: accentColor }}>{hasUkhoAccess ? 'UKHO' : 'UKHO 7d'}</span>}
+                            {!event.IsPredicted && event.Source === 'UKHO' && <span style={{ fontSize: '11px', color: accentColor }}>UKHO</span>}
                           </div>
                         ))}
                       </div>
@@ -1309,7 +1320,7 @@ export default function TidalCalendarApp() {
                         <ScrubbingBadge />
                       </div>
                       <div style={{ fontSize: '11px', color: secondaryText }}>
-                        {data.highWater.IsPredicted ? 'Predicted window' : data.highWater.Source === 'UKHO' ? (hasUkhoAccess ? 'UKHO data' : 'UKHO preview (7d)') : 'Predicted'}
+                        {data.highWater.IsPredicted ? 'Predicted window' : data.highWater.Source === 'UKHO' ? 'UKHO data' : 'Predicted'}
                       </div>
                     </div>
                   ))}
@@ -1426,8 +1437,8 @@ export default function TidalCalendarApp() {
                   emoji: '🌐',
                   points: [
                     'Browse stations and set a home port locally with no sign-in required.',
-                    'See 7 days of Admiralty API preview data when available.',
-                    'Beyond 7 days, tide times and heights are algorithmic predictions for guidance only.',
+                    'See official UKHO tidal events whenever the API returns them.',
+                    'Predictions are only used to fill any gaps where UKHO events are unavailable.',
                   ],
                 },
                 {
@@ -1435,17 +1446,17 @@ export default function TidalCalendarApp() {
                   emoji: '🧭',
                   points: [
                     'Sync your saved home port and maintenance reminders across devices.',
-                    'Removal of Ads. Receive the same 7-day Admiralty preview as guests.',
-                    'Longer range data remains predicted beyond the 7-day window.',
+                    'Removal of Ads and synced home-port preferences across devices.',
+                    'Same UKHO + prediction blending as guest users.',
                   ],
                 },
                 {
                   title: 'Subscribers',
                   emoji: '🌊',
                   points: [
-                    'Unlock extended UKHO tidal events across the year.',
                     'Keep scrubbing guidance and reminders in sync with your subscription.',
-                    'Predictions supplement data only when UKHO coverage is unavailable.',
+                    'Priority product updates and support for ongoing development.',
+                    'Same UKHO + prediction blending as every account tier.',
                   ],
                 },
                 {
@@ -1471,7 +1482,7 @@ export default function TidalCalendarApp() {
             </div>
 
             <div style={{ background: '#ecfdf3', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '14px', fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#166534' }}>
-              <strong style={{ color: '#15803d' }}>Data transparency:</strong> For guests and non-subscribed users, anything beyond the first 7 days is shown using predicted tide times and heights. Subscribe to replace those forecasts with official UKHO data wherever available.
+              <strong style={{ color: '#15803d' }}>Data transparency:</strong> UKHO actual data is shown for all users wherever returned by the API. Predicted tide times/heights appear only when UKHO events are unavailable for a date.
             </div>
           </section>
         )}
@@ -2234,7 +2245,7 @@ export default function TidalCalendarApp() {
                             style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: hasUkhoEvents ? '#0ea5e9' : '#b45309', opacity: 0.9 }}
                             title={hasPredictedEvents ? 'Predicted tidal data' : undefined}
                           >
-                            {hasUkhoEvents ? (hasUkhoAccess ? 'UKHO' : 'UKHO 7d') : (hasPredictedEvents ? 'Pred.' : '—')}
+                            {hasUkhoEvents ? 'UKHO' : (hasPredictedEvents ? 'Pred.' : '—')}
                           </div>
                         )}
                       </div>
@@ -2250,13 +2261,13 @@ export default function TidalCalendarApp() {
                     <span style={{ color: '#475569', marginLeft: '8px' }}>▼</span> Low Water
                   </div>
                   <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#b45309', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '8px', padding: '2px 6px', background: '#fef3c7', borderRadius: '4px', color: '#b45309' }} title="Predicted tidal data">Pred.</span> Predicted tidal data (typically beyond the 7-day API window)
+                    <span style={{ fontSize: '8px', padding: '2px 6px', background: '#fef3c7', borderRadius: '4px', color: '#b45309' }} title="Predicted tidal data">Pred.</span> Predicted tidal data used only when UKHO events are unavailable
                   </div>
                   <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#334155' }}>
                     🌑🌕 = Spring tides (larger range) • 🌓🌗 = Neap tides (smaller range)
                   </div>
                   <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#0f172a', textAlign: 'center' }}>
-                    <strong style={{ color: '#0ea5e9' }}>UKHO 7d</strong> = open preview for everyone. Sign in & subscribe to unlock full UKHO times.
+                    <strong style={{ color: '#0ea5e9' }}>UKHO</strong> = official UKHO event data when available for the selected date.
                   </div>
                 </div>
               </div>
@@ -2294,7 +2305,7 @@ export default function TidalCalendarApp() {
                       <div style={{ fontSize: '20px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
                       <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155' }}>
                         HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m
-                        {!isPredicted && isUkhoEvent && <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>{hasUkhoAccess ? '• UKHO' : '• UKHO 7d'}</span>}
+                        {!isPredicted && isUkhoEvent && <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>• UKHO</span>}
                         {isPredicted && <span style={{ color: '#b45309', marginLeft: '8px' }}>• Predicted</span>}
                                 </div>
                               </div>
@@ -2323,7 +2334,7 @@ export default function TidalCalendarApp() {
                   {scrubModal.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
                 </div>
                 <div style={{ fontSize: '12px', color: '#475569' }}>
-                  {getMoonPhaseName(scrubModal.date).icon} {getMoonPhaseName(scrubModal.date).name} • {selectedDayHasUkhoApi ? (hasUkhoAccess ? 'UKHO data (subscriber)' : 'Admiralty Data (7 days)') : (selectedDayHasPredicted ? 'Predicted' : 'API Data')}
+                  {getMoonPhaseName(scrubModal.date).icon} {getMoonPhaseName(scrubModal.date).name} • {selectedDayHasUkhoApi ? 'UKHO data' : (selectedDayHasPredicted ? 'Predicted' : 'API Data')}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -2343,7 +2354,7 @@ export default function TidalCalendarApp() {
                         <div style={{ fontSize: '22px', fontWeight: 700, marginBottom: '4px', color: '#0f172a' }}>{formatTime(event.DateTime)}</div>
                         <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#334155' }}>{event.Height?.toFixed(2)}m</div>
                         {event.IsPredicted && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#b45309', marginTop: '6px' }}>⚠ Predicted (harmonic algorithm)</div>}
-                        {!event.IsPredicted && isUkhoEvent && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '6px' }}>{hasUkhoAccess ? 'UKHO data (subscriber)' : 'Admiralty preview (7-day access)'}</div>}
+                        {!event.IsPredicted && isUkhoEvent && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '6px' }}>UKHO data</div>}
                       </div>
                     );
                   })}
