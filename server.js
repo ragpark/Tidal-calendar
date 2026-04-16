@@ -1184,6 +1184,43 @@ const resolveStripeUserId = async ({ userId = null, customerId = null, email = n
   return null;
 };
 
+const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const resolveStripeUserId = async ({ userId = null, customerId = null, email = null, sessionId = null }) => {
+  if (userId) {
+    const { rows } = await pool.query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [userId]);
+    if (rows[0]?.id) return rows[0].id;
+  }
+
+  const lookups = [
+    customerId
+      ? {
+        sql: `SELECT id FROM users WHERE stripe_customer_id = $1 LIMIT 1`,
+        value: customerId,
+      }
+      : null,
+    email
+      ? {
+        sql: `SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1`,
+        value: normalizeEmail(email),
+      }
+      : null,
+    sessionId
+      ? {
+        sql: `SELECT id FROM users WHERE stripe_last_session_id = $1 LIMIT 1`,
+        value: sessionId,
+      }
+      : null,
+  ].filter(Boolean);
+
+  for (const lookup of lookups) {
+    const { rows } = await pool.query(lookup.sql, [lookup.value]);
+    if (rows[0]?.id) return rows[0].id;
+  }
+
+  return null;
+};
+
 const activateSubscriptionForUser = async ({ userId = null, customerId = null, email = null, periodEndIso, sessionId = null }) => {
   console.info('Stripe activation attempt started', {
     userId: userId || null,
