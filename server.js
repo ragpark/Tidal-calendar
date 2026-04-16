@@ -70,11 +70,19 @@ pool.on('error', (err, client) => {
 });
 
 const app = express();
-app.use(express.json({
+const stripeWebhookPath = '/api/payments/stripe/webhook';
+const jsonParser = express.json({
   verify: (req, _res, buf) => {
     req.rawBody = buf;
   },
-}));
+});
+const stripeWebhookRawParser = express.raw({ type: 'application/json' });
+app.use((req, res, next) => {
+  if (req.path === stripeWebhookPath) {
+    return stripeWebhookRawParser(req, res, next);
+  }
+  return jsonParser(req, res, next);
+});
 app.use(cookieParser());
 
 const isValidEmail = (value) => typeof value === 'string' && /\S+@\S+\.\S+/.test(value);
@@ -1238,7 +1246,8 @@ const parseStripeTimestampMs = (value, fallbackMs = null) => {
 const verifyStripeWebhookSignature = (req) => {
   if (!STRIPE_WEBHOOK_SECRET) return true;
   const signatureHeader = req.get('stripe-signature') || '';
-  const body = req.rawBody?.toString('utf8') || '';
+  const rawBodyBuffer = Buffer.isBuffer(req.body) ? req.body : req.rawBody;
+  const body = rawBodyBuffer?.toString('utf8') || '';
   if (!signatureHeader || !body) return false;
   const parts = signatureHeader.split(',').reduce((acc, part) => {
     const [key, value] = part.split('=');
@@ -1351,7 +1360,15 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
 });
 
 app.post('/api/payments/stripe/webhook', async (req, res) => {
-  const event = req.body || {};
+  const rawPayload = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
+  let event = req.body || {};
+  if (Buffer.isBuffer(req.body)) {
+    try {
+      event = rawPayload ? JSON.parse(rawPayload) : {};
+    } catch (_err) {
+      return res.status(400).json({ error: 'Invalid Stripe event payload' });
+    }
+  }
   console.info('Stripe webhook received', {
     eventId: event.id || null,
     eventType: event.type || null,
