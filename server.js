@@ -531,23 +531,15 @@ const passwordResetLimiter = createRateLimiter({
   message: { error: 'Too many password reset requests, please try again later.' },
 });
 
-// Health check endpoint for container monitoring
-app.get('/health', async (req, res) => {
-  try {
-    await pool.query('SELECT 1');
-    res.status(200).json({
-      status: 'healthy',
-      database: 'connected',
-      timestamp: new Date().toISOString()
-    });
-  } catch (err) {
-    res.status(503).json({
-      status: 'unhealthy',
-      database: 'disconnected',
-      error: err.message,
-      timestamp: new Date().toISOString()
-    });
-  }
+// Health check endpoint for container monitoring.
+// Keep this endpoint independent of database availability so Railway can
+// consistently validate container liveness during deploys and restarts.
+app.get('/health', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    databaseReady: dbReady,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.use(async (req, res, next) => {
@@ -1184,80 +1176,6 @@ const resolveStripeUserId = async ({ userId = null, customerId = null, email = n
   return null;
 };
 
-const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
-
-const resolveStripeUserId = async ({ userId = null, customerId = null, email = null, sessionId = null }) => {
-  if (userId) {
-    const { rows } = await pool.query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [userId]);
-    if (rows[0]?.id) return rows[0].id;
-  }
-
-  const lookups = [
-    customerId
-      ? {
-        sql: `SELECT id FROM users WHERE stripe_customer_id = $1 LIMIT 1`,
-        value: customerId,
-      }
-      : null,
-    email
-      ? {
-        sql: `SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1`,
-        value: normalizeEmail(email),
-      }
-      : null,
-    sessionId
-      ? {
-        sql: `SELECT id FROM users WHERE stripe_last_session_id = $1 LIMIT 1`,
-        value: sessionId,
-      }
-      : null,
-  ].filter(Boolean);
-
-  for (const lookup of lookups) {
-    const { rows } = await pool.query(lookup.sql, [lookup.value]);
-    if (rows[0]?.id) return rows[0].id;
-  }
-
-  return null;
-};
-
-const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
-
-const resolveStripeUserId = async ({ userId = null, customerId = null, email = null, sessionId = null }) => {
-  if (userId) {
-    const { rows } = await pool.query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [userId]);
-    if (rows[0]?.id) return rows[0].id;
-  }
-
-  const lookups = [
-    customerId
-      ? {
-        sql: `SELECT id FROM users WHERE stripe_customer_id = $1 LIMIT 1`,
-        value: customerId,
-      }
-      : null,
-    email
-      ? {
-        sql: `SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1`,
-        value: normalizeEmail(email),
-      }
-      : null,
-    sessionId
-      ? {
-        sql: `SELECT id FROM users WHERE stripe_last_session_id = $1 LIMIT 1`,
-        value: sessionId,
-      }
-      : null,
-  ].filter(Boolean);
-
-  for (const lookup of lookups) {
-    const { rows } = await pool.query(lookup.sql, [lookup.value]);
-    if (rows[0]?.id) return rows[0].id;
-  }
-
-  return null;
-};
-
 const activateSubscriptionForUser = async ({ userId = null, customerId = null, email = null, periodEndIso, sessionId = null }) => {
   if (!periodEndIso) return null;
   const resolvedUserId = await resolveStripeUserId({ userId, customerId, email, sessionId });
@@ -1345,75 +1263,6 @@ const verifyStripeWebhookSignature = (req) => {
       return false;
     }
   });
-};
-
-const activateSubscriptionForUser = async ({ userId = null, customerId = null, email = null, periodEndIso, sessionId = null }) => {
-  if (!periodEndIso) return null;
-  const clauses = [];
-  const values = [periodEndIso, customerId, sessionId];
-  let idx = 4;
-  if (userId) {
-    clauses.push(`id = $${idx++}`);
-    values.push(userId);
-  }
-  if (customerId) {
-    clauses.push(`stripe_customer_id = $${idx++}`);
-    values.push(customerId);
-  }
-  if (email) {
-    clauses.push(`LOWER(email) = LOWER($${idx++})`);
-    values.push(email);
-  }
-  if (!clauses.length) return null;
-  const { rows } = await pool.query(
-    `UPDATE users
-     SET role = 'subscriber',
-         subscription_status = 'active',
-         subscription_period_end = GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $1::timestamptz),
-         stripe_customer_id = COALESCE($2, stripe_customer_id),
-         stripe_last_session_id = COALESCE($3, stripe_last_session_id)
-     WHERE ${clauses.join(' OR ')}
-     RETURNING id`,
-    values,
-  );
-  return rows[0] || null;
-};
-
-const deactivateSubscriptionByCustomerId = async (customerId) => {
-  if (!customerId) return;
-  await pool.query(
-    `UPDATE users
-     SET subscription_status = 'inactive'
-     WHERE stripe_customer_id = $1`,
-    [customerId],
-  );
-};
-
-const parseStripeTimestampMs = (value, fallbackMs = null) => {
-  if (!value) return fallbackMs;
-  const seconds = Number(value);
-  if (!Number.isFinite(seconds) || seconds <= 0) return fallbackMs;
-  return seconds * 1000;
-};
-
-const verifyStripeWebhookSignature = (req) => {
-  if (!STRIPE_WEBHOOK_SECRET) return true;
-  const signatureHeader = req.get('stripe-signature') || '';
-  const body = req.rawBody?.toString('utf8') || '';
-  if (!signatureHeader || !body) return false;
-  const parts = signatureHeader.split(',').reduce((acc, part) => {
-    const [key, value] = part.split('=');
-    if (key && value) acc[key.trim()] = value.trim();
-    return acc;
-  }, {});
-  if (!parts.t || !parts.v1) return false;
-  const signedPayload = `${parts.t}.${body}`;
-  const expected = createHmac('sha256', STRIPE_WEBHOOK_SECRET).update(signedPayload, 'utf8').digest('hex');
-  try {
-    return timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1));
-  } catch (_err) {
-    return false;
-  }
 };
 
 app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
