@@ -342,6 +342,8 @@ const ensureSchema = async () => {
         role TEXT NOT NULL DEFAULT 'user',
         subscription_status TEXT NOT NULL DEFAULT 'inactive',
         subscription_period_end TIMESTAMPTZ,
+        has_pdf_calendar_access BOOLEAN NOT NULL DEFAULT false,
+        pdf_calendar_purchased_at TIMESTAMPTZ,
         stripe_customer_id TEXT,
         stripe_last_session_id TEXT,
         maintenance_reminders_enabled BOOLEAN NOT NULL DEFAULT false,
@@ -421,6 +423,8 @@ const ensureSchema = async () => {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT NOT NULL DEFAULT 'inactive';`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_period_end TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS has_pdf_calendar_access BOOLEAN NOT NULL DEFAULT false;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pdf_calendar_purchased_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_last_session_id TEXT;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS maintenance_reminders_enabled BOOLEAN NOT NULL DEFAULT false;`);
@@ -488,7 +492,7 @@ const getUserFromSession = async (req) => {
   const token = req.cookies?.[SESSION_COOKIE];
   if (!token) return null;
   const { rows } = await pool.query(
-    `SELECT u.id, u.email, u.role, u.subscription_status, u.subscription_period_end, u.stripe_customer_id, u.stripe_last_session_id, u.maintenance_reminders_enabled, u.home_port_id, u.home_port_name, u.home_club_id, u.home_club_name
+    `SELECT u.id, u.email, u.role, u.subscription_status, u.subscription_period_end, u.has_pdf_calendar_access, u.pdf_calendar_purchased_at, u.stripe_customer_id, u.stripe_last_session_id, u.maintenance_reminders_enabled, u.home_port_id, u.home_port_name, u.home_club_id, u.home_club_name
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token = $1 AND s.expires_at > now()`,
@@ -525,12 +529,7 @@ const requireAdmin = (req, res, next) => {
 
 const hasPaidCalendarAccess = (user) => {
   if (!user) return false;
-  const subscriptionStatus = String(user.subscription_status || '').toLowerCase();
-  if (!['active', 'trialing'].includes(subscriptionStatus)) return false;
-  if (!user.subscription_period_end) return true;
-  const periodEnd = new Date(user.subscription_period_end);
-  if (Number.isNaN(periodEnd.getTime())) return false;
-  return periodEnd.getTime() > Date.now();
+  return Boolean(user.has_pdf_calendar_access);
 };
 
 const passwordResetLimiter = createRateLimiter({
@@ -601,7 +600,7 @@ app.post('/api/auth/signup', async (req, res) => {
   try {
     const { rows } = await pool.query(
       `INSERT INTO users (email, password_hash) VALUES ($1, $2)
-       RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
+       RETURNING id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
       [email.toLowerCase(), hash],
     );
     const user = rows[0];
@@ -638,7 +637,7 @@ app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   const { rows } = await pool.query(
-    `SELECT id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, password_hash, home_port_id, home_port_name, home_club_id, home_club_name
+    `SELECT id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, password_hash, home_port_id, home_port_name, home_club_id, home_club_name
      FROM users WHERE email = $1`,
     [email.toLowerCase()],
   );
@@ -655,6 +654,8 @@ app.post('/api/auth/login', async (req, res) => {
     role: user.role,
     subscription_status: user.subscription_status,
     subscription_period_end: user.subscription_period_end,
+    has_pdf_calendar_access: user.has_pdf_calendar_access,
+    pdf_calendar_purchased_at: user.pdf_calendar_purchased_at,
     stripe_customer_id: user.stripe_customer_id,
     stripe_last_session_id: user.stripe_last_session_id,
     maintenance_reminders_enabled: user.maintenance_reminders_enabled,
@@ -781,7 +782,7 @@ app.put('/api/profile', requireAuth, async (req, res) => {
          home_club_name = COALESCE($4, home_club_name),
          maintenance_reminders_enabled = COALESCE($5, maintenance_reminders_enabled)
      WHERE id = $6
-     RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
+     RETURNING id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
     [homePortId ?? null, homePortName ?? null, homeClubId ?? null, homeClubName ?? null, maintenanceRemindersEnabled, req.user.id],
   );
   res.json(rows[0]);
@@ -796,7 +797,7 @@ app.post('/api/profile/role', requireAuth, async (req, res) => {
          subscription_status = CASE WHEN $1 = 'subscriber' THEN 'active' ELSE subscription_status END,
          subscription_period_end = CASE WHEN $1 = 'subscriber' AND subscription_period_end IS NULL THEN now() + interval '1 year' ELSE subscription_period_end END
      WHERE id = $2
-     RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
+     RETURNING id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
     [role, req.user.id],
   );
   res.json(rows[0]);
@@ -809,7 +810,8 @@ app.get('/api/admin/stats', requireAuth, requireAdmin, async (_req, res) => {
         COUNT(*)::int AS total,
         COUNT(*)::int AS signed_up,
         COUNT(*) FILTER (WHERE role = 'subscriber' OR subscription_status = 'active')::int AS subscribers,
-        COUNT(*) FILTER (WHERE stripe_customer_id IS NOT NULL OR stripe_last_session_id IS NOT NULL)::int AS purchasers
+        COUNT(*) FILTER (WHERE has_pdf_calendar_access = true)::int AS pdf_calendar_buyers,
+        COUNT(*) FILTER (WHERE stripe_customer_id IS NOT NULL OR stripe_last_session_id IS NOT NULL)::int AS stripe_customers
      FROM users`,
   );
   res.json(rows[0]);
@@ -817,7 +819,7 @@ app.get('/api/admin/stats', requireAuth, requireAdmin, async (_req, res) => {
 
 app.get('/api/admin/users', requireAuth, requireAdmin, async (_req, res) => {
   const { rows } = await pool.query(
-    `SELECT id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, created_at
+    `SELECT id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, created_at
      FROM users
      ORDER BY created_at DESC`,
   );
@@ -838,7 +840,7 @@ app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
   const { rows } = await pool.query(
     `INSERT INTO users (email, password_hash, role, subscription_status, subscription_period_end)
      VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, created_at`,
+     RETURNING id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, created_at`,
     [
       email.toLowerCase(),
       passwordHash,
@@ -893,7 +895,7 @@ app.put('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
     `UPDATE users
      SET ${updates.join(', ')}
      WHERE id = $${idx}
-     RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, created_at`,
+     RETURNING id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, created_at`,
     values,
   );
   if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
@@ -1148,6 +1150,76 @@ const retrieveStripeSession = async (sessionId) => {
 };
 
 const normalizeEmail = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+const parseStripeIdList = (value) => new Set(
+  String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean),
+);
+const STRIPE_SUBSCRIPTION_PRICE_IDS = parseStripeIdList(process.env.STRIPE_SUBSCRIPTION_PRICE_IDS);
+const STRIPE_PDF_CALENDAR_PRICE_IDS = parseStripeIdList(process.env.STRIPE_PDF_CALENDAR_PRICE_IDS);
+const STRIPE_SUBSCRIPTION_PRODUCT_IDS = parseStripeIdList(process.env.STRIPE_SUBSCRIPTION_PRODUCT_IDS);
+const STRIPE_PDF_CALENDAR_PRODUCT_IDS = parseStripeIdList(process.env.STRIPE_PDF_CALENDAR_PRODUCT_IDS);
+const STRIPE_SUBSCRIPTION_LOOKUP_KEYS = parseStripeIdList(process.env.STRIPE_SUBSCRIPTION_LOOKUP_KEYS);
+const STRIPE_PDF_CALENDAR_LOOKUP_KEYS = parseStripeIdList(process.env.STRIPE_PDF_CALENDAR_LOOKUP_KEYS);
+
+const parseStripeTruthy = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+
+const retrieveStripeSessionLineItems = async (sessionId) => {
+  const params = new URLSearchParams();
+  params.append('expand[]', 'data.price');
+  params.append('expand[]', 'data.price.product');
+  const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}/line_items?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Stripe line items responded with ${res.status}: ${text}`);
+  }
+  const payload = await res.json();
+  return Array.isArray(payload?.data) ? payload.data : [];
+};
+
+const inferStripeCheckoutEntitlements = ({ session, lineItems }) => {
+  const priceIds = lineItems.map((item) => item?.price?.id).filter(Boolean);
+  const priceLookupKeys = lineItems.map((item) => item?.price?.lookup_key).filter(Boolean);
+  const productIds = lineItems
+    .map((item) => (typeof item?.price?.product === 'string' ? item.price.product : item?.price?.product?.id))
+    .filter(Boolean);
+  const sessionMetadata = session?.metadata || {};
+
+  const matchesSubscriptionPriceId = priceIds.some((priceId) => STRIPE_SUBSCRIPTION_PRICE_IDS.has(priceId));
+  const matchesPdfPriceId = priceIds.some((priceId) => STRIPE_PDF_CALENDAR_PRICE_IDS.has(priceId));
+  const matchesSubscriptionLookupKey = priceLookupKeys.some((key) => STRIPE_SUBSCRIPTION_LOOKUP_KEYS.has(key));
+  const matchesPdfLookupKey = priceLookupKeys.some((key) => STRIPE_PDF_CALENDAR_LOOKUP_KEYS.has(key));
+  const matchesSubscriptionProductId = productIds.some((productId) => STRIPE_SUBSCRIPTION_PRODUCT_IDS.has(productId));
+  const matchesPdfProductId = productIds.some((productId) => STRIPE_PDF_CALENDAR_PRODUCT_IDS.has(productId));
+
+  const metadataGrantsSubscription = parseStripeTruthy(
+    sessionMetadata.grants_subscription
+    || sessionMetadata.subscription_entitlement
+    || sessionMetadata.includes_subscription,
+  );
+  const metadataGrantsPdf = parseStripeTruthy(
+    sessionMetadata.grants_pdf_calendar
+    || sessionMetadata.pdf_calendar_entitlement
+    || sessionMetadata.includes_pdf_calendar,
+  );
+
+  return {
+    grantsSubscription: metadataGrantsSubscription
+      || matchesSubscriptionPriceId
+      || matchesSubscriptionLookupKey
+      || matchesSubscriptionProductId,
+    grantsPdfCalendar: metadataGrantsPdf
+      || matchesPdfPriceId
+      || matchesPdfLookupKey
+      || matchesPdfProductId,
+  };
+};
 
 const resolveStripeUserId = async ({ userId = null, customerId = null, email = null, sessionId = null }) => {
   if (userId) {
@@ -1184,31 +1256,50 @@ const resolveStripeUserId = async ({ userId = null, customerId = null, email = n
   return null;
 };
 
-const activateSubscriptionForUser = async ({ userId = null, customerId = null, email = null, periodEndIso, sessionId = null }) => {
-  if (!periodEndIso) return null;
+const applyStripePurchasesForUser = async ({
+  userId = null,
+  customerId = null,
+  email = null,
+  periodEndIso = null,
+  sessionId = null,
+  grantsSubscription = false,
+  grantsPdfCalendar = false,
+}) => {
+  if (!grantsSubscription && !grantsPdfCalendar) return null;
+  if (grantsSubscription && !periodEndIso) return null;
   const resolvedUserId = await resolveStripeUserId({ userId, customerId, email, sessionId });
   if (!resolvedUserId) {
-    console.warn('Stripe activation did not match any users', {
+    console.warn('Stripe purchase application did not match any users', {
       userId: userId || null,
       customerId: customerId || null,
       email: email || null,
       sessionId: sessionId || null,
+      grantsSubscription,
+      grantsPdfCalendar,
     });
     return null;
   }
   const { rows } = await pool.query(
     `UPDATE users
-     SET role = 'subscriber',
-         subscription_status = 'active',
-         subscription_period_end = GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $1::timestamptz),
-         stripe_customer_id = COALESCE(stripe_customer_id, $2),
-         stripe_last_session_id = COALESCE($3, stripe_last_session_id)
-     WHERE id = $4
+     SET role = CASE WHEN $1::boolean THEN 'subscriber' ELSE role END,
+         subscription_status = CASE WHEN $1::boolean THEN 'active' ELSE subscription_status END,
+         subscription_period_end = CASE
+           WHEN $1::boolean THEN GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $2::timestamptz)
+           ELSE subscription_period_end
+         END,
+         has_pdf_calendar_access = CASE WHEN $3::boolean THEN true ELSE has_pdf_calendar_access END,
+         pdf_calendar_purchased_at = CASE
+           WHEN $3::boolean THEN COALESCE(pdf_calendar_purchased_at, now())
+           ELSE pdf_calendar_purchased_at
+         END,
+         stripe_customer_id = COALESCE(stripe_customer_id, $6),
+         stripe_last_session_id = COALESCE($4, stripe_last_session_id)
+     WHERE id = $5
      RETURNING id`,
-    [periodEndIso, customerId, sessionId, resolvedUserId],
+    [grantsSubscription, periodEndIso, grantsPdfCalendar, sessionId, resolvedUserId, customerId],
   );
   if (!rows.length) {
-    console.warn('Stripe activation update matched user id but did not update a row', {
+    console.warn('Stripe purchase update matched user id but did not update a row', {
       resolvedUserId,
       customerId: customerId || null,
       email: email || null,
@@ -1216,11 +1307,12 @@ const activateSubscriptionForUser = async ({ userId = null, customerId = null, e
     });
   }
   if (rows.length) {
-    console.info('Stripe activation update succeeded', {
+    console.info('Stripe purchase update succeeded', {
       resolvedUserId,
       customerId: customerId || null,
       sessionId: sessionId || null,
-      subscriptionStatus: 'active',
+      grantsSubscription,
+      grantsPdfCalendar,
     });
   }
   return rows[0] || null;
@@ -1281,6 +1373,8 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
   console.info('Stripe confirm started', { sessionId, userId: req.user.id, email: req.user.email });
   try {
     const session = await retrieveStripeSession(sessionId);
+    const lineItems = await retrieveStripeSessionLineItems(sessionId);
+    const entitlements = inferStripeCheckoutEntitlements({ session, lineItems });
     const isPaid = session.payment_status === 'paid' || session.status === 'complete';
     if (!isPaid) {
       console.warn('Stripe confirm rejected: payment not completed', {
@@ -1309,10 +1403,15 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
       return res.status(409).json({ error: 'Session email does not match user' });
     }
 
-    const periodEndMs = session.subscription?.current_period_end
-      ? session.subscription.current_period_end * 1000
-      : Date.now() + 365 * 24 * 60 * 60 * 1000;
-    const periodEndIso = new Date(periodEndMs).toISOString();
+    if (!entitlements.grantsSubscription && !entitlements.grantsPdfCalendar) {
+      return res.status(409).json({ error: 'Stripe session did not include a supported product' });
+    }
+    const periodEndMs = entitlements.grantsSubscription
+      ? (session.subscription?.current_period_end
+        ? session.subscription.current_period_end * 1000
+        : Date.now() + 365 * 24 * 60 * 60 * 1000)
+      : null;
+    const periodEndIso = periodEndMs ? new Date(periodEndMs).toISOString() : null;
     if (session.customer) {
       const { rows: existingRows } = await pool.query(
         `SELECT stripe_customer_id FROM users WHERE id = $1 LIMIT 1`,
@@ -1331,14 +1430,29 @@ app.post('/api/payments/stripe/confirm', requireAuth, async (req, res) => {
     }
     const { rows } = await pool.query(
       `UPDATE users
-       SET role = 'subscriber',
-           subscription_status = 'active',
-           subscription_period_end = GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $1::timestamptz),
-           stripe_customer_id = COALESCE(stripe_customer_id, $2),
-           stripe_last_session_id = $3
-       WHERE id = $4
-       RETURNING id, email, role, subscription_status, subscription_period_end, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
-      [periodEndIso, session.customer || null, session.id, req.user.id],
+       SET role = CASE WHEN $1::boolean THEN 'subscriber' ELSE role END,
+           subscription_status = CASE WHEN $1::boolean THEN 'active' ELSE subscription_status END,
+           subscription_period_end = CASE
+             WHEN $1::boolean THEN GREATEST(COALESCE(subscription_period_end, to_timestamp(0)), $2::timestamptz)
+             ELSE subscription_period_end
+           END,
+           has_pdf_calendar_access = CASE WHEN $3::boolean THEN true ELSE has_pdf_calendar_access END,
+           pdf_calendar_purchased_at = CASE
+             WHEN $3::boolean THEN COALESCE(pdf_calendar_purchased_at, now())
+             ELSE pdf_calendar_purchased_at
+           END,
+           stripe_customer_id = COALESCE(stripe_customer_id, $6),
+           stripe_last_session_id = $4
+           WHERE id = $5
+       RETURNING id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
+      [
+        entitlements.grantsSubscription,
+        periodEndIso,
+        entitlements.grantsPdfCalendar,
+        session.id,
+        req.user.id,
+        session.customer || null,
+      ],
     );
     if (!rows.length) {
       return res.status(404).json({ error: 'Could not update subscription for this account' });
@@ -1393,21 +1507,27 @@ app.post('/api/payments/stripe/webhook', async (req, res) => {
       case 'checkout.session.async_payment_succeeded': {
         const webhookSession = event.data?.object || {};
         const session = webhookSession.id ? await retrieveStripeSession(webhookSession.id) : webhookSession;
+        const lineItems = session.id ? await retrieveStripeSessionLineItems(session.id) : [];
+        const entitlements = inferStripeCheckoutEntitlements({ session, lineItems });
         const isPaid = session.payment_status === 'paid' || session.status === 'complete';
         if (!isPaid) break;
-        const periodEndMs = parseStripeTimestampMs(
-          session.subscription?.current_period_end || session.subscription_details?.current_period_end,
-          Date.now() + 365 * 24 * 60 * 60 * 1000,
-        );
-        const activated = await activateSubscriptionForUser({
+        const periodEndMs = entitlements.grantsSubscription
+          ? parseStripeTimestampMs(
+            session.subscription?.current_period_end || session.subscription_details?.current_period_end,
+            Date.now() + 365 * 24 * 60 * 60 * 1000,
+          )
+          : null;
+        const activated = await applyStripePurchasesForUser({
           userId: session.client_reference_id || session.metadata?.user_id || null,
           customerId: session.customer || null,
           email: session.customer_details?.email || session.customer_email || null,
-          periodEndIso: new Date(periodEndMs).toISOString(),
+          periodEndIso: periodEndMs ? new Date(periodEndMs).toISOString() : null,
           sessionId: session.id || null,
+          grantsSubscription: entitlements.grantsSubscription,
+          grantsPdfCalendar: entitlements.grantsPdfCalendar,
         });
         if (!activated) {
-          console.warn('Stripe checkout webhook did not activate a user', {
+          console.warn('Stripe checkout webhook did not update a user', {
             eventType: event.type,
             sessionId: session.id || null,
             userId: session.client_reference_id || session.metadata?.user_id || null,
@@ -1423,11 +1543,13 @@ app.post('/api/payments/stripe/webhook', async (req, res) => {
           invoice.lines?.data?.[0]?.period?.end,
           Date.now() + 365 * 24 * 60 * 60 * 1000,
         );
-        const activated = await activateSubscriptionForUser({
+        const activated = await applyStripePurchasesForUser({
           customerId: invoice.customer || null,
           email: invoice.customer_email || invoice.customer_details?.email || null,
           periodEndIso: new Date(periodEndMs).toISOString(),
           sessionId: null,
+          grantsSubscription: true,
+          grantsPdfCalendar: false,
         });
         if (!activated) {
           console.warn('Stripe invoice webhook did not activate a user', {
@@ -1442,10 +1564,12 @@ app.post('/api/payments/stripe/webhook', async (req, res) => {
         const subscription = event.data?.object || {};
         const periodEndMs = parseStripeTimestampMs(subscription.current_period_end);
         if (!periodEndMs) break;
-        const activated = await activateSubscriptionForUser({
+        const activated = await applyStripePurchasesForUser({
           customerId: subscription.customer || null,
           periodEndIso: new Date(periodEndMs).toISOString(),
           sessionId: null,
+          grantsSubscription: true,
+          grantsPdfCalendar: false,
         });
         if (!activated) {
           console.warn('Stripe subscription update webhook did not activate a user', {
@@ -1614,7 +1738,7 @@ const predictTidalEvents = (station, startDate, days) => {
 app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
   try {
     if (!hasPaidCalendarAccess(req.user)) {
-      return res.status(403).json({ error: 'An active subscription is required to download PDF tide booklets.' });
+      return res.status(403).json({ error: 'PDF calendar purchase is required to download PDF tide booklets.' });
     }
 
     // Get user's home port

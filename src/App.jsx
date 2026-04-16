@@ -261,8 +261,7 @@ export default function TidalCalendarApp() {
   }, [subscriptionEnd, role, user]);
   const hasPaidCalendarProduct = useMemo(() => {
     if (!user) return false;
-    const subscriptionStatus = String(user.subscription_status || '').toLowerCase();
-    return ['active', 'trialing'].includes(subscriptionStatus);
+    return Boolean(user.has_pdf_calendar_access);
   }, [user]);
 
   const apiRequest = useCallback(async (url, options = {}) => {
@@ -456,7 +455,7 @@ export default function TidalCalendarApp() {
         setUser(nextUser);
         if (nextUser.subscription_period_end) setSubscriptionEnd(nextUser.subscription_period_end);
       }
-      setSubscriptionNotice('Subscription activated via Stripe checkout.');
+      setSubscriptionNotice('Stripe purchase confirmed and entitlements updated.');
     } catch (err) {
       setAuthError(err.message);
       setSubscriptionNotice('Could not confirm Stripe checkout. Please retry.');
@@ -1793,7 +1792,8 @@ export default function TidalCalendarApp() {
               {[
                 { label: 'Signed up', value: adminStats?.signed_up },
                 { label: 'Subscribers', value: adminStats?.subscribers },
-                { label: 'Purchasers', value: adminStats?.purchasers },
+                { label: 'PDF buyers', value: adminStats?.pdf_calendar_buyers },
+                { label: 'Stripe customers', value: adminStats?.stripe_customers },
                 { label: 'Total users', value: adminStats?.total },
               ].map(card => (
                 <div key={card.label} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', display: 'grid', gap: '6px', boxShadow: '0 4px 12px rgba(15,23,42,0.06)' }}>
@@ -1897,6 +1897,7 @@ export default function TidalCalendarApp() {
                         <th style={{ padding: '8px' }}>Email</th>
                         <th style={{ padding: '8px' }}>Role</th>
                         <th style={{ padding: '8px' }}>Status</th>
+                        <th style={{ padding: '8px' }}>PDF access</th>
                         <th style={{ padding: '8px' }}>Subscription end</th>
                         <th style={{ padding: '8px' }}>Created</th>
                         <th style={{ padding: '8px' }}>Actions</th>
@@ -1905,7 +1906,7 @@ export default function TidalCalendarApp() {
                     <tbody>
                       {adminUsers.length === 0 && (
                         <tr>
-                          <td colSpan="6" style={{ padding: '12px', color: '#64748b' }}>
+                          <td colSpan="7" style={{ padding: '12px', color: '#64748b' }}>
                             {adminLoading ? 'Loading users...' : 'No users found.'}
                           </td>
                         </tr>
@@ -1915,6 +1916,7 @@ export default function TidalCalendarApp() {
                           <td style={{ padding: '8px', fontWeight: 600 }}>{record.email}</td>
                           <td style={{ padding: '8px', textTransform: 'capitalize' }}>{record.role?.replace('_', ' ')}</td>
                           <td style={{ padding: '8px' }}>{record.subscription_status}</td>
+                          <td style={{ padding: '8px' }}>{record.has_pdf_calendar_access ? 'Yes' : 'No'}</td>
                           <td style={{ padding: '8px' }}>{formatAdminDate(record.subscription_period_end)}</td>
                           <td style={{ padding: '8px' }}>{formatAdminDate(record.created_at)}</td>
                           <td style={{ padding: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
