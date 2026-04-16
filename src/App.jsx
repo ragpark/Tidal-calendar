@@ -285,6 +285,7 @@ export default function TidalCalendarApp() {
   const [weatherForecast, setWeatherForecast] = useState(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState('');
+  const [legalModal, setLegalModal] = useState(null);
   const londonDateKeyFormatter = useMemo(
     () => new Intl.DateTimeFormat('en-CA', { timeZone: UK_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }),
     []
@@ -2651,8 +2652,82 @@ export default function TidalCalendarApp() {
         <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#475569', margin: '0 0 8px' }}>
           API data from <a href="https://admiraltyapi.portal.azure-api.net" target="_blank" rel="noopener noreferrer" style={{ color: '#38bdf8' }}>UK Hydrographic Office</a> • Extended predictions use harmonic algorithms (M2/S2 constituents)
         </p>
+        <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#334155', margin: '0 0 8px', display: 'flex', justifyContent: 'center', gap: '14px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => setLegalModal('privacy')}
+            style={{ background: 'transparent', border: 'none', color: '#0ea5e9', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '11px' }}
+          >
+            Privacy Notice (UK)
+          </button>
+          <button
+            type="button"
+            onClick={() => setLegalModal('terms')}
+            style={{ background: 'transparent', border: 'none', color: '#0ea5e9', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '11px' }}
+          >
+            Terms of Use (UK)
+          </button>
+        </p>
         <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#334155', margin: 0 }}>© Crown Copyright. All times GMT/UTC. Heights in metres above Chart Datum. Predictions beyond 7 days are estimates.</p>
       </footer>
+
+      {legalModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(2, 6, 23, 0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+          onClick={() => setLegalModal(null)}
+        >
+          <div
+            style={{ width: 'min(720px, 100%)', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '14px', border: '1px solid #cbd5e1', boxShadow: '0 24px 64px rgba(15, 23, 42, 0.35)', padding: '22px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 12px', fontSize: '20px', color: '#0f172a' }}>
+              {legalModal === 'privacy' ? 'Privacy Notice (United Kingdom)' : 'Terms of Use (United Kingdom)'}
+            </h3>
+            {legalModal === 'privacy' ? (
+              <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', lineHeight: 1.65, color: '#334155' }}>
+                <p style={{ marginTop: 0 }}>
+                  This UK privacy notice is provided as boilerplate text for users in the United Kingdom. It explains what personal data may be collected when you use this tidal calendar, including account details, usage information, and service diagnostics.
+                </p>
+                <p>
+                  Personal data is processed for legitimate business purposes, contract performance, legal obligations, and (where required) your consent. Typical processing purposes include operating your account, providing tide planning features, improving reliability, and responding to support requests.
+                </p>
+                <p>
+                  You may have rights under UK data protection law, including rights to access, correct, erase, restrict, object, or request portability of your information. You may also withdraw consent where processing is based on consent.
+                </p>
+                <p style={{ marginBottom: 0 }}>
+                  This notice is a general template and should be reviewed by qualified legal counsel to ensure compliance with UK GDPR, the Data Protection Act 2018, and any applicable sector-specific requirements.
+                </p>
+              </div>
+            ) : (
+              <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', lineHeight: 1.65, color: '#334155' }}>
+                <p style={{ marginTop: 0 }}>
+                  These UK terms of use are boilerplate and govern access to and use of this tidal calendar service. By using the service, users agree to act lawfully, provide accurate account information, and avoid misuse, reverse engineering, or disruption of service availability.
+                </p>
+                <p>
+                  The service and its content are provided on an “as is” basis, subject to applicable law. Tide times and related predictions are informational only and should not replace official navigational publications, local notices, or prudent seamanship.
+                </p>
+                <p>
+                  To the extent permitted by UK law, liability is limited for indirect or consequential losses. Nothing in these terms excludes liability where exclusion is not lawful, including for fraud or death/personal injury caused by negligence.
+                </p>
+                <p style={{ marginBottom: 0 }}>
+                  This template should be reviewed by legal counsel and adapted for your business model, consumer rights obligations, and governing law/jurisdiction provisions applicable within the United Kingdom.
+                </p>
+              </div>
+            )}
+            <div style={{ marginTop: '18px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setLegalModal(null)}
+                style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, pointerEvents: 'none', zIndex: 5 }}><TideWave height={100} /></div>
       {!isEmbed && CHATBOT_ENABLED && <ScrubAdvisorChatbot mcpCapabilities={mcpCapabilities} />}
