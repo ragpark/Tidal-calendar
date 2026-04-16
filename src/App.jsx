@@ -7,6 +7,7 @@ const DEFAULT_API_KEY = 'baec423358314e4e8f527980f959295d';
 const WEATHER_API_BASE_URL = 'https://api.weatherapi.com/v1';
 const WEATHER_API_KEY = '34c6cb97a9cb4f0c89e85256261401';
 const LOCAL_HOME_PORT_KEY = 'tidal-calendar-home-port';
+const UK_TIME_ZONE = 'Europe/London';
 const CHATBOT_ENABLED = false;
 
 const parseEmbedConfig = () => {
@@ -239,6 +240,25 @@ export default function TidalCalendarApp() {
   const [weatherForecast, setWeatherForecast] = useState(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState('');
+  const londonDateKeyFormatter = useMemo(
+    () => new Intl.DateTimeFormat('en-CA', { timeZone: UK_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }),
+    []
+  );
+  const londonTimeFormatter = useMemo(
+    () => new Intl.DateTimeFormat('en-GB', { timeZone: UK_TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: false }),
+    []
+  );
+  const getLondonDateKey = useCallback((dateOrString) => {
+    const date = typeof dateOrString === 'string' ? new Date(dateOrString) : dateOrString;
+    return londonDateKeyFormatter.format(date);
+  }, [londonDateKeyFormatter]);
+  const getLondonHourMinute = useCallback((dateOrString) => {
+    const date = typeof dateOrString === 'string' ? new Date(dateOrString) : dateOrString;
+    const parts = londonTimeFormatter.formatToParts(date);
+    const hour = Number(parts.find((part) => part.type === 'hour')?.value || 0);
+    const minute = Number(parts.find((part) => part.type === 'minute')?.value || 0);
+    return { hour, minute };
+  }, [londonTimeFormatter]);
   const role = user?.role || 'user';
   const roleLabel = useMemo(() => {
     if (role === 'subscriber') return 'Subscriber (extended data)';
@@ -354,12 +374,12 @@ export default function TidalCalendarApp() {
     }
     
     const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
-    const apiDateSet = new Set(apiEvents.map(e => new Date(e.DateTime).toDateString()));
-    const merged = [...apiEvents, ...predictedEvents.filter(e => !apiDateSet.has(new Date(e.DateTime).toDateString()))];
+    const apiDateSet = new Set(apiEvents.map(e => getLondonDateKey(e.DateTime)));
+    const merged = [...apiEvents, ...predictedEvents.filter(e => !apiDateSet.has(getLondonDateKey(e.DateTime)))];
     
     setTidalEvents(merged.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)));
     setLoading(false);
-  }, [apiKey, isDemo, currentMonth]);
+  }, [apiKey, isDemo, currentMonth, getLondonDateKey]);
 
   const persistHomePortSelection = useCallback((portId) => {
     if (typeof window === 'undefined') return;
@@ -1059,7 +1079,7 @@ export default function TidalCalendarApp() {
     
     const eventsByDate = {};
     tidalEvents.forEach(event => {
-      const date = new Date(event.DateTime).toDateString();
+      const date = getLondonDateKey(event.DateTime);
       if (!eventsByDate[date]) eventsByDate[date] = [];
       eventsByDate[date].push(event);
     });
@@ -1072,17 +1092,18 @@ export default function TidalCalendarApp() {
       
       highWaters.forEach(hw => {
         const hwDate = new Date(hw.DateTime);
-        const hwMinutes = hwDate.getHours() * 60 + hwDate.getMinutes();
+        const { hour: hwHour, minute: hwMinute } = getLondonHourMinute(hwDate);
+        const hwMinutes = hwHour * 60 + hwMinute;
         
         if (hwMinutes >= startMinutes && hwMinutes <= endMinutes) {
           const followingLow = lowWaters.find(lw => new Date(lw.DateTime) > hwDate);
           const allHighs = tidalEvents.filter(e => e.EventType === 'HighWater');
-          const nextHigh = allHighs.find(h => new Date(h.DateTime) > hwDate && new Date(h.DateTime).toDateString() !== hwDate.toDateString() || (new Date(h.DateTime) > hwDate && new Date(h.DateTime).getTime() - hwDate.getTime() > 6 * 60 * 60 * 1000));
+          const nextHigh = allHighs.find(h => new Date(h.DateTime) > hwDate && getLondonDateKey(h.DateTime) !== getLondonDateKey(hwDate) || (new Date(h.DateTime) > hwDate && new Date(h.DateTime).getTime() - hwDate.getTime() > 6 * 60 * 60 * 1000));
           
           if (followingLow) {
             const tidalRange = hw.Height - followingLow.Height;
             const refloatTime = nextHigh ? new Date(nextHigh.DateTime) : null;
-            const refloatBeforeEvening = refloatTime ? refloatTime.getHours() < 20 : true;
+            const refloatBeforeEvening = refloatTime ? getLondonHourMinute(refloatTime).hour < 20 : true;
             
             const score = (refloatBeforeEvening ? 1 : 0) * 100 + tidalRange;
 
@@ -1104,7 +1125,7 @@ export default function TidalCalendarApp() {
     });
     
     return results;
-  }, [tidalEvents, scrubSettings]);
+  }, [tidalEvents, scrubSettings, getLondonDateKey, getLondonHourMinute]);
 
   // Group maintenance logs by date
   const maintenanceByDate = useMemo(() => {
@@ -1114,7 +1135,7 @@ export default function TidalCalendarApp() {
     maintenanceLogs.forEach(log => {
       if (!log?.date) return;
       try {
-        const dateKey = new Date(log.date).toDateString();
+        const dateKey = getLondonDateKey(log.date);
         if (!grouped[dateKey]) grouped[dateKey] = [];
         grouped[dateKey].push(log);
       } catch (err) {
@@ -1122,7 +1143,7 @@ export default function TidalCalendarApp() {
       }
     });
     return grouped;
-  }, [maintenanceLogs]);
+  }, [maintenanceLogs, getLondonDateKey]);
 
   // Calendar helpers
   const getMonthData = () => {
@@ -1150,28 +1171,28 @@ export default function TidalCalendarApp() {
 
   const formatTime = (dateOrString) => {
     const date = typeof dateOrString === 'string' ? new Date(dateOrString) : dateOrString;
-    return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return londonTimeFormatter.format(date);
   };
 
   const eventsByDay = useMemo(() => {
     const grouped = {};
     tidalEvents.forEach(event => {
-      const date = new Date(event.DateTime).toDateString();
+      const date = getLondonDateKey(event.DateTime);
       if (!grouped[date]) grouped[date] = [];
       grouped[date].push(event);
     });
     return grouped;
-  }, [tidalEvents]);
-  const selectedDayEvents = selectedDay ? eventsByDay[selectedDay.toDateString()] || [] : [];
+  }, [tidalEvents, getLondonDateKey]);
+  const selectedDayEvents = selectedDay ? eventsByDay[getLondonDateKey(selectedDay)] || [] : [];
   const selectedDayHasUkhoApi = selectedDayEvents.some(e => e.Source === 'UKHO');
   const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
   const weatherIconUrl = weatherForecast?.day?.condition?.icon ? `https:${weatherForecast.day.condition.icon}` : '';
   const handleDaySelect = useCallback((date, allowSelection = true) => {
     if (!allowSelection) return;
     setSelectedDay(date);
-    const scrubData = scrubbingByDate[date.toDateString()] || null;
+    const scrubData = scrubbingByDate[getLondonDateKey(date)] || null;
     setScrubModal({ date, data: scrubData });
-  }, [scrubbingByDate]);
+  }, [scrubbingByDate, getLondonDateKey]);
 
   const upcomingDays = useMemo(() => {
     const now = new Date();
@@ -2174,12 +2195,12 @@ export default function TidalCalendarApp() {
                 <div className="calendar-grid-wrapper">
                 <div className="calendar-grid">
                   {getMonthData().map(({ date, isCurrentMonth }, i) => {
-                    const dateStr = date.toDateString();
+                    const dateStr = getLondonDateKey(date);
                     const dayEvents = eventsByDay[dateStr] || [];
                     const scrubData = scrubbingByDate[dateStr];
                     const dayMaintenanceLogs = maintenanceByDate[dateStr] || [];
-                    const isToday = new Date().toDateString() === dateStr;
-                    const isSelected = selectedDay?.toDateString() === dateStr;
+                    const isToday = getLondonDateKey(new Date()) === dateStr;
+                    const isSelected = selectedDay ? getLondonDateKey(selectedDay) === dateStr : false;
                     const moonPhase = getMoonPhaseName(date);
                     const hasUkhoEvents = dayEvents.some(e => e.Source === 'UKHO');
                     const hasPredictedEvents = dayEvents.some(e => e.IsPredicted);
