@@ -1158,10 +1158,17 @@ const parseStripeIdList = (value) => new Set(
 );
 const STRIPE_SUBSCRIPTION_PRICE_IDS = parseStripeIdList(process.env.STRIPE_SUBSCRIPTION_PRICE_IDS);
 const STRIPE_PDF_CALENDAR_PRICE_IDS = parseStripeIdList(process.env.STRIPE_PDF_CALENDAR_PRICE_IDS);
+const STRIPE_SUBSCRIPTION_PRODUCT_IDS = parseStripeIdList(process.env.STRIPE_SUBSCRIPTION_PRODUCT_IDS);
+const STRIPE_PDF_CALENDAR_PRODUCT_IDS = parseStripeIdList(process.env.STRIPE_PDF_CALENDAR_PRODUCT_IDS);
+const STRIPE_SUBSCRIPTION_LOOKUP_KEYS = parseStripeIdList(process.env.STRIPE_SUBSCRIPTION_LOOKUP_KEYS);
+const STRIPE_PDF_CALENDAR_LOOKUP_KEYS = parseStripeIdList(process.env.STRIPE_PDF_CALENDAR_LOOKUP_KEYS);
+
+const parseStripeTruthy = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 
 const retrieveStripeSessionLineItems = async (sessionId) => {
   const params = new URLSearchParams();
   params.append('expand[]', 'data.price');
+  params.append('expand[]', 'data.price.product');
   const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}/line_items?${params.toString()}`, {
     method: 'GET',
     headers: {
@@ -1177,18 +1184,40 @@ const retrieveStripeSessionLineItems = async (sessionId) => {
 };
 
 const inferStripeCheckoutEntitlements = ({ session, lineItems }) => {
-  const priceIds = lineItems
-    .map((item) => item?.price?.id)
+  const priceIds = lineItems.map((item) => item?.price?.id).filter(Boolean);
+  const priceLookupKeys = lineItems.map((item) => item?.price?.lookup_key).filter(Boolean);
+  const productIds = lineItems
+    .map((item) => (typeof item?.price?.product === 'string' ? item.price.product : item?.price?.product?.id))
     .filter(Boolean);
-  const hasRecurringItem = lineItems.some((item) => Boolean(item?.price?.recurring));
-  const hasOneTimeItem = lineItems.some((item) => !item?.price?.recurring);
+  const sessionMetadata = session?.metadata || {};
 
   const matchesSubscriptionPriceId = priceIds.some((priceId) => STRIPE_SUBSCRIPTION_PRICE_IDS.has(priceId));
   const matchesPdfPriceId = priceIds.some((priceId) => STRIPE_PDF_CALENDAR_PRICE_IDS.has(priceId));
+  const matchesSubscriptionLookupKey = priceLookupKeys.some((key) => STRIPE_SUBSCRIPTION_LOOKUP_KEYS.has(key));
+  const matchesPdfLookupKey = priceLookupKeys.some((key) => STRIPE_PDF_CALENDAR_LOOKUP_KEYS.has(key));
+  const matchesSubscriptionProductId = productIds.some((productId) => STRIPE_SUBSCRIPTION_PRODUCT_IDS.has(productId));
+  const matchesPdfProductId = productIds.some((productId) => STRIPE_PDF_CALENDAR_PRODUCT_IDS.has(productId));
+
+  const metadataGrantsSubscription = parseStripeTruthy(
+    sessionMetadata.grants_subscription
+    || sessionMetadata.subscription_entitlement
+    || sessionMetadata.includes_subscription,
+  );
+  const metadataGrantsPdf = parseStripeTruthy(
+    sessionMetadata.grants_pdf_calendar
+    || sessionMetadata.pdf_calendar_entitlement
+    || sessionMetadata.includes_pdf_calendar,
+  );
 
   return {
-    grantsSubscription: matchesSubscriptionPriceId || hasRecurringItem || session.mode === 'subscription',
-    grantsPdfCalendar: matchesPdfPriceId || hasOneTimeItem || session.mode === 'payment',
+    grantsSubscription: metadataGrantsSubscription
+      || matchesSubscriptionPriceId
+      || matchesSubscriptionLookupKey
+      || matchesSubscriptionProductId,
+    grantsPdfCalendar: metadataGrantsPdf
+      || matchesPdfPriceId
+      || matchesPdfLookupKey
+      || matchesPdfProductId,
   };
 };
 
