@@ -531,23 +531,15 @@ const passwordResetLimiter = createRateLimiter({
   message: { error: 'Too many password reset requests, please try again later.' },
 });
 
-// Health check endpoint for container monitoring
-app.get('/health', async (req, res) => {
-  try {
-    await pool.query('SELECT 1');
-    res.status(200).json({
-      status: 'healthy',
-      database: 'connected',
-      timestamp: new Date().toISOString()
-    });
-  } catch (err) {
-    res.status(503).json({
-      status: 'unhealthy',
-      database: 'disconnected',
-      error: err.message,
-      timestamp: new Date().toISOString()
-    });
-  }
+// Health check endpoint for container monitoring.
+// Keep this endpoint independent of database availability so Railway can
+// consistently validate container liveness during deploys and restarts.
+app.get('/health', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    databaseReady: dbReady,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.use(async (req, res, next) => {
