@@ -320,21 +320,37 @@ export default function TidalCalendarApp() {
     const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
     const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
     const apiDuration = daysInMonth + 7;
+    const fallbackApiDuration = 7;
     const predictionDays = daysInMonth + 7;
     
     let apiEvents = [];
     if (apiKey && !isDemo) {
       try {
+        const parseApiEvents = (payload) => (Array.isArray(payload) ? payload : []).map(event => ({
+          ...event,
+          IsPredicted: false,
+          Source: 'UKHO',
+        }));
+
         const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=${apiDuration}`, { method: 'GET', cache: 'no-store' });
         if (!response.ok) throw new Error(`TidalEvents fetch failed (${response.status})`);
         const rawApiEvents = await response.json();
-        apiEvents = (Array.isArray(rawApiEvents) ? rawApiEvents : [])
-          .map(event => ({
+        apiEvents = parseApiEvents(rawApiEvents);
+      } catch (err) {
+        console.warn('Extended UKHO fetch failed; retrying with fallback duration.', err);
+        try {
+          const fallbackResponse = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=${fallbackApiDuration}`, { method: 'GET', cache: 'no-store' });
+          if (!fallbackResponse.ok) throw new Error(`Fallback TidalEvents fetch failed (${fallbackResponse.status})`);
+          const fallbackEvents = await fallbackResponse.json();
+          apiEvents = (Array.isArray(fallbackEvents) ? fallbackEvents : []).map(event => ({
             ...event,
             IsPredicted: false,
             Source: 'UKHO',
           }));
-      } catch (err) { console.warn('API fetch failed:', err); }
+        } catch (fallbackErr) {
+          console.warn('Fallback UKHO fetch failed:', fallbackErr);
+        }
+      }
     }
     
     const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
@@ -1421,7 +1437,7 @@ export default function TidalCalendarApp() {
                   emoji: '🌐',
                   points: [
                     'Browse stations and set a home port locally with no sign-in required.',
-                    'See live UKHO tidal events across the month where available.',
+                    'See official UKHO tidal events whenever the API returns them.',
                     'Predictions are only used to fill any gaps where UKHO events are unavailable.',
                   ],
                 },
