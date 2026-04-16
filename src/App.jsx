@@ -7,7 +7,36 @@ const DEFAULT_API_KEY = 'baec423358314e4e8f527980f959295d';
 const WEATHER_API_BASE_URL = 'https://api.weatherapi.com/v1';
 const WEATHER_API_KEY = '34c6cb97a9cb4f0c89e85256261401';
 const LOCAL_HOME_PORT_KEY = 'tidal-calendar-home-port';
+const UK_TIME_ZONE = 'Europe/London';
 const CHATBOT_ENABLED = false;
+const LONDON_OFFSET_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  timeZone: UK_TIME_ZONE,
+  timeZoneName: 'shortOffset',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+const getLondonOffsetMinutes = (date) => {
+  const tzPart = LONDON_OFFSET_FORMATTER.formatToParts(date).find((part) => part.type === 'timeZoneName')?.value || 'GMT';
+  if (tzPart === 'GMT') return 0;
+  const match = tzPart.match(/^GMT([+-])(\d{1,2})(?::?(\d{2}))?$/);
+  if (!match) return 0;
+  const sign = match[1] === '-' ? -1 : 1;
+  const hours = Number(match[2] || 0);
+  const minutes = Number(match[3] || 0);
+  return sign * (hours * 60 + minutes);
+};
+
+const createLondonDate = (year, month, day, hour, minute) => {
+  let utcMs = Date.UTC(year, month, day, hour, minute, 0, 0);
+  for (let i = 0; i < 3; i += 1) {
+    const offsetMinutes = getLondonOffsetMinutes(new Date(utcMs));
+    const nextUtcMs = Date.UTC(year, month, day, hour, minute, 0, 0) - offsetMinutes * 60 * 1000;
+    if (nextUtcMs === utcMs) break;
+    utcMs = nextUtcMs;
+  }
+  return new Date(utcMs);
+};
 
 const parseEmbedConfig = () => {
   if (typeof window === 'undefined') {
@@ -76,15 +105,14 @@ const predictTidalEvents = (station, startDate, days) => {
   const M2_PERIOD = 12.4206;
   const isPredictedSource = true;
   
-  const referenceDate = new Date(startDate);
-  referenceDate.setHours(0, 0, 0, 0);
+  const referenceDate = new Date(Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()));
   
   const lunarPhase = getLunarPhase(referenceDate);
   const initialHWOffset = (lunarPhase * 24 * 0.5 + 2) % M2_PERIOD;
   
   for (let day = 0; day < days; day++) {
     const currentDate = new Date(referenceDate);
-    currentDate.setDate(currentDate.getDate() + day);
+    currentDate.setUTCDate(currentDate.getUTCDate() + day);
     
     const laggedDate = new Date(currentDate);
     laggedDate.setDate(laggedDate.getDate() - 2);
@@ -103,9 +131,20 @@ const predictTidalEvents = (station, startDate, days) => {
     
     const addEvent = (hour, type, baseHeight) => {
       if (hour >= 0 && hour < 24) {
-        const time = new Date(currentDate);
         const isLongRange = day > 6;
-        time.setHours(Math.floor(hour), Math.round((hour % 1) * 60), 0, 0);
+        let eventHour = Math.floor(hour);
+        let eventMinute = Math.round((hour % 1) * 60);
+        if (eventMinute === 60) {
+          eventHour = (eventHour + 1) % 24;
+          eventMinute = 0;
+        }
+        const time = createLondonDate(
+          currentDate.getUTCFullYear(),
+          currentDate.getUTCMonth(),
+          currentDate.getUTCDate(),
+          eventHour,
+          eventMinute,
+        );
         events.push({
           EventType: type,
           DateTime: time.toISOString(),
@@ -239,12 +278,31 @@ export default function TidalCalendarApp() {
   const [weatherForecast, setWeatherForecast] = useState(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState('');
+  const londonDateKeyFormatter = useMemo(
+    () => new Intl.DateTimeFormat('en-CA', { timeZone: UK_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }),
+    []
+  );
+  const londonTimeFormatter = useMemo(
+    () => new Intl.DateTimeFormat('en-GB', { timeZone: UK_TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: false }),
+    []
+  );
+  const getLondonDateKey = useCallback((dateOrString) => {
+    const date = typeof dateOrString === 'string' ? new Date(dateOrString) : dateOrString;
+    return londonDateKeyFormatter.format(date);
+  }, [londonDateKeyFormatter]);
+  const getLondonHourMinute = useCallback((dateOrString) => {
+    const date = typeof dateOrString === 'string' ? new Date(dateOrString) : dateOrString;
+    const parts = londonTimeFormatter.formatToParts(date);
+    const hour = Number(parts.find((part) => part.type === 'hour')?.value || 0);
+    const minute = Number(parts.find((part) => part.type === 'minute')?.value || 0);
+    return { hour, minute };
+  }, [londonTimeFormatter]);
   const role = user?.role || 'user';
   const roleLabel = useMemo(() => {
     if (role === 'subscriber') return 'Subscriber (extended data)';
     if (role === 'admin') return 'Admin';
     if (role === 'club_admin') return 'Club admin';
-    return 'User (7-day view)';
+    return 'User';
   }, [role]);
   const pages = useMemo(() => {
     const base = ['calendar', 'profile', 'about', 'blog'];
@@ -254,11 +312,6 @@ export default function TidalCalendarApp() {
   const subscriptionEndLabel = subscriptionEnd && !Number.isNaN(new Date(subscriptionEnd).getTime())
     ? new Date(subscriptionEnd).toLocaleDateString('en-GB')
     : 'Not set';
-  const hasUkhoAccess = useMemo(() => {
-    if (!user) return false;
-    const end = subscriptionEnd ? new Date(subscriptionEnd) : null;
-    return role === 'subscriber' && end && !Number.isNaN(end.getTime()) && end.getTime() > Date.now();
-  }, [subscriptionEnd, role, user]);
   const hasPaidCalendarProduct = useMemo(() => {
     if (!user) return false;
     return Boolean(user.has_pdf_calendar_access);
@@ -324,31 +377,47 @@ export default function TidalCalendarApp() {
     
     const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
     const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-    const apiDuration = hasUkhoAccess ? daysInMonth + 7 : 7;
+    const apiDuration = daysInMonth + 7;
+    const fallbackApiDuration = 7;
     const predictionDays = daysInMonth + 7;
     
     let apiEvents = [];
     if (apiKey && !isDemo) {
       try {
+        const parseApiEvents = (payload) => (Array.isArray(payload) ? payload : []).map(event => ({
+          ...event,
+          IsPredicted: false,
+          Source: 'UKHO',
+        }));
+
         const response = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=${apiDuration}`, { method: 'GET', cache: 'no-store' });
         if (!response.ok) throw new Error(`TidalEvents fetch failed (${response.status})`);
         const rawApiEvents = await response.json();
-        apiEvents = (Array.isArray(rawApiEvents) ? rawApiEvents : [])
-          .map(event => ({
+        apiEvents = parseApiEvents(rawApiEvents);
+      } catch (err) {
+        console.warn('Extended UKHO fetch failed; retrying with fallback duration.', err);
+        try {
+          const fallbackResponse = await fetch(`${API_BASE_URL}/Stations/${station.id}/TidalEvents?duration=${fallbackApiDuration}`, { method: 'GET', cache: 'no-store' });
+          if (!fallbackResponse.ok) throw new Error(`Fallback TidalEvents fetch failed (${fallbackResponse.status})`);
+          const fallbackEvents = await fallbackResponse.json();
+          apiEvents = (Array.isArray(fallbackEvents) ? fallbackEvents : []).map(event => ({
             ...event,
             IsPredicted: false,
             Source: 'UKHO',
           }));
-      } catch (err) { console.warn('API fetch failed:', err); }
+        } catch (fallbackErr) {
+          console.warn('Fallback UKHO fetch failed:', fallbackErr);
+        }
+      }
     }
     
     const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
-    const apiDateSet = new Set(apiEvents.map(e => new Date(e.DateTime).toDateString()));
-    const merged = [...apiEvents, ...predictedEvents.filter(e => !apiDateSet.has(new Date(e.DateTime).toDateString()))];
+    const apiDateSet = new Set(apiEvents.map(e => getLondonDateKey(e.DateTime)));
+    const merged = [...apiEvents, ...predictedEvents.filter(e => !apiDateSet.has(getLondonDateKey(e.DateTime)))];
     
     setTidalEvents(merged.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)));
     setLoading(false);
-  }, [apiKey, isDemo, currentMonth, hasUkhoAccess]);
+  }, [apiKey, isDemo, currentMonth, getLondonDateKey]);
 
   const persistHomePortSelection = useCallback((portId) => {
     if (typeof window === 'undefined') return;
@@ -1048,7 +1117,7 @@ export default function TidalCalendarApp() {
     
     const eventsByDate = {};
     tidalEvents.forEach(event => {
-      const date = new Date(event.DateTime).toDateString();
+      const date = getLondonDateKey(event.DateTime);
       if (!eventsByDate[date]) eventsByDate[date] = [];
       eventsByDate[date].push(event);
     });
@@ -1061,17 +1130,18 @@ export default function TidalCalendarApp() {
       
       highWaters.forEach(hw => {
         const hwDate = new Date(hw.DateTime);
-        const hwMinutes = hwDate.getHours() * 60 + hwDate.getMinutes();
+        const { hour: hwHour, minute: hwMinute } = getLondonHourMinute(hwDate);
+        const hwMinutes = hwHour * 60 + hwMinute;
         
         if (hwMinutes >= startMinutes && hwMinutes <= endMinutes) {
           const followingLow = lowWaters.find(lw => new Date(lw.DateTime) > hwDate);
           const allHighs = tidalEvents.filter(e => e.EventType === 'HighWater');
-          const nextHigh = allHighs.find(h => new Date(h.DateTime) > hwDate && new Date(h.DateTime).toDateString() !== hwDate.toDateString() || (new Date(h.DateTime) > hwDate && new Date(h.DateTime).getTime() - hwDate.getTime() > 6 * 60 * 60 * 1000));
+          const nextHigh = allHighs.find(h => new Date(h.DateTime) > hwDate && getLondonDateKey(h.DateTime) !== getLondonDateKey(hwDate) || (new Date(h.DateTime) > hwDate && new Date(h.DateTime).getTime() - hwDate.getTime() > 6 * 60 * 60 * 1000));
           
           if (followingLow) {
             const tidalRange = hw.Height - followingLow.Height;
             const refloatTime = nextHigh ? new Date(nextHigh.DateTime) : null;
-            const refloatBeforeEvening = refloatTime ? refloatTime.getHours() < 20 : true;
+            const refloatBeforeEvening = refloatTime ? getLondonHourMinute(refloatTime).hour < 20 : true;
             
             const score = (refloatBeforeEvening ? 1 : 0) * 100 + tidalRange;
 
@@ -1093,7 +1163,7 @@ export default function TidalCalendarApp() {
     });
     
     return results;
-  }, [tidalEvents, scrubSettings]);
+  }, [tidalEvents, scrubSettings, getLondonDateKey, getLondonHourMinute]);
 
   // Group maintenance logs by date
   const maintenanceByDate = useMemo(() => {
@@ -1103,7 +1173,7 @@ export default function TidalCalendarApp() {
     maintenanceLogs.forEach(log => {
       if (!log?.date) return;
       try {
-        const dateKey = new Date(log.date).toDateString();
+        const dateKey = getLondonDateKey(log.date);
         if (!grouped[dateKey]) grouped[dateKey] = [];
         grouped[dateKey].push(log);
       } catch (err) {
@@ -1111,7 +1181,7 @@ export default function TidalCalendarApp() {
       }
     });
     return grouped;
-  }, [maintenanceLogs]);
+  }, [maintenanceLogs, getLondonDateKey]);
 
   // Calendar helpers
   const getMonthData = () => {
@@ -1139,28 +1209,32 @@ export default function TidalCalendarApp() {
 
   const formatTime = (dateOrString) => {
     const date = typeof dateOrString === 'string' ? new Date(dateOrString) : dateOrString;
-    return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return londonTimeFormatter.format(date);
   };
+  const formatLondonDate = useCallback((dateOrString, options = {}) => {
+    const date = typeof dateOrString === 'string' ? new Date(dateOrString) : dateOrString;
+    return date.toLocaleDateString('en-GB', { timeZone: UK_TIME_ZONE, ...options });
+  }, []);
 
   const eventsByDay = useMemo(() => {
     const grouped = {};
     tidalEvents.forEach(event => {
-      const date = new Date(event.DateTime).toDateString();
+      const date = getLondonDateKey(event.DateTime);
       if (!grouped[date]) grouped[date] = [];
       grouped[date].push(event);
     });
     return grouped;
-  }, [tidalEvents]);
-  const selectedDayEvents = selectedDay ? eventsByDay[selectedDay.toDateString()] || [] : [];
+  }, [tidalEvents, getLondonDateKey]);
+  const selectedDayEvents = selectedDay ? eventsByDay[getLondonDateKey(selectedDay)] || [] : [];
   const selectedDayHasUkhoApi = selectedDayEvents.some(e => e.Source === 'UKHO');
   const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
   const weatherIconUrl = weatherForecast?.day?.condition?.icon ? `https:${weatherForecast.day.condition.icon}` : '';
   const handleDaySelect = useCallback((date, allowSelection = true) => {
     if (!allowSelection) return;
     setSelectedDay(date);
-    const scrubData = scrubbingByDate[date.toDateString()] || null;
+    const scrubData = scrubbingByDate[getLondonDateKey(date)] || null;
     setScrubModal({ date, data: scrubData });
-  }, [scrubbingByDate]);
+  }, [scrubbingByDate, getLondonDateKey]);
 
   const upcomingDays = useMemo(() => {
     const now = new Date();
@@ -1273,7 +1347,7 @@ export default function TidalCalendarApp() {
                   {upcomingDays.map(({ date, events }) => (
                     <div key={date.toISOString()} style={{ background: cardSurface, border: `1px solid ${accentColor}26`, borderRadius: '12px', padding: '12px', color: primaryText, boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px' }}>
-                        <div style={{ fontWeight: 700 }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                        <div style={{ fontWeight: 700 }}>{formatLondonDate(date, { weekday: 'short', day: 'numeric', month: 'short' })}</div>
                         <div style={{ fontSize: '11px', color: secondaryText }}>{getMoonPhaseName(date).icon} {getMoonPhaseName(date).name}</div>
                       </div>
                       <div style={{ display: 'grid', gap: '6px' }}>
@@ -1283,7 +1357,7 @@ export default function TidalCalendarApp() {
                             <span style={{ color: primaryText, fontWeight: 600 }}>{formatTime(event.DateTime)}</span>
                             <span>{event.Height?.toFixed(1)}m</span>
                             {event.IsPredicted && <span style={{ fontSize: '11px', color: '#b45309' }}>Predicted</span>}
-                            {!event.IsPredicted && event.Source === 'UKHO' && <span style={{ fontSize: '11px', color: accentColor }}>{hasUkhoAccess ? 'UKHO' : 'UKHO 7d'}</span>}
+                            {!event.IsPredicted && event.Source === 'UKHO' && <span style={{ fontSize: '11px', color: accentColor }}>UKHO</span>}
                           </div>
                         ))}
                       </div>
@@ -1303,13 +1377,13 @@ export default function TidalCalendarApp() {
                     <div key={i} style={{ background: cardSurface, border: `1px solid ${accentColor}26`, borderRadius: '12px', padding: '12px', display: 'grid', gap: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.06)', color: primaryText }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                         <div style={{ display: 'grid', gap: '4px' }}>
-                          <div style={{ fontWeight: 700 }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                          <div style={{ fontWeight: 700 }}>{formatLondonDate(date, { weekday: 'short', day: 'numeric', month: 'short' })}</div>
                           <div style={{ fontSize: '12px', color: secondaryText }}>HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m</div>
                         </div>
                         <ScrubbingBadge />
                       </div>
                       <div style={{ fontSize: '11px', color: secondaryText }}>
-                        {data.highWater.IsPredicted ? 'Predicted window' : data.highWater.Source === 'UKHO' ? (hasUkhoAccess ? 'UKHO data' : 'UKHO preview (7d)') : 'Predicted'}
+                        {data.highWater.IsPredicted ? 'Predicted window' : data.highWater.Source === 'UKHO' ? 'UKHO data' : 'Predicted'}
                       </div>
                     </div>
                   ))}
@@ -1426,8 +1500,8 @@ export default function TidalCalendarApp() {
                   emoji: '🌐',
                   points: [
                     'Browse stations and set a home port locally with no sign-in required.',
-                    'See 7 days of Admiralty API preview data when available.',
-                    'Beyond 7 days, tide times and heights are algorithmic predictions for guidance only.',
+                    'See official UKHO tidal events whenever the API returns them.',
+                    'Predictions are only used to fill any gaps where UKHO events are unavailable.',
                   ],
                 },
                 {
@@ -1435,17 +1509,17 @@ export default function TidalCalendarApp() {
                   emoji: '🧭',
                   points: [
                     'Sync your saved home port and maintenance reminders across devices.',
-                    'Removal of Ads. Receive the same 7-day Admiralty preview as guests.',
-                    'Longer range data remains predicted beyond the 7-day window.',
+                    'Removal of Ads and synced home-port preferences across devices.',
+                    'Same UKHO + prediction blending as guest users.',
                   ],
                 },
                 {
                   title: 'Subscribers',
                   emoji: '🌊',
                   points: [
-                    'Unlock extended UKHO tidal events across the year.',
                     'Keep scrubbing guidance and reminders in sync with your subscription.',
-                    'Predictions supplement data only when UKHO coverage is unavailable.',
+                    'Priority product updates and support for ongoing development.',
+                    'Same UKHO + prediction blending as every account tier.',
                   ],
                 },
                 {
@@ -1471,7 +1545,7 @@ export default function TidalCalendarApp() {
             </div>
 
             <div style={{ background: '#ecfdf3', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '14px', fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#166534' }}>
-              <strong style={{ color: '#15803d' }}>Data transparency:</strong> For guests and non-subscribed users, anything beyond the first 7 days is shown using predicted tide times and heights. Subscribe to replace those forecasts with official UKHO data wherever available.
+              <strong style={{ color: '#15803d' }}>Data transparency:</strong> UKHO actual data is shown for all users wherever returned by the API. Predicted tide times/heights appear only when UKHO events are unavailable for a date.
             </div>
           </section>
         )}
@@ -2144,7 +2218,7 @@ export default function TidalCalendarApp() {
                   <button onClick={() => navigateMonth(-1)} style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 20px', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600, flex: '1 1 160px' }}>← Previous</button>
                   
                   <div style={{ textAlign: 'center' }}>
-                    <h3 style={{ fontSize: '28px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>{currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h3>
+                    <h3 style={{ fontSize: '28px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>{formatLondonDate(currentMonth, { month: 'long', year: 'numeric' })}</h3>
                     <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155', margin: 0 }}>
                       {getMoonPhaseName(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 15)).icon} {getMoonPhaseName(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 15)).name} mid-month
                     </p>
@@ -2163,12 +2237,12 @@ export default function TidalCalendarApp() {
                 <div className="calendar-grid-wrapper">
                 <div className="calendar-grid">
                   {getMonthData().map(({ date, isCurrentMonth }, i) => {
-                    const dateStr = date.toDateString();
+                    const dateStr = getLondonDateKey(date);
                     const dayEvents = eventsByDay[dateStr] || [];
                     const scrubData = scrubbingByDate[dateStr];
                     const dayMaintenanceLogs = maintenanceByDate[dateStr] || [];
-                    const isToday = new Date().toDateString() === dateStr;
-                    const isSelected = selectedDay?.toDateString() === dateStr;
+                    const isToday = getLondonDateKey(new Date()) === dateStr;
+                    const isSelected = selectedDay ? getLondonDateKey(selectedDay) === dateStr : false;
                     const moonPhase = getMoonPhaseName(date);
                     const hasUkhoEvents = dayEvents.some(e => e.Source === 'UKHO');
                     const hasPredictedEvents = dayEvents.some(e => e.IsPredicted);
@@ -2193,7 +2267,7 @@ export default function TidalCalendarApp() {
                       >
                         {/* Date Number */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-                          <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: isToday ? 700 : 500, color: isToday ? '#0ea5e9' : '#0f172a' }}>{date.getDate()}</span>
+                          <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: isToday ? 700 : 500, color: isToday ? '#0ea5e9' : '#0f172a' }}>{formatLondonDate(date, { day: 'numeric' })}</span>
                           {(moonPhase.isSpring || moonPhase.name.includes('Quarter')) && (
                             <span style={{ fontSize: '12px', color: '#0f172a' }} title={moonPhase.name}>{moonPhase.icon}</span>
                           )}
@@ -2234,7 +2308,7 @@ export default function TidalCalendarApp() {
                             style={{ position: 'absolute', bottom: '4px', right: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '8px', color: hasUkhoEvents ? '#0ea5e9' : '#b45309', opacity: 0.9 }}
                             title={hasPredictedEvents ? 'Predicted tidal data' : undefined}
                           >
-                            {hasUkhoEvents ? (hasUkhoAccess ? 'UKHO' : 'UKHO 7d') : (hasPredictedEvents ? 'Pred.' : '—')}
+                            {hasUkhoEvents ? 'UKHO' : (hasPredictedEvents ? 'Pred.' : '—')}
                           </div>
                         )}
                       </div>
@@ -2250,13 +2324,13 @@ export default function TidalCalendarApp() {
                     <span style={{ color: '#475569', marginLeft: '8px' }}>▼</span> Low Water
                   </div>
                   <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#b45309', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '8px', padding: '2px 6px', background: '#fef3c7', borderRadius: '4px', color: '#b45309' }} title="Predicted tidal data">Pred.</span> Predicted tidal data (typically beyond the 7-day API window)
+                    <span style={{ fontSize: '8px', padding: '2px 6px', background: '#fef3c7', borderRadius: '4px', color: '#b45309' }} title="Predicted tidal data">Pred.</span> Predicted tidal data used only when UKHO events are unavailable
                   </div>
                   <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#334155' }}>
                     🌑🌕 = Spring tides (larger range) • 🌓🌗 = Neap tides (smaller range)
                   </div>
                   <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#0f172a', textAlign: 'center' }}>
-                    <strong style={{ color: '#0ea5e9' }}>UKHO 7d</strong> = open preview for everyone. Sign in & subscribe to unlock full UKHO times.
+                    <strong style={{ color: '#0ea5e9' }}>UKHO</strong> = official UKHO event data when available for the selected date.
                   </div>
                 </div>
               </div>
@@ -2266,7 +2340,7 @@ export default function TidalCalendarApp() {
             {!loading && viewMode === 'scrubbing' && (
               <div>
                 <h3 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600, color: '#0f172a', marginBottom: '16px' }}>
-                  Suitable Scrubbing Days in {currentMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+                  Suitable Scrubbing Days in {formatLondonDate(currentMonth, { month: 'long', year: 'numeric' })}
                 </h3>
                 
                 {Object.keys(scrubbingByDate).length === 0 ? (
@@ -2291,10 +2365,10 @@ export default function TidalCalendarApp() {
                           }}>
                   <div className="scrub-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                     <div>
-                      <div style={{ fontSize: '20px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                      <div style={{ fontSize: '20px', fontWeight: 600, marginBottom: '4px', color: '#0f172a' }}>{formatLondonDate(date, { weekday: 'short', day: 'numeric', month: 'short' })}</div>
                       <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#334155' }}>
                         HW {formatTime(data.hwTime)} • LW {formatTime(data.lwTime)} • Range {data.tidalRange.toFixed(1)}m
-                        {!isPredicted && isUkhoEvent && <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>{hasUkhoAccess ? '• UKHO' : '• UKHO 7d'}</span>}
+                        {!isPredicted && isUkhoEvent && <span style={{ color: '#0ea5e9', marginLeft: '8px' }}>• UKHO</span>}
                         {isPredicted && <span style={{ color: '#b45309', marginLeft: '8px' }}>• Predicted</span>}
                                 </div>
                               </div>
@@ -2320,10 +2394,10 @@ export default function TidalCalendarApp() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', gap: '12px', flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 700 }}>
-                  {scrubModal.date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                  {formatLondonDate(scrubModal.date, { weekday: 'long', day: 'numeric', month: 'long' })}
                 </div>
                 <div style={{ fontSize: '12px', color: '#475569' }}>
-                  {getMoonPhaseName(scrubModal.date).icon} {getMoonPhaseName(scrubModal.date).name} • {selectedDayHasUkhoApi ? (hasUkhoAccess ? 'UKHO data (subscriber)' : 'Admiralty Data (7 days)') : (selectedDayHasPredicted ? 'Predicted' : 'API Data')}
+                  {getMoonPhaseName(scrubModal.date).icon} {getMoonPhaseName(scrubModal.date).name} • {selectedDayHasUkhoApi ? 'UKHO data' : (selectedDayHasPredicted ? 'Predicted' : 'API Data')}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -2343,7 +2417,7 @@ export default function TidalCalendarApp() {
                         <div style={{ fontSize: '22px', fontWeight: 700, marginBottom: '4px', color: '#0f172a' }}>{formatTime(event.DateTime)}</div>
                         <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#334155' }}>{event.Height?.toFixed(2)}m</div>
                         {event.IsPredicted && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#b45309', marginTop: '6px' }}>⚠ Predicted (harmonic algorithm)</div>}
-                        {!event.IsPredicted && isUkhoEvent && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '6px' }}>{hasUkhoAccess ? 'UKHO data (subscriber)' : 'Admiralty preview (7-day access)'}</div>}
+                        {!event.IsPredicted && isUkhoEvent && <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#0ea5e9', marginTop: '6px' }}>UKHO data</div>}
                       </div>
                     );
                   })}
