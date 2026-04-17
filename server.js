@@ -568,8 +568,8 @@ const hasPremiumTidalAccess = (user) => {
 const isTidalEventsPath = (targetPath) => /^Stations\/[^/]+\/TidalEvents(?:\?|$)/i.test(targetPath);
 
 const getAdmiraltyApiConfig = (targetPath, user) => {
-  if (!hasPremiumTidalAccess(user)) {
-    return { baseUrl: SUBSCRIBER_TIDAL_API_BASE_URL, apiKey: SUBSCRIBER_TIDAL_API_KEY, source: 'premium_tidal' };
+  if (hasPremiumTidalAccess(user)) {
+    return { baseUrl: "https://admiraltyapi.azure-api.net/uktidalapi-premium/api/V2", apiKey: "605d09171c3944faa3649d9dc9b4293b", source: 'premium_tidal' };
   }
   return { baseUrl: API_BASE_URL, apiKey: API_KEY, source: 'default_tidal' };
 };
