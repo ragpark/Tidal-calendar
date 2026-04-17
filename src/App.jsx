@@ -258,6 +258,12 @@ export default function TidalCalendarApp() {
   const [authMode, setAuthMode] = useState('signin');
   const [authForm, setAuthForm] = useState({ email: '', password: '' });
   const [authError, setAuthError] = useState('');
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [forgotPasswordStatus, setForgotPasswordStatus] = useState('');
+  const [changePasswordForm, setChangePasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [changePasswordStatus, setChangePasswordStatus] = useState('');
+  const [resetPasswordForm, setResetPasswordForm] = useState({ token: '', newPassword: '', confirmPassword: '' });
+  const [resetPasswordStatus, setResetPasswordStatus] = useState('');
   const [subscriptionEnd, setSubscriptionEnd] = useState('');
   const [subscriptionNotice, setSubscriptionNotice] = useState('');
   const SUBSCRIPTION_PRICE_GBP = 5;
@@ -449,6 +455,15 @@ export default function TidalCalendarApp() {
   useEffect(() => { if (selectedStation) fetchTidalEvents(selectedStation); }, [selectedStation, fetchTidalEvents]);
   useEffect(() => { loadSession(); }, [loadSession]);
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    if (window.location.pathname === '/reset-password' && token) {
+      setCurrentPage('profile');
+      setAuthMode('reset');
+      setResetPasswordForm((form) => ({ ...form, token }));
+    }
+  }, []);
+  useEffect(() => {
     if (typeof document === 'undefined') {
       return undefined;
     }
@@ -586,6 +601,89 @@ export default function TidalCalendarApp() {
       setAuthError(err.message);
     }
     setAuthForm({ email: '', password: '' });
+  };
+
+  const handleForgotPasswordSubmit = async (event) => {
+    event.preventDefault();
+    setAuthError('');
+    setForgotPasswordStatus('');
+    if (!forgotPasswordEmail) {
+      setForgotPasswordStatus('Please enter your account email.');
+      return;
+    }
+    try {
+      await apiRequest('/api/auth/request-password-reset', {
+        method: 'POST',
+        body: JSON.stringify({ email: forgotPasswordEmail }),
+      });
+      setForgotPasswordStatus('If that email exists, a password reset link has been sent.');
+      setForgotPasswordEmail('');
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
+
+  const handleResetPasswordSubmit = async (event) => {
+    event.preventDefault();
+    setAuthError('');
+    setResetPasswordStatus('');
+    if (!resetPasswordForm.token) {
+      setAuthError('Password reset token is missing.');
+      return;
+    }
+    if (!resetPasswordForm.newPassword || resetPasswordForm.newPassword.length < 8) {
+      setAuthError('New password must be at least 8 characters.');
+      return;
+    }
+    if (resetPasswordForm.newPassword !== resetPasswordForm.confirmPassword) {
+      setAuthError('New password and confirmation do not match.');
+      return;
+    }
+    try {
+      await apiRequest('/api/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token: resetPasswordForm.token, newPassword: resetPasswordForm.newPassword }),
+      });
+      setResetPasswordStatus('Password reset successfully. You can now sign in with your new password.');
+      setResetPasswordForm({ token: '', newPassword: '', confirmPassword: '' });
+      setAuthMode('signin');
+      if (window.location.pathname === '/reset-password') {
+        window.history.replaceState({}, document.title, '/');
+      }
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
+
+  const handleChangePasswordSubmit = async (event) => {
+    event.preventDefault();
+    setAuthError('');
+    setChangePasswordStatus('');
+    if (!changePasswordForm.currentPassword || !changePasswordForm.newPassword) {
+      setAuthError('Current and new password are required.');
+      return;
+    }
+    if (changePasswordForm.newPassword.length < 8) {
+      setAuthError('New password must be at least 8 characters.');
+      return;
+    }
+    if (changePasswordForm.newPassword !== changePasswordForm.confirmPassword) {
+      setAuthError('New password and confirmation do not match.');
+      return;
+    }
+    try {
+      await apiRequest('/api/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          currentPassword: changePasswordForm.currentPassword,
+          newPassword: changePasswordForm.newPassword,
+        }),
+      });
+      setChangePasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setChangePasswordStatus('Password updated successfully.');
+    } catch (err) {
+      setAuthError(err.message);
+    }
   };
 
   const handleSignOut = async () => {
@@ -1666,19 +1764,58 @@ export default function TidalCalendarApp() {
               <div className="profile-card" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '16px', boxShadow: '0 6px 14px rgba(15,23,42,0.05)', display: 'grid', gap: '12px' }}>
                 <div className="profile-account-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Account</h3>
-                  <div className="profile-auth-toggle" style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => setAuthMode('signin')} style={{ padding: '6px 10px', background: authMode === 'signin' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign In</button>
-                    <button onClick={() => setAuthMode('signup')} style={{ padding: '6px 10px', background: authMode === 'signup' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign Up</button>
-                  </div>
+                  {!user && (
+                    <div className="profile-auth-toggle" style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => { setAuthMode('signin'); setAuthError(''); }} style={{ padding: '6px 10px', background: authMode === 'signin' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign In</button>
+                      <button onClick={() => { setAuthMode('signup'); setAuthError(''); }} style={{ padding: '6px 10px', background: authMode === 'signup' ? '#e0f2fe' : '#ffffff', border: '1px solid #bae6fd', borderRadius: '6px', color: '#0f172a', cursor: 'pointer', fontWeight: 600, boxShadow: '0 2px 8px rgba(15,23,42,0.08)' }}>Sign Up</button>
+                    </div>
+                  )}
                 </div>
 
                 {!user ? (
-                  <form onSubmit={handleAuthSubmit} style={{ display: 'grid', gap: '10px' }}>
-                    <input type="email" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)' }} />
-                    <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)' }} />
-                    {authError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{authError}</div>}
-                    <button type="submit" style={{ padding: '12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>{authMode === 'signup' ? 'Create Account' : 'Sign In'}</button>
-                  </form>
+                  <>
+                    {(authMode === 'signin' || authMode === 'signup') && (
+                      <form onSubmit={handleAuthSubmit} style={{ display: 'grid', gap: '10px' }}>
+                        <input type="email" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)' }} />
+                        <input type="password" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)' }} />
+                        {authError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{authError}</div>}
+                        {resetPasswordStatus && <div style={{ color: '#166534', fontSize: '12px', fontWeight: 600 }}>{resetPasswordStatus}</div>}
+                        <button type="submit" style={{ padding: '12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>{authMode === 'signup' ? 'Create Account' : 'Sign In'}</button>
+                        {authMode === 'signin' && (
+                          <button
+                            type="button"
+                            onClick={() => { setAuthMode('forgot'); setAuthError(''); setForgotPasswordStatus(''); }}
+                            style={{ padding: '8px 0', background: 'transparent', border: 'none', textAlign: 'left', color: '#0369a1', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}
+                          >
+                            Forgot your password?
+                          </button>
+                        )}
+                      </form>
+                    )}
+
+                    {authMode === 'forgot' && (
+                      <form onSubmit={handleForgotPasswordSubmit} style={{ display: 'grid', gap: '10px' }}>
+                        <div style={{ fontSize: '12px', color: '#334155' }}>Enter your email and we&apos;ll send a reset link.</div>
+                        <input type="email" placeholder="Account email" value={forgotPasswordEmail} onChange={(e) => setForgotPasswordEmail(e.target.value)} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)' }} />
+                        {forgotPasswordStatus && <div style={{ color: forgotPasswordStatus.includes('sent') ? '#166534' : '#92400e', fontSize: '12px', fontWeight: 600 }}>{forgotPasswordStatus}</div>}
+                        {authError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{authError}</div>}
+                        <button type="submit" style={{ padding: '12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>Send reset link</button>
+                        <button type="button" onClick={() => setAuthMode('signin')} style={{ padding: '8px 0', background: 'transparent', border: 'none', textAlign: 'left', color: '#0369a1', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>Back to sign in</button>
+                      </form>
+                    )}
+
+                    {authMode === 'reset' && (
+                      <form onSubmit={handleResetPasswordSubmit} style={{ display: 'grid', gap: '10px' }}>
+                        <div style={{ fontSize: '12px', color: '#334155' }}>Set a new password for your account.</div>
+                        <input type="text" placeholder="Reset token" value={resetPasswordForm.token} onChange={(e) => setResetPasswordForm((form) => ({ ...form, token: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }} />
+                        <input type="password" placeholder="New password (min 8 characters)" value={resetPasswordForm.newPassword} onChange={(e) => setResetPasswordForm((form) => ({ ...form, newPassword: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }} />
+                        <input type="password" placeholder="Confirm new password" value={resetPasswordForm.confirmPassword} onChange={(e) => setResetPasswordForm((form) => ({ ...form, confirmPassword: e.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }} />
+                        {authError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{authError}</div>}
+                        <button type="submit" style={{ padding: '12px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>Reset password</button>
+                        <button type="button" onClick={() => setAuthMode('signin')} style={{ padding: '8px 0', background: 'transparent', border: 'none', textAlign: 'left', color: '#0369a1', cursor: 'pointer', fontWeight: 600, fontSize: '12px' }}>Back to sign in</button>
+                      </form>
+                    )}
+                  </>
                 ) : (
                   <div className="profile-signed-in" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}>
                     <div>
@@ -1690,6 +1827,18 @@ export default function TidalCalendarApp() {
                     </div>
                     <button onClick={handleSignOut} style={{ padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Sign Out</button>
                   </div>
+                )}
+
+                {user && (
+                  <form onSubmit={handleChangePasswordSubmit} style={{ display: 'grid', gap: '10px', marginTop: '4px' }}>
+                    <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Change password</div>
+                    <input type="password" placeholder="Current password" value={changePasswordForm.currentPassword} onChange={(event) => setChangePasswordForm((form) => ({ ...form, currentPassword: event.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }} />
+                    <input type="password" placeholder="New password (min 8 characters)" value={changePasswordForm.newPassword} onChange={(event) => setChangePasswordForm((form) => ({ ...form, newPassword: event.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }} />
+                    <input type="password" placeholder="Confirm new password" value={changePasswordForm.confirmPassword} onChange={(event) => setChangePasswordForm((form) => ({ ...form, confirmPassword: event.target.value }))} style={{ padding: '12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a' }} />
+                    {changePasswordStatus && <div style={{ color: '#166534', fontSize: '12px', fontWeight: 600 }}>{changePasswordStatus}</div>}
+                    {authError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{authError}</div>}
+                    <button type="submit" style={{ padding: '10px', background: '#0ea5e9', border: '1px solid #0284c7', borderRadius: '8px', color: '#ffffff', cursor: 'pointer', fontWeight: 700, boxShadow: '0 4px 12px rgba(14,165,233,0.25)' }}>Update password</button>
+                  </form>
                 )}
               </div>
 

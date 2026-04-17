@@ -708,6 +708,36 @@ app.post('/api/auth/login', async (req, res) => {
   });
 });
 
+app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Current and new password are required' });
+  }
+  if (typeof newPassword !== 'string' || newPassword.length < 8) {
+    return res.status(400).json({ error: 'New password must be at least 8 characters' });
+  }
+
+  const { rows } = await pool.query(
+    `SELECT password_hash FROM users WHERE id = $1`,
+    [req.user.id],
+  );
+  const record = rows[0];
+  if (!record) return res.status(404).json({ error: 'User not found' });
+
+  const valid = await bcrypt.compare(currentPassword, record.password_hash);
+  if (!valid) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+
+  const nextPasswordHash = await bcrypt.hash(newPassword, 10);
+  await pool.query(
+    `UPDATE users SET password_hash = $1 WHERE id = $2`,
+    [nextPasswordHash, req.user.id],
+  );
+
+  res.json({ ok: true });
+});
+
 app.post('/api/auth/request-password-reset', passwordResetLimiter, async (req, res) => {
   const { email } = req.body || {};
   if (!isValidEmail(email)) {
