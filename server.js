@@ -50,6 +50,13 @@ const SESSION_TTL_HOURS = 24;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 
+if (subscriberBaseUrlFromEnv && !isValidAbsoluteHttpUrl(subscriberBaseUrlFromEnv)) {
+  console.warn(
+    'WARNING: ADMIRALTY_SUBSCRIBER_TIDAL_API_BASE_URL is invalid. Expected an absolute URL (http/https). Falling back to API_BASE_URL.',
+    { providedValue: subscriberBaseUrlFromEnv },
+  );
+}
+
 // Warn if DATABASE_URL missing but don't exit - let connection retry handle it
 if (!process.env.DATABASE_URL) {
   console.warn('WARNING: DATABASE_URL environment variable is not set');
@@ -723,6 +730,36 @@ app.post('/api/auth/login', async (req, res) => {
     home_club_id: user.home_club_id,
     home_club_name: user.home_club_name,
   });
+});
+
+app.post('/api/auth/change-password', requireAuth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Current and new password are required' });
+  }
+  if (typeof newPassword !== 'string' || newPassword.length < 8) {
+    return res.status(400).json({ error: 'New password must be at least 8 characters' });
+  }
+
+  const { rows } = await pool.query(
+    `SELECT password_hash FROM users WHERE id = $1`,
+    [req.user.id],
+  );
+  const record = rows[0];
+  if (!record) return res.status(404).json({ error: 'User not found' });
+
+  const valid = await bcrypt.compare(currentPassword, record.password_hash);
+  if (!valid) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+
+  const nextPasswordHash = await bcrypt.hash(newPassword, 10);
+  await pool.query(
+    `UPDATE users SET password_hash = $1 WHERE id = $2`,
+    [nextPasswordHash, req.user.id],
+  );
+
+  res.json({ ok: true });
 });
 
 app.post('/api/auth/request-password-reset', passwordResetLimiter, async (req, res) => {
