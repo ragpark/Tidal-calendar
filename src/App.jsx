@@ -389,14 +389,6 @@ export default function TidalCalendarApp() {
     const fallbackApiDuration = 7;
     const predictionDays = daysInMonth + 7;
     
-    const hasSubscriberApiAccess = Boolean(
-      user
-      && (
-        user.role === 'subscriber'
-        || user.subscription_status === 'active'
-        || user.has_pdf_calendar_access
-      )
-    );
     let apiEvents = [];
     let apiFetchFailed = false;
     if (apiKey && !isDemo) {
@@ -432,10 +424,8 @@ export default function TidalCalendarApp() {
     }
 
     let nextEvents = apiEvents;
-    if (hasSubscriberApiAccess) {
-      if (apiFetchFailed || apiEvents.length === 0) {
-        nextEvents = predictTidalEvents(station, monthStart, predictionDays);
-      }
+    if (apiFetchFailed || apiEvents.length === 0) {
+      nextEvents = predictTidalEvents(station, monthStart, predictionDays);
     } else {
       const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
       const apiDateSet = new Set(apiEvents.map(e => getLondonDateKey(e.DateTime)));
@@ -444,7 +434,7 @@ export default function TidalCalendarApp() {
 
     setTidalEvents(nextEvents.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)));
     setLoading(false);
-  }, [apiKey, isDemo, currentMonth, getLondonDateKey, user]);
+  }, [apiKey, isDemo, currentMonth, getLondonDateKey]);
 
   const persistHomePortSelection = useCallback((portId) => {
     if (typeof window === 'undefined') return;
