@@ -23,15 +23,35 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const isValidAbsoluteHttpUrl = (value) => {
+  if (!value || typeof value !== 'string') return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
 const PORT = process.env.PORT || 3000;
 const API_BASE_URL = 'https://admiraltyapi.azure-api.net/uktidalapi/api/V1';
 const API_KEY = process.env.ADMIRALTY_API_KEY || 'baec423358314e4e8f527980f959295d';
-const SUBSCRIBER_TIDAL_API_BASE_URL = process.env.ADMIRALTY_SUBSCRIBER_TIDAL_API_BASE_URL || API_BASE_URL;
+const subscriberBaseUrlFromEnv = process.env.ADMIRALTY_SUBSCRIBER_TIDAL_API_BASE_URL;
+const SUBSCRIBER_TIDAL_API_BASE_URL = isValidAbsoluteHttpUrl(subscriberBaseUrlFromEnv)
+  ? subscriberBaseUrlFromEnv
+  : API_BASE_URL;
 const SUBSCRIBER_TIDAL_API_KEY = process.env.ADMIRALTY_SUBSCRIBER_TIDAL_API_KEY || API_KEY;
 const SESSION_COOKIE = 'tc_session';
 const SESSION_TTL_HOURS = 24;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+
+if (subscriberBaseUrlFromEnv && !isValidAbsoluteHttpUrl(subscriberBaseUrlFromEnv)) {
+  console.warn(
+    'WARNING: ADMIRALTY_SUBSCRIBER_TIDAL_API_BASE_URL is invalid. Expected an absolute URL (http/https). Falling back to API_BASE_URL.',
+    { providedValue: subscriberBaseUrlFromEnv },
+  );
+}
 
 // Warn if DATABASE_URL missing but don't exit - let connection retry handle it
 if (!process.env.DATABASE_URL) {
