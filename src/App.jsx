@@ -389,7 +389,16 @@ export default function TidalCalendarApp() {
     const fallbackApiDuration = 7;
     const predictionDays = daysInMonth + 7;
     
+    const hasPremiumApiAccess = Boolean(
+      user
+      && (
+        user.role === 'subscriber'
+        || user.subscription_status === 'active'
+        || user.has_pdf_calendar_access
+      )
+    );
     let apiEvents = [];
+    let apiFetchFailed = false;
     if (apiKey && !isDemo) {
       try {
         const parseApiEvents = (payload) => (Array.isArray(payload) ? payload : []).map(event => ({
@@ -417,17 +426,25 @@ export default function TidalCalendarApp() {
           }));
         } catch (fallbackErr) {
           console.warn('Fallback UKHO fetch failed:', fallbackErr);
+          apiFetchFailed = true;
         }
       }
     }
-    
-    const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
-    const apiDateSet = new Set(apiEvents.map(e => getLondonDateKey(e.DateTime)));
-    const merged = [...apiEvents, ...predictedEvents.filter(e => !apiDateSet.has(getLondonDateKey(e.DateTime)))];
-    
-    setTidalEvents(merged.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)));
+
+    let nextEvents = apiEvents;
+    if (hasPremiumApiAccess) {
+      if (apiFetchFailed || apiEvents.length === 0) {
+        nextEvents = predictTidalEvents(station, monthStart, predictionDays);
+      }
+    } else {
+      const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
+      const apiDateSet = new Set(apiEvents.map(e => getLondonDateKey(e.DateTime)));
+      nextEvents = [...apiEvents, ...predictedEvents.filter(e => !apiDateSet.has(getLondonDateKey(e.DateTime)))];
+    }
+
+    setTidalEvents(nextEvents.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)));
     setLoading(false);
-  }, [apiKey, isDemo, currentMonth, getLondonDateKey]);
+  }, [apiKey, isDemo, currentMonth, getLondonDateKey, user]);
 
   const persistHomePortSelection = useCallback((portId) => {
     if (typeof window === 'undefined') return;
