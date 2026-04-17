@@ -37,9 +37,13 @@ const PORT = process.env.PORT || 3000;
 const API_BASE_URL = 'https://admiraltyapi.azure-api.net/uktidalapi/api/V1';
 const API_KEY = process.env.ADMIRALTY_API_KEY || 'baec423358314e4e8f527980f959295d';
 const subscriberBaseUrlFromEnv = process.env.ADMIRALTY_SUBSCRIBER_TIDAL_API_BASE_URL;
-const SUBSCRIBER_TIDAL_API_BASE_URL = isValidAbsoluteHttpUrl(subscriberBaseUrlFromEnv)
-  ? subscriberBaseUrlFromEnv
-  : API_BASE_URL;
+if (subscriberBaseUrlFromEnv && !isValidAbsoluteHttpUrl(subscriberBaseUrlFromEnv)) {
+  throw new Error(
+    `Invalid ADMIRALTY_SUBSCRIBER_TIDAL_API_BASE_URL: "${subscriberBaseUrlFromEnv}". `
+    + 'Expected an absolute http/https URL (e.g. https://example.com/path).',
+  );
+}
+const SUBSCRIBER_TIDAL_API_BASE_URL = subscriberBaseUrlFromEnv || API_BASE_URL;
 const SUBSCRIBER_TIDAL_API_KEY = process.env.ADMIRALTY_SUBSCRIBER_TIDAL_API_KEY || API_KEY;
 const SESSION_COOKIE = 'tc_session';
 const SESSION_TTL_HOURS = 24;
