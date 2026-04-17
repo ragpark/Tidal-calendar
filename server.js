@@ -580,7 +580,7 @@ const fetchAdmiraltyEvents = async ({ stationId, duration, user }) => {
   const response = await fetch(`${baseUrl}/${targetPath}`, {
     headers: {
       Accept: 'application/json',
-      'Ocp-Apim-Subscription-Key': apiKey,
+      'Subscription-Key': apiKey,
     },
   });
   if (!response.ok) {
