@@ -1527,16 +1527,16 @@ export default function TidalCalendarApp() {
                   emoji: '🌐',
                   points: [
                     'Browse stations and set a home port locally with no sign-in required.',
-                    'See official UKHO tidal events whenever the API returns them.',
-                    'Predictions are only used to fill any gaps where UKHO events are unavailable.',
+                    'See official UKHO tidal events for next 7 days.',
+                    'Free use of the Scrubbing Day finder.',
                   ],
                 },
                 {
                   title: 'Signed-in (free) users',
                   emoji: '🧭',
                   points: [
-                    'Sync your saved home port and maintenance reminders across devices.',
-                    'Removal of Ads and synced home-port preferences across devices.',
+                    'Create a maintenance log and receive email reminders before important dates.',
+                    'Synced home-port preferences across devices.',
                     'Same UKHO + prediction blending as guest users.',
                   ],
                 },
@@ -1544,13 +1544,12 @@ export default function TidalCalendarApp() {
                   title: 'Subscribers',
                   emoji: '🌊',
                   points: [
-                    'Keep scrubbing guidance and reminders in sync with your subscription.',
-                    'Priority product updates and support for ongoing development.',
-                    'Same UKHO + prediction blending as every account tier.',
+                    'For subscribers, a full year of Tidal data for UK ports in Calendar and Scrubbing day finder views, for better planning.',
+                    'For purchasers, downloadable PDF of Home Port tide times .',
                   ],
                 },
                 {
-                  title: 'Partners',
+                  title: 'Partners - get in touch',
                   emoji: '🤝',
                   points: [
                     'Embed our app services inside partner sites as a streamlined widget.',
