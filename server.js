@@ -34,7 +34,7 @@ const isValidAbsoluteHttpUrl = (value) => {
 };
 
 const PORT = process.env.PORT || 3000;
-const API_BASE_URL = 'https://admiraltyapi.azure-api.net/uktidalapi/api/V1';
+const API_BASE_URL = process.env.ADMIRALTY_API_BASE_URL || 'https://admiraltyapi.azure-api.net/uktidalapi/api/V1';
 const API_KEY = process.env.ADMIRALTY_API_KEY || 'baec423358314e4e8f527980f959295d';
 const subscriberBaseUrlFromEnv = process.env.ADMIRALTY_SUBSCRIBER_TIDAL_API_BASE_URL;
 if (subscriberBaseUrlFromEnv && !isValidAbsoluteHttpUrl(subscriberBaseUrlFromEnv)) {
@@ -574,14 +574,17 @@ const getAdmiraltyApiConfig = (targetPath, user) => {
   return { baseUrl: API_BASE_URL, apiKey: API_KEY, source: 'default_tidal' };
 };
 
+const getAdmiraltyHeaders = (apiKey) => ({
+  Accept: 'application/json',
+  'Subscription-Key': apiKey,
+  'Ocp-Apim-Subscription-Key': apiKey,
+});
+
 const fetchAdmiraltyEvents = async ({ stationId, duration, user }) => {
   const targetPath = `Stations/${stationId}/TidalEvents?duration=${duration}`;
   const { baseUrl, apiKey } = getAdmiraltyApiConfig(targetPath, user);
   const response = await fetch(`${baseUrl}/${targetPath}`, {
-    headers: {
-      Accept: 'application/json',
-      'Subscription-Key': apiKey,
-    },
+    headers: getAdmiraltyHeaders(apiKey),
   });
   if (!response.ok) {
     throw new Error(`TidalEvents fetch failed (${response.status})`);
@@ -635,10 +638,7 @@ app.use('/api/Stations', async (req, res) => {
   const url = new URL(`${apiConfig.baseUrl}/${targetPath}`);
   try {
     const upstream = await fetch(url, {
-      headers: {
-        Accept: 'application/json',
-        'Subscription-Key': apiConfig.apiKey,
-      },
+      headers: getAdmiraltyHeaders(apiConfig.apiKey),
     });
 
     res.status(upstream.status);
@@ -1852,10 +1852,7 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
     // Fetch station data from Admiralty API
     const stationUrl = `${API_BASE_URL}/Stations/${req.user.home_port_id}`;
     const stationResponse = await fetch(stationUrl, {
-      headers: {
-        Accept: 'application/json',
-        'Subscription-Key': API_KEY,
-      },
+      headers: getAdmiraltyHeaders(API_KEY),
     });
 
     if (!stationResponse.ok) {
