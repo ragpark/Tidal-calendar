@@ -568,7 +568,7 @@ const hasPremiumTidalAccess = (user) => {
 const isTidalEventsPath = (targetPath) => /^Stations\/[^/]+\/TidalEvents(?:\?|$)/i.test(targetPath);
 
 const getAdmiraltyApiConfig = (targetPath, user) => {
-  if (isTidalEventsPath(targetPath) && hasPremiumTidalAccess(user)) {
+  if (hasPremiumTidalAccess(user)) {
     return { baseUrl: SUBSCRIBER_TIDAL_API_BASE_URL, apiKey: SUBSCRIBER_TIDAL_API_KEY, source: 'premium_tidal' };
   }
   return { baseUrl: API_BASE_URL, apiKey: API_KEY, source: 'default_tidal' };
@@ -637,7 +637,7 @@ app.use('/api/Stations', async (req, res) => {
     const upstream = await fetch(url, {
       headers: {
         Accept: 'application/json',
-        'Ocp-Apim-Subscription-Key': apiConfig.apiKey,
+        'Subscription-Key': apiConfig.apiKey,
       },
     });
 
@@ -1854,7 +1854,7 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
     const stationResponse = await fetch(stationUrl, {
       headers: {
         Accept: 'application/json',
-        'Ocp-Apim-Subscription-Key': API_KEY,
+        'Subscription-Key': API_KEY,
       },
     });
 
