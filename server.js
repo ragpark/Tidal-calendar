@@ -534,7 +534,7 @@ const hasPaidCalendarAccess = (user) => {
   return Boolean(user.has_pdf_calendar_access);
 };
 
-const hasSubscriberTidalAccess = (user) => {
+const hasPremiumTidalAccess = (user) => {
   if (!user) return false;
   return user.role === 'subscriber'
     || user.subscription_status === 'active'
@@ -544,8 +544,8 @@ const hasSubscriberTidalAccess = (user) => {
 const isTidalEventsPath = (targetPath) => /^Stations\/[^/]+\/TidalEvents(?:\?|$)/i.test(targetPath);
 
 const getAdmiraltyApiConfig = (targetPath, user) => {
-  if (isTidalEventsPath(targetPath) && hasSubscriberTidalAccess(user)) {
-    return { baseUrl: SUBSCRIBER_TIDAL_API_BASE_URL, apiKey: SUBSCRIBER_TIDAL_API_KEY, source: 'subscriber_tidal' };
+  if (isTidalEventsPath(targetPath) && hasPremiumTidalAccess(user)) {
+    return { baseUrl: SUBSCRIBER_TIDAL_API_BASE_URL, apiKey: SUBSCRIBER_TIDAL_API_KEY, source: 'premium_tidal' };
   }
   return { baseUrl: API_BASE_URL, apiKey: API_KEY, source: 'default_tidal' };
 };
