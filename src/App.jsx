@@ -389,14 +389,6 @@ export default function TidalCalendarApp() {
     const fallbackApiDuration = 7;
     const predictionDays = daysInMonth + 7;
     
-    const hasSubscriberApiAccess = Boolean(
-      user
-      && (
-        user.role === 'subscriber'
-        || user.subscription_status === 'active'
-        || user.has_pdf_calendar_access
-      )
-    );
     let apiEvents = [];
     let apiFetchFailed = false;
     if (apiKey && !isDemo) {
@@ -432,10 +424,8 @@ export default function TidalCalendarApp() {
     }
 
     let nextEvents = apiEvents;
-    if (hasSubscriberApiAccess) {
-      if (apiFetchFailed || apiEvents.length === 0) {
-        nextEvents = predictTidalEvents(station, monthStart, predictionDays);
-      }
+    if (apiFetchFailed || apiEvents.length === 0) {
+      nextEvents = predictTidalEvents(station, monthStart, predictionDays);
     } else {
       const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
       const apiDateSet = new Set(apiEvents.map(e => getLondonDateKey(e.DateTime)));
@@ -444,7 +434,7 @@ export default function TidalCalendarApp() {
 
     setTidalEvents(nextEvents.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)));
     setLoading(false);
-  }, [apiKey, isDemo, currentMonth, getLondonDateKey, user]);
+  }, [apiKey, isDemo, currentMonth, getLondonDateKey]);
 
   const persistHomePortSelection = useCallback((portId) => {
     if (typeof window === 'undefined') return;
@@ -1255,6 +1245,43 @@ export default function TidalCalendarApp() {
   const selectedDayEvents = selectedDay ? eventsByDay[getLondonDateKey(selectedDay)] || [] : [];
   const selectedDayHasUkhoApi = selectedDayEvents.some(e => e.Source === 'UKHO');
   const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
+  const currentTideTrend = useMemo(() => {
+    if (!selectedDay || tidalEvents.length < 2) return null;
+    if (getLondonDateKey(selectedDay) !== getLondonDateKey(new Date())) return null;
+
+    const timeline = [...tidalEvents]
+      .map((event) => ({ ...event, ts: new Date(event.DateTime).getTime() }))
+      .filter((event) => Number.isFinite(event.ts))
+      .sort((a, b) => a.ts - b.ts);
+    if (timeline.length < 2) return null;
+
+    const nowTs = Date.now();
+    let previous = null;
+    let next = null;
+    for (let i = 0; i < timeline.length; i += 1) {
+      const event = timeline[i];
+      if (event.ts <= nowTs) previous = event;
+      if (event.ts > nowTs) {
+        next = event;
+        break;
+      }
+    }
+    if (!previous || !next || next.ts <= previous.ts) return null;
+
+    let direction = null;
+    if (previous.EventType === 'LowWater') direction = 'rising';
+    if (previous.EventType === 'HighWater') direction = 'falling';
+    if (!direction) return null;
+
+    const progress = Math.max(0, Math.min(1, (nowTs - previous.ts) / (next.ts - previous.ts)));
+    return {
+      direction,
+      progress,
+      previousEvent: previous,
+      nextEvent: next,
+      remainingMs: Math.max(0, next.ts - nowTs),
+    };
+  }, [selectedDay, tidalEvents, getLondonDateKey]);
   const weatherIconUrl = weatherForecast?.day?.condition?.icon ? `https:${weatherForecast.day.condition.icon}` : '';
   const handleDaySelect = useCallback((date, allowSelection = true) => {
     if (!allowSelection) return;
@@ -2432,6 +2459,48 @@ export default function TidalCalendarApp() {
               </div>
             </div>
             <div style={{ padding: '20px', display: 'grid', gap: '16px' }}>
+              {currentTideTrend && (
+                <div
+                  style={{
+                    background: currentTideTrend.direction === 'rising' ? '#ecfeff' : '#f8fafc',
+                    border: `1px solid ${currentTideTrend.direction === 'rising' ? '#67e8f9' : '#cbd5e1'}`,
+                    borderRadius: '12px',
+                    padding: '12px',
+                    display: 'grid',
+                    gap: '8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>
+                      Tide right now: {currentTideTrend.direction === 'rising' ? '↗️ Rising' : '↘️ Falling'}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#475569' }}>
+                      {Math.round(currentTideTrend.progress * 100)}% to next {currentTideTrend.nextEvent.EventType === 'HighWater' ? 'high' : 'low'} tide
+                    </div>
+                  </div>
+                  <div style={{ height: '9px', borderRadius: '999px', background: '#e2e8f0', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${Math.round(currentTideTrend.progress * 100)}%`,
+                        height: '100%',
+                        borderRadius: '999px',
+                        background: currentTideTrend.direction === 'rising'
+                          ? 'linear-gradient(90deg, #06b6d4, #0ea5e9)'
+                          : 'linear-gradient(90deg, #64748b, #0f172a)',
+                        transition: 'width 0.4s ease',
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', fontSize: '12px', color: '#334155' }}>
+                    <span>
+                      Since {currentTideTrend.previousEvent.EventType === 'HighWater' ? 'high' : 'low'} tide at {formatTime(currentTideTrend.previousEvent.DateTime)}
+                    </span>
+                    <span>
+                      Next {currentTideTrend.nextEvent.EventType === 'HighWater' ? 'high' : 'low'} tide at {formatTime(currentTideTrend.nextEvent.DateTime)}
+                    </span>
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
                   {selectedDayEvents.map((event, i) => {
