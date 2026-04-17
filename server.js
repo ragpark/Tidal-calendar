@@ -23,13 +23,35 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const isValidAbsoluteHttpUrl = (value) => {
+  if (!value || typeof value !== 'string') return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
 const PORT = process.env.PORT || 3000;
 const API_BASE_URL = 'https://admiraltyapi.azure-api.net/uktidalapi/api/V1';
 const API_KEY = process.env.ADMIRALTY_API_KEY || 'baec423358314e4e8f527980f959295d';
+const subscriberBaseUrlFromEnv = process.env.ADMIRALTY_SUBSCRIBER_TIDAL_API_BASE_URL;
+const SUBSCRIBER_TIDAL_API_BASE_URL = isValidAbsoluteHttpUrl(subscriberBaseUrlFromEnv)
+  ? subscriberBaseUrlFromEnv
+  : API_BASE_URL;
+const SUBSCRIBER_TIDAL_API_KEY = process.env.ADMIRALTY_SUBSCRIBER_TIDAL_API_KEY || API_KEY;
 const SESSION_COOKIE = 'tc_session';
 const SESSION_TTL_HOURS = 24;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+
+if (subscriberBaseUrlFromEnv && !isValidAbsoluteHttpUrl(subscriberBaseUrlFromEnv)) {
+  console.warn(
+    'WARNING: ADMIRALTY_SUBSCRIBER_TIDAL_API_BASE_URL is invalid. Expected an absolute URL (http/https). Falling back to API_BASE_URL.',
+    { providedValue: subscriberBaseUrlFromEnv },
+  );
+}
 
 // Warn if DATABASE_URL missing but don't exit - let connection retry handle it
 if (!process.env.DATABASE_URL) {
@@ -532,6 +554,37 @@ const hasPaidCalendarAccess = (user) => {
   return Boolean(user.has_pdf_calendar_access);
 };
 
+const hasPremiumTidalAccess = (user) => {
+  if (!user) return false;
+  return user.role === 'subscriber'
+    || user.subscription_status === 'active'
+    || Boolean(user.has_pdf_calendar_access);
+};
+
+const isTidalEventsPath = (targetPath) => /^Stations\/[^/]+\/TidalEvents(?:\?|$)/i.test(targetPath);
+
+const getAdmiraltyApiConfig = (targetPath, user) => {
+  if (isTidalEventsPath(targetPath) && hasPremiumTidalAccess(user)) {
+    return { baseUrl: SUBSCRIBER_TIDAL_API_BASE_URL, apiKey: SUBSCRIBER_TIDAL_API_KEY, source: 'premium_tidal' };
+  }
+  return { baseUrl: API_BASE_URL, apiKey: API_KEY, source: 'default_tidal' };
+};
+
+const fetchAdmiraltyEvents = async ({ stationId, duration, user }) => {
+  const targetPath = `Stations/${stationId}/TidalEvents?duration=${duration}`;
+  const { baseUrl, apiKey } = getAdmiraltyApiConfig(targetPath, user);
+  const response = await fetch(`${baseUrl}/${targetPath}`, {
+    headers: {
+      Accept: 'application/json',
+      'Ocp-Apim-Subscription-Key': apiKey,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`TidalEvents fetch failed (${response.status})`);
+  }
+  return response.json();
+};
+
 const passwordResetLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -566,12 +619,21 @@ app.use(async (req, res, next) => {
 // Proxy to Admiralty API
 app.use('/api/Stations', async (req, res) => {
   const targetPath = req.originalUrl.replace('/api/', '');
-  const url = new URL(`${API_BASE_URL}/${targetPath}`);
+  let user = null;
+  if (dbReady && req.cookies?.[SESSION_COOKIE]) {
+    try {
+      user = await getUserFromSession(req);
+    } catch (err) {
+      console.warn('Failed to load session for Stations proxy:', err.message);
+    }
+  }
+  const apiConfig = getAdmiraltyApiConfig(targetPath, user);
+  const url = new URL(`${apiConfig.baseUrl}/${targetPath}`);
   try {
     const upstream = await fetch(url, {
       headers: {
         Accept: 'application/json',
-        'Ocp-Apim-Subscription-Key': API_KEY,
+        'Ocp-Apim-Subscription-Key': apiConfig.apiKey,
       },
     });
 
@@ -585,7 +647,7 @@ app.use('/api/Stations', async (req, res) => {
 
     Readable.fromWeb(upstream.body).pipe(res);
   } catch (err) {
-    console.error('Proxy error', err);
+    console.error('Proxy error', { err, targetPath, source: apiConfig.source });
     res.status(502).json({ error: 'Proxy request failed' });
   }
 });
@@ -1682,6 +1744,13 @@ const getSpringNeapFactor = (date) => {
   return 1 - (springProximity / 0.25);
 };
 
+const ensureUtcDateTimeString = (value) => {
+  if (!value) return value;
+  const stringValue = String(value);
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(stringValue)) return stringValue;
+  return `${stringValue}Z`;
+};
+
 const predictTidalEvents = (station, startDate, days) => {
   const events = [];
   const { mhws = 4.5, mhwn = 3.5, mlwn = 1.5, mlws = 0.5 } = station;
@@ -1764,7 +1833,23 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
     // Generate tide data for the entire year
     const currentYear = new Date().getFullYear();
     const startDate = new Date(currentYear, 0, 1); // January 1st of current year
-    const allEvents = predictTidalEvents(station, startDate, 365);
+    let allEvents = [];
+    try {
+      const rawApiEvents = await fetchAdmiraltyEvents({
+        stationId: req.user.home_port_id,
+        duration: 365,
+        user: req.user,
+      });
+      allEvents = (Array.isArray(rawApiEvents) ? rawApiEvents : []).map(event => ({
+        ...event,
+        DateTime: ensureUtcDateTimeString(event.DateTime),
+        IsPredicted: false,
+        Source: 'UKHO',
+      }));
+    } catch (err) {
+      console.warn('Subscriber/PDF tidal API failed for booklet generation, falling back to predictions:', err.message);
+      allEvents = predictTidalEvents(station, startDate, 365);
+    }
 
     // Group events by month
     const eventsByMonth = {};
