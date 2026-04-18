@@ -565,11 +565,6 @@ const hasExtendedTidalAccess = (user) => {
     || Boolean(user.has_pdf_calendar_access);
 };
 
-const toPremiumDateRangePath = (targetPath) => {
-  if (!isTidalEventsPath(targetPath)) {
-    return targetPath;
-  }
-
 const formatIsoDate = (date) => date.toISOString().slice(0, 10);
 
 const normalizeDurationDays = (duration, maxDurationDays) => {
