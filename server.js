@@ -570,17 +570,6 @@ const toPremiumDateRangePath = (targetPath) => {
     return targetPath;
   }
 
-  const [pathOnly, query = ''] = targetPath.split('?');
-  const stationId = pathOnly.split('/')[1];
-  if (!stationId) {
-    return targetPath;
-  }
-
-  const params = new URLSearchParams(query);
-  const startDate = params.get('StartDate') || params.get('startDate');
-  const endDate = params.get('EndDate') || params.get('endDate');
-  const duration = params.get('duration');
-
 const formatIsoDate = (date) => date.toISOString().slice(0, 10);
 
 const normalizeDurationDays = (duration, maxDurationDays) => {
