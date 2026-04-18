@@ -1414,9 +1414,26 @@ export default function TidalCalendarApp() {
   }, [embedConfig.compact, eventsByDay]);
 
   const scrubbingEntries = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     return Object.entries(scrubbingByDate)
       .map(([dateStr, data]) => ({ date: new Date(dateStr), data }))
-      .sort((a, b) => b.data.score - a.data.score || (a.date - b.date))
+      .sort((a, b) => {
+        const aDate = new Date(a.date);
+        const bDate = new Date(b.date);
+        aDate.setHours(0, 0, 0, 0);
+        bDate.setHours(0, 0, 0, 0);
+
+        const aIsFutureOrToday = aDate >= today;
+        const bIsFutureOrToday = bDate >= today;
+
+        if (aIsFutureOrToday !== bIsFutureOrToday) {
+          return aIsFutureOrToday ? -1 : 1;
+        }
+
+        return a.date - b.date;
+      })
       .slice(0, embedConfig.compact ? 4 : 8);
   }, [embedConfig.compact, scrubbingByDate]);
 
@@ -2563,7 +2580,24 @@ export default function TidalCalendarApp() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {Object.entries(scrubbingByDate)
-                      .sort((a, b) => b[1].score - a[1].score || new Date(a[0]) - new Date(b[0]))
+                      .sort((a, b) => {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+
+                        const aDate = new Date(a[0]);
+                        const bDate = new Date(b[0]);
+                        aDate.setHours(0, 0, 0, 0);
+                        bDate.setHours(0, 0, 0, 0);
+
+                        const aIsFutureOrToday = aDate >= today;
+                        const bIsFutureOrToday = bDate >= today;
+
+                        if (aIsFutureOrToday !== bIsFutureOrToday) {
+                          return aIsFutureOrToday ? -1 : 1;
+                        }
+
+                        return new Date(a[0]) - new Date(b[0]);
+                      })
                       .map(([dateStr, data], i) => {
                         const date = new Date(dateStr);
                         const isPredicted = data.highWater.IsPredicted;
