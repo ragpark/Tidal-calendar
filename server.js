@@ -633,7 +633,14 @@ const getAdmiraltyTargetPath = (targetPath, user) => {
   if (!isTidalEventsPath(targetPath)) {
     return targetPath;
   }
-  const maxDurationDays = hasExtendedTidalAccess(user) ? Number.POSITIVE_INFINITY : 7;
+  const isExtendedUser = hasExtendedTidalAccess(user);
+  if (isExtendedUser && targetPath.includes('duration=')) {
+    const [pathOnly, query = ''] = targetPath.split('?');
+    const params = new URLSearchParams(query);
+    params.set('duration', '365');
+    return toPremiumDateRangePath(`${pathOnly}?${params.toString()}`, 365);
+  }
+  const maxDurationDays = isExtendedUser ? 365 : 7;
   return toPremiumDateRangePath(targetPath, maxDurationDays);
 };
 

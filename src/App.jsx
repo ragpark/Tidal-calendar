@@ -391,8 +391,6 @@ export default function TidalCalendarApp() {
     
     const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
     const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
-    const apiDuration = daysInMonth + 7;
-    const fallbackApiDuration = 7;
     const predictionDays = daysInMonth + 7;
     
     const hasPremiumApiAccess = Boolean(
@@ -403,6 +401,8 @@ export default function TidalCalendarApp() {
         || user.has_pdf_calendar_access
       )
     );
+    const apiDuration = hasPremiumApiAccess ? 365 : (daysInMonth + 7);
+    const fallbackApiDuration = 7;
     let apiEvents = [];
     let apiFetchFailed = false;
     if (apiKey && !isDemo) {
