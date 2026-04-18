@@ -558,20 +558,58 @@ const hasPaidCalendarAccess = (user) => {
   return Boolean(user.has_pdf_calendar_access);
 };
 
-const hasPremiumTidalAccess = (user) => {
-  if (!user) return false;
-  return user.role === 'subscriber'
-    || user.subscription_status === 'active'
-    || Boolean(user.has_pdf_calendar_access);
-};
-
 const isTidalEventsPath = (targetPath) => /^Stations\/[^/]+\/TidalEvents(?:\?|$)/i.test(targetPath);
 
-const getAdmiraltyApiConfig = (targetPath, user) => {
-  if (hasPremiumTidalAccess(user)) {
-    return { baseUrl: "https://admiraltyapi.azure-api.net/uktidalapi-premium/api/V2", apiKey: "605d09171c3944faa3649d9dc9b4293b", source: 'premium_tidal' };
+const formatIsoDate = (date) => date.toISOString().slice(0, 10);
+
+const buildDateRangeFromDuration = (duration) => {
+  const normalizedDuration = Math.max(1, Number.parseInt(duration, 10) || 7);
+  const startDate = new Date();
+  startDate.setUTCHours(0, 0, 0, 0);
+  const endDate = new Date(startDate);
+  endDate.setUTCDate(endDate.getUTCDate() + normalizedDuration - 1);
+  return {
+    startDate: formatIsoDate(startDate),
+    endDate: formatIsoDate(endDate),
+  };
+};
+
+const toPremiumDateRangePath = (targetPath) => {
+  if (!isTidalEventsPath(targetPath)) {
+    return targetPath;
+  }
+
+  const [pathOnly, query = ''] = targetPath.split('?');
+  const stationId = pathOnly.split('/')[1];
+  if (!stationId) {
+    return targetPath;
+  }
+
+  const params = new URLSearchParams(query);
+  const startDate = params.get('StartDate') || params.get('startDate');
+  const endDate = params.get('EndDate') || params.get('endDate');
+  const duration = params.get('duration');
+
+  if (startDate && endDate) {
+    return `Stations/${stationId}/TidalEventsForDateRange?StartDate=${encodeURIComponent(startDate)}&EndDate=${encodeURIComponent(endDate)}`;
+  }
+
+  const { startDate: computedStart, endDate: computedEnd } = buildDateRangeFromDuration(duration);
+  return `Stations/${stationId}/TidalEventsForDateRange?StartDate=${computedStart}&EndDate=${computedEnd}`;
+};
+
+const getAdmiraltyApiConfig = (targetPath) => {
+  if (isTidalEventsPath(targetPath)) {
+    return { baseUrl: 'https://admiraltyapi.azure-api.net/uktidalapi-premium/api/V2', apiKey: '605d09171c3944faa3649d9dc9b4293b', source: 'premium_tidal' };
   }
   return { baseUrl: API_BASE_URL, apiKey: API_KEY, source: 'default_tidal' };
+};
+
+const getAdmiraltyTargetPath = (targetPath) => {
+  if (!isTidalEventsPath(targetPath)) {
+    return targetPath;
+  }
+  return toPremiumDateRangePath(targetPath);
 };
 
 const getAdmiraltyHeaders = (apiKey) => ({
@@ -580,10 +618,11 @@ const getAdmiraltyHeaders = (apiKey) => ({
   'Ocp-Apim-Subscription-Key': apiKey,
 });
 
-const fetchAdmiraltyEvents = async ({ stationId, duration, user }) => {
+const fetchAdmiraltyEvents = async ({ stationId, duration }) => {
   const targetPath = `Stations/${stationId}/TidalEvents?duration=${duration}`;
-  const { baseUrl, apiKey } = getAdmiraltyApiConfig(targetPath, user);
-  const response = await fetch(`${baseUrl}/${targetPath}`, {
+  const { baseUrl, apiKey } = getAdmiraltyApiConfig(targetPath);
+  const apiTargetPath = getAdmiraltyTargetPath(targetPath);
+  const response = await fetch(`${baseUrl}/${apiTargetPath}`, {
     headers: getAdmiraltyHeaders(apiKey),
   });
   if (!response.ok) {
@@ -626,16 +665,9 @@ app.use(async (req, res, next) => {
 // Proxy to Admiralty API
 app.use('/api/Stations', async (req, res) => {
   const targetPath = req.originalUrl.replace('/api/', '');
-  let user = null;
-  if (dbReady && req.cookies?.[SESSION_COOKIE]) {
-    try {
-      user = await getUserFromSession(req);
-    } catch (err) {
-      console.warn('Failed to load session for Stations proxy:', err.message);
-    }
-  }
-  const apiConfig = getAdmiraltyApiConfig(targetPath, user);
-  const url = new URL(`${apiConfig.baseUrl}/${targetPath}`);
+  const apiConfig = getAdmiraltyApiConfig(targetPath);
+  const apiTargetPath = getAdmiraltyTargetPath(targetPath);
+  const url = new URL(`${apiConfig.baseUrl}/${apiTargetPath}`);
   try {
     const upstream = await fetch(url, {
       headers: getAdmiraltyHeaders(apiConfig.apiKey),
@@ -651,7 +683,7 @@ app.use('/api/Stations', async (req, res) => {
 
     Readable.fromWeb(upstream.body).pipe(res);
   } catch (err) {
-    console.error('Proxy error', { err, targetPath, source: apiConfig.source });
+    console.error('Proxy error', { err, targetPath, apiTargetPath, source: apiConfig.source });
     res.status(502).json({ error: 'Proxy request failed' });
   }
 });
@@ -1869,7 +1901,6 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
       const rawApiEvents = await fetchAdmiraltyEvents({
         stationId: req.user.home_port_id,
         duration: 365,
-        user: req.user,
       });
       allEvents = (Array.isArray(rawApiEvents) ? rawApiEvents : []).map(event => ({
         ...event,
