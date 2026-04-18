@@ -1,12 +1,17 @@
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
-if (!RESEND_API_KEY) {
-  throw new Error('RESEND_API_KEY is required to send transactional emails.');
-}
-
 const RESEND_API_BASE = 'https://api.resend.com';
 
 const sendEmail = async (payload) => {
+  if (!RESEND_API_KEY) {
+    return {
+      error: {
+        message: 'RESEND_API_KEY is required to send transactional emails.',
+        statusCode: 500,
+      },
+    };
+  }
+
   const res = await fetch(`${RESEND_API_BASE}/emails`, {
     method: 'POST',
     headers: {

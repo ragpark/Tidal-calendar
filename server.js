@@ -558,7 +558,7 @@ const hasPaidCalendarAccess = (user) => {
   return Boolean(user.has_pdf_calendar_access);
 };
 
-const hasPremiumTidalAccess = (user) => {
+const hasExtendedTidalAccess = (user) => {
   if (!user) return false;
   return user.role === 'subscriber'
     || user.subscription_status === 'active'
@@ -567,11 +567,74 @@ const hasPremiumTidalAccess = (user) => {
 
 const isTidalEventsPath = (targetPath) => /^Stations\/[^/]+\/TidalEvents(?:\?|$)/i.test(targetPath);
 
-const getAdmiraltyApiConfig = (targetPath, user) => {
-  if (hasPremiumTidalAccess(user)) {
-    return { baseUrl: "https://admiraltyapi.azure-api.net/uktidalapi-premium/api/V2", apiKey: "605d09171c3944faa3649d9dc9b4293b", source: 'premium_tidal' };
+const formatIsoDate = (date) => date.toISOString().slice(0, 10);
+
+const normalizeDurationDays = (duration, maxDurationDays) => {
+  const parsedDuration = Number.parseInt(duration, 10);
+  const normalizedDuration = Math.max(1, Number.isFinite(parsedDuration) ? parsedDuration : 7);
+  if (!Number.isFinite(maxDurationDays)) {
+    return normalizedDuration;
+  }
+  return Math.min(normalizedDuration, Math.max(1, maxDurationDays));
+};
+
+const buildDateRangeFromDuration = (duration, maxDurationDays = Number.POSITIVE_INFINITY) => {
+  const normalizedDuration = normalizeDurationDays(duration, maxDurationDays);
+  const startDate = new Date();
+  startDate.setUTCHours(0, 0, 0, 0);
+  const endDate = new Date(startDate);
+  endDate.setUTCDate(endDate.getUTCDate() + normalizedDuration - 1);
+  return {
+    startDate: formatIsoDate(startDate),
+    endDate: formatIsoDate(endDate),
+  };
+};
+
+const toPremiumDateRangePath = (targetPath, maxDurationDays = Number.POSITIVE_INFINITY) => {
+  if (!isTidalEventsPath(targetPath)) {
+    return targetPath;
+  }
+
+  const [pathOnly, query = ''] = targetPath.split('?');
+  const stationId = pathOnly.split('/')[1];
+  if (!stationId) {
+    return targetPath;
+  }
+
+  const params = new URLSearchParams(query);
+  const startDate = params.get('StartDate') || params.get('startDate');
+  const endDate = params.get('EndDate') || params.get('endDate');
+  const duration = params.get('duration');
+
+  if (startDate && endDate) {
+    const startDateValue = new Date(startDate);
+    const endDateValue = new Date(endDate);
+    if (Number.isFinite(maxDurationDays) && !Number.isNaN(startDateValue.getTime()) && !Number.isNaN(endDateValue.getTime())) {
+      const clampedEndDate = new Date(startDateValue);
+      clampedEndDate.setUTCDate(clampedEndDate.getUTCDate() + Math.max(1, maxDurationDays) - 1);
+      const effectiveEndDate = endDateValue > clampedEndDate ? clampedEndDate : endDateValue;
+      return `Stations/${stationId}/TidalEventsForDateRange?StartDate=${encodeURIComponent(formatIsoDate(startDateValue))}&EndDate=${encodeURIComponent(formatIsoDate(effectiveEndDate))}`;
+    }
+    return `Stations/${stationId}/TidalEventsForDateRange?StartDate=${encodeURIComponent(startDate)}&EndDate=${encodeURIComponent(endDate)}`;
+  }
+
+  const { startDate: computedStart, endDate: computedEnd } = buildDateRangeFromDuration(duration, maxDurationDays);
+  return `Stations/${stationId}/TidalEventsForDateRange?StartDate=${computedStart}&EndDate=${computedEnd}`;
+};
+
+const getAdmiraltyApiConfig = (targetPath) => {
+  if (isTidalEventsPath(targetPath)) {
+    return { baseUrl: 'https://admiraltyapi.azure-api.net/uktidalapi-premium/api/V2', apiKey: '605d09171c3944faa3649d9dc9b4293b', source: 'premium_tidal' };
   }
   return { baseUrl: API_BASE_URL, apiKey: API_KEY, source: 'default_tidal' };
+};
+
+const getAdmiraltyTargetPath = (targetPath, user) => {
+  if (!isTidalEventsPath(targetPath)) {
+    return targetPath;
+  }
+  const maxDurationDays = hasExtendedTidalAccess(user) ? Number.POSITIVE_INFINITY : 7;
+  return toPremiumDateRangePath(targetPath, maxDurationDays);
 };
 
 const getAdmiraltyHeaders = (apiKey) => ({
@@ -582,8 +645,9 @@ const getAdmiraltyHeaders = (apiKey) => ({
 
 const fetchAdmiraltyEvents = async ({ stationId, duration, user }) => {
   const targetPath = `Stations/${stationId}/TidalEvents?duration=${duration}`;
-  const { baseUrl, apiKey } = getAdmiraltyApiConfig(targetPath, user);
-  const response = await fetch(`${baseUrl}/${targetPath}`, {
+  const { baseUrl, apiKey } = getAdmiraltyApiConfig(targetPath);
+  const apiTargetPath = getAdmiraltyTargetPath(targetPath, user);
+  const response = await fetch(`${baseUrl}/${apiTargetPath}`, {
     headers: getAdmiraltyHeaders(apiKey),
   });
   if (!response.ok) {
@@ -634,8 +698,9 @@ app.use('/api/Stations', async (req, res) => {
       console.warn('Failed to load session for Stations proxy:', err.message);
     }
   }
-  const apiConfig = getAdmiraltyApiConfig(targetPath, user);
-  const url = new URL(`${apiConfig.baseUrl}/${targetPath}`);
+  const apiConfig = getAdmiraltyApiConfig(targetPath);
+  const apiTargetPath = getAdmiraltyTargetPath(targetPath, user);
+  const url = new URL(`${apiConfig.baseUrl}/${apiTargetPath}`);
   try {
     const upstream = await fetch(url, {
       headers: getAdmiraltyHeaders(apiConfig.apiKey),
@@ -651,7 +716,7 @@ app.use('/api/Stations', async (req, res) => {
 
     Readable.fromWeb(upstream.body).pipe(res);
   } catch (err) {
-    console.error('Proxy error', { err, targetPath, source: apiConfig.source });
+    console.error('Proxy error', { err, targetPath, apiTargetPath, source: apiConfig.source });
     res.status(502).json({ error: 'Proxy request failed' });
   }
 });
