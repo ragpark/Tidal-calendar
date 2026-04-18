@@ -558,20 +558,11 @@ const hasPaidCalendarAccess = (user) => {
   return Boolean(user.has_pdf_calendar_access);
 };
 
-const isTidalEventsPath = (targetPath) => /^Stations\/[^/]+\/TidalEvents(?:\?|$)/i.test(targetPath);
-
-const formatIsoDate = (date) => date.toISOString().slice(0, 10);
-
-const buildDateRangeFromDuration = (duration) => {
-  const normalizedDuration = Math.max(1, Number.parseInt(duration, 10) || 7);
-  const startDate = new Date();
-  startDate.setUTCHours(0, 0, 0, 0);
-  const endDate = new Date(startDate);
-  endDate.setUTCDate(endDate.getUTCDate() + normalizedDuration - 1);
-  return {
-    startDate: formatIsoDate(startDate),
-    endDate: formatIsoDate(endDate),
-  };
+const hasExtendedTidalAccess = (user) => {
+  if (!user) return false;
+  return user.role === 'subscriber'
+    || user.subscription_status === 'active'
+    || Boolean(user.has_pdf_calendar_access);
 };
 
 const toPremiumDateRangePath = (targetPath) => {
@@ -590,11 +581,58 @@ const toPremiumDateRangePath = (targetPath) => {
   const endDate = params.get('EndDate') || params.get('endDate');
   const duration = params.get('duration');
 
+const formatIsoDate = (date) => date.toISOString().slice(0, 10);
+
+const normalizeDurationDays = (duration, maxDurationDays) => {
+  const parsedDuration = Number.parseInt(duration, 10);
+  const normalizedDuration = Math.max(1, Number.isFinite(parsedDuration) ? parsedDuration : 7);
+  if (!Number.isFinite(maxDurationDays)) {
+    return normalizedDuration;
+  }
+  return Math.min(normalizedDuration, Math.max(1, maxDurationDays));
+};
+
+const buildDateRangeFromDuration = (duration, maxDurationDays = Number.POSITIVE_INFINITY) => {
+  const normalizedDuration = normalizeDurationDays(duration, maxDurationDays);
+  const startDate = new Date();
+  startDate.setUTCHours(0, 0, 0, 0);
+  const endDate = new Date(startDate);
+  endDate.setUTCDate(endDate.getUTCDate() + normalizedDuration - 1);
+  return {
+    startDate: formatIsoDate(startDate),
+    endDate: formatIsoDate(endDate),
+  };
+};
+
+const toPremiumDateRangePath = (targetPath, maxDurationDays = Number.POSITIVE_INFINITY) => {
+  if (!isTidalEventsPath(targetPath)) {
+    return targetPath;
+  }
+
+  const [pathOnly, query = ''] = targetPath.split('?');
+  const stationId = pathOnly.split('/')[1];
+  if (!stationId) {
+    return targetPath;
+  }
+
+  const params = new URLSearchParams(query);
+  const startDate = params.get('StartDate') || params.get('startDate');
+  const endDate = params.get('EndDate') || params.get('endDate');
+  const duration = params.get('duration');
+
   if (startDate && endDate) {
+    const startDateValue = new Date(startDate);
+    const endDateValue = new Date(endDate);
+    if (Number.isFinite(maxDurationDays) && !Number.isNaN(startDateValue.getTime()) && !Number.isNaN(endDateValue.getTime())) {
+      const clampedEndDate = new Date(startDateValue);
+      clampedEndDate.setUTCDate(clampedEndDate.getUTCDate() + Math.max(1, maxDurationDays) - 1);
+      const effectiveEndDate = endDateValue > clampedEndDate ? clampedEndDate : endDateValue;
+      return `Stations/${stationId}/TidalEventsForDateRange?StartDate=${encodeURIComponent(formatIsoDate(startDateValue))}&EndDate=${encodeURIComponent(formatIsoDate(effectiveEndDate))}`;
+    }
     return `Stations/${stationId}/TidalEventsForDateRange?StartDate=${encodeURIComponent(startDate)}&EndDate=${encodeURIComponent(endDate)}`;
   }
 
-  const { startDate: computedStart, endDate: computedEnd } = buildDateRangeFromDuration(duration);
+  const { startDate: computedStart, endDate: computedEnd } = buildDateRangeFromDuration(duration, maxDurationDays);
   return `Stations/${stationId}/TidalEventsForDateRange?StartDate=${computedStart}&EndDate=${computedEnd}`;
 };
 
@@ -605,11 +643,12 @@ const getAdmiraltyApiConfig = (targetPath) => {
   return { baseUrl: API_BASE_URL, apiKey: API_KEY, source: 'default_tidal' };
 };
 
-const getAdmiraltyTargetPath = (targetPath) => {
+const getAdmiraltyTargetPath = (targetPath, user) => {
   if (!isTidalEventsPath(targetPath)) {
     return targetPath;
   }
-  return toPremiumDateRangePath(targetPath);
+  const maxDurationDays = hasExtendedTidalAccess(user) ? Number.POSITIVE_INFINITY : 7;
+  return toPremiumDateRangePath(targetPath, maxDurationDays);
 };
 
 const getAdmiraltyHeaders = (apiKey) => ({
@@ -621,7 +660,7 @@ const getAdmiraltyHeaders = (apiKey) => ({
 const fetchAdmiraltyEvents = async ({ stationId, duration }) => {
   const targetPath = `Stations/${stationId}/TidalEvents?duration=${duration}`;
   const { baseUrl, apiKey } = getAdmiraltyApiConfig(targetPath);
-  const apiTargetPath = getAdmiraltyTargetPath(targetPath);
+  const apiTargetPath = getAdmiraltyTargetPath(targetPath, user);
   const response = await fetch(`${baseUrl}/${apiTargetPath}`, {
     headers: getAdmiraltyHeaders(apiKey),
   });
@@ -665,8 +704,16 @@ app.use(async (req, res, next) => {
 // Proxy to Admiralty API
 app.use('/api/Stations', async (req, res) => {
   const targetPath = req.originalUrl.replace('/api/', '');
+  let user = null;
+  if (dbReady && req.cookies?.[SESSION_COOKIE]) {
+    try {
+      user = await getUserFromSession(req);
+    } catch (err) {
+      console.warn('Failed to load session for Stations proxy:', err.message);
+    }
+  }
   const apiConfig = getAdmiraltyApiConfig(targetPath);
-  const apiTargetPath = getAdmiraltyTargetPath(targetPath);
+  const apiTargetPath = getAdmiraltyTargetPath(targetPath, user);
   const url = new URL(`${apiConfig.baseUrl}/${apiTargetPath}`);
   try {
     const upstream = await fetch(url, {
