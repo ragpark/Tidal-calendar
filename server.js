@@ -565,10 +565,7 @@ const hasExtendedTidalAccess = (user) => {
     || Boolean(user.has_pdf_calendar_access);
 };
 
-const toPremiumDateRangePath = (targetPath) => {
-  if (!isTidalEventsPath(targetPath)) {
-    return targetPath;
-  }
+const isTidalEventsPath = (targetPath = '') => /^Stations\/[^/]+\/TidalEvents(?:ForDateRange)?(?:\?|$)/.test(String(targetPath));
 
 const formatIsoDate = (date) => date.toISOString().slice(0, 10);
 
@@ -646,7 +643,7 @@ const getAdmiraltyHeaders = (apiKey) => ({
   'Ocp-Apim-Subscription-Key': apiKey,
 });
 
-const fetchAdmiraltyEvents = async ({ stationId, duration }) => {
+const fetchAdmiraltyEvents = async ({ stationId, duration, user = null }) => {
   const targetPath = `Stations/${stationId}/TidalEvents?duration=${duration}`;
   const { baseUrl, apiKey } = getAdmiraltyApiConfig(targetPath);
   const apiTargetPath = getAdmiraltyTargetPath(targetPath, user);
@@ -1937,6 +1934,7 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
       const rawApiEvents = await fetchAdmiraltyEvents({
         stationId: req.user.home_port_id,
         duration: 365,
+        user: req.user,
       });
       allEvents = (Array.isArray(rawApiEvents) ? rawApiEvents : []).map(event => ({
         ...event,
