@@ -541,9 +541,13 @@ export default function TidalCalendarApp() {
     if (isEmbed && embedConfig.view) setViewMode(embedConfig.view);
   }, [embedConfig.view, isEmbed]);
 
-  const filteredStations = stations.filter(s =>
-    s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.country.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const normalizedStationSearchQuery = searchQuery.trim().toLowerCase();
+  const hasStationSearchInput = normalizedStationSearchQuery.length > 0;
+  const filteredStations = hasStationSearchInput
+    ? stations.filter(s =>
+      s.name.toLowerCase().includes(normalizedStationSearchQuery) || s.country.toLowerCase().includes(normalizedStationSearchQuery)
+    )
+    : [];
 
   useEffect(() => {
     if (user?.subscription_period_end) {
@@ -2368,19 +2372,30 @@ export default function TidalCalendarApp() {
                     Search for your nearest port to load your tidal calendar.
                   </p>
                 )}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
-                  {filteredStations.slice(0, 16).map(station => (
-                    <button
-                      key={station.id}
-                      className="station-card"
-                      onClick={() => applySelectedStation(station.id)}
-                      style={{ background: selectedStation?.id === station.id ? '#e0f2fe' : '#ffffff', border: `1px solid ${selectedStation?.id === station.id ? '#0ea5e9' : '#cbd5e1'}`, borderRadius: '10px', padding: '12px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}
-                    >
-                      <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a', marginBottom: '2px' }}>{station.name}</div>
-                      <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#475569', letterSpacing: '1px', textTransform: 'uppercase' }}>{station.country}</div>
-                    </button>
-                  ))}
-                </div>
+                {!hasStationSearchInput ? (
+                  <p style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#475569' }}>
+                    Start typing to find tidal stations.
+                  </p>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+                    {filteredStations.slice(0, 16).map(station => (
+                      <button
+                        key={station.id}
+                        className="station-card"
+                        onClick={() => applySelectedStation(station.id)}
+                        style={{ background: selectedStation?.id === station.id ? '#e0f2fe' : '#ffffff', border: `1px solid ${selectedStation?.id === station.id ? '#0ea5e9' : '#cbd5e1'}`, borderRadius: '10px', padding: '12px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}
+                      >
+                        <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a', marginBottom: '2px' }}>{station.name}</div>
+                        <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#475569', letterSpacing: '1px', textTransform: 'uppercase' }}>{station.country}</div>
+                      </button>
+                    ))}
+                    {filteredStations.length === 0 && (
+                      <p style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#475569' }}>
+                        No stations match your search yet.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </section>
             {/* Calendar & Detail */}
