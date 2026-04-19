@@ -401,7 +401,9 @@ export default function TidalCalendarApp() {
         || user.has_pdf_calendar_access
       )
     );
-    const apiDuration = hasPremiumApiAccess ? 365 : (daysInMonth + 7);
+    // Keep non-premium users (including signed-in basic accounts) on the same
+    // UKHO window as guests: a strict 7-day duration.
+    const apiDuration = hasPremiumApiAccess ? 365 : 7;
     const fallbackApiDuration = 7;
     let apiEvents = [];
     let apiFetchFailed = false;
