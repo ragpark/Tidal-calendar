@@ -395,10 +395,8 @@ export default function TidalCalendarApp() {
     
     const hasPremiumApiAccess = Boolean(
       user
-      && (
-        user.role === 'subscriber'
-        || user.has_pdf_calendar_access
-      )
+      && user.subscription_status === 'active'
+      && user.has_pdf_calendar_access
     );
     // Keep non-premium users (including signed-in basic accounts) on the same
     // UKHO window as guests: a strict 7-day duration.
