@@ -397,7 +397,6 @@ export default function TidalCalendarApp() {
       user
       && (
         user.role === 'subscriber'
-        || user.subscription_status === 'active'
         || user.has_pdf_calendar_access
       )
     );

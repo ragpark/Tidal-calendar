@@ -561,7 +561,6 @@ const hasPaidCalendarAccess = (user) => {
 const hasExtendedTidalAccess = (user) => {
   if (!user) return false;
   return user.role === 'subscriber'
-    || user.subscription_status === 'active'
     || Boolean(user.has_pdf_calendar_access);
 };
 
