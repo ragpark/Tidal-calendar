@@ -440,6 +440,19 @@ export default function TidalCalendarApp() {
     }
 
     const shouldBlendPredictedEvents = !hasPremiumApiAccess;
+
+    if (shouldBlendPredictedEvents && apiEvents.length > 0) {
+      const nonPremiumWindowStart = new Date();
+      nonPremiumWindowStart.setUTCHours(0, 0, 0, 0);
+      const nonPremiumWindowEnd = new Date(nonPremiumWindowStart);
+      nonPremiumWindowEnd.setUTCDate(nonPremiumWindowEnd.getUTCDate() + 6);
+      apiEvents = apiEvents.filter((event) => {
+        const eventDate = new Date(event.DateTime);
+        if (Number.isNaN(eventDate.getTime())) return false;
+        return eventDate >= nonPremiumWindowStart && eventDate <= nonPremiumWindowEnd;
+      });
+    }
+
     let nextEvents = apiEvents;
     if (!shouldBlendPredictedEvents) {
       if (apiFetchFailed || apiEvents.length === 0) {
