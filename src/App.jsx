@@ -439,12 +439,15 @@ export default function TidalCalendarApp() {
       }
     }
 
+    const shouldBlendPredictedEvents = !hasPremiumApiAccess;
     let nextEvents = apiEvents;
-    if (hasPremiumApiAccess) {
+    if (!shouldBlendPredictedEvents) {
       if (apiFetchFailed || apiEvents.length === 0) {
         nextEvents = predictTidalEvents(station, monthStart, predictionDays);
       }
     } else {
+      // Non-premium users (guest + signed-in basic users) should always receive
+      // prediction blending beyond the clamped UKHO data window.
       const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
       const apiDateSet = new Set(apiEvents.map(e => getLondonDateKey(e.DateTime)));
       nextEvents = [...apiEvents, ...predictedEvents.filter(e => !apiDateSet.has(getLondonDateKey(e.DateTime)))];
