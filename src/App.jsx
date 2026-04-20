@@ -2334,7 +2334,10 @@ export default function TidalCalendarApp() {
                       id="blog-editor-area"
                       contentEditable
                       suppressContentEditableWarning
-                      onInput={(event) => setBlogEditor((form) => ({ ...form, contentHtml: event.currentTarget.innerHTML }))}
+                      onInput={(event) => {
+                        const contentHtml = event.currentTarget.innerHTML;
+                        setBlogEditor((form) => ({ ...form, contentHtml }));
+                      }}
                       style={{ minHeight: '220px', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff', lineHeight: 1.6 }}
                       dangerouslySetInnerHTML={{ __html: blogEditor.contentHtml }}
                     />
