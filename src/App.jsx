@@ -1715,8 +1715,8 @@ export default function TidalCalendarApp() {
                   title: 'Subscribers',
                   emoji: '🌊',
                   points: [
-                    'For subscribers, a full year of Tidal data for UK ports in Calendar and Scrubbing day finder views, for better planning.',
-                    'For purchasers, downloadable PDF of Home Port tide times .',
+                    'A full year (365 days from purchase) of Tidal data for UK ports in Calendar and identification of best scrubbing days for 365 days.',
+                    'A downloadable PDF of Home Port tide times.',
                   ],
                 },
                 {
@@ -2602,7 +2602,7 @@ export default function TidalCalendarApp() {
             {!loading && viewMode === 'scrubbing' && (
               <div>
                 <h3 style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600, color: '#0f172a', marginBottom: '16px' }}>
-                  Suitable Scrubbing Days in {formatLondonDate(currentMonth, { month: 'long', year: 'numeric' })}
+                  Suitable Scrubbing Days from {formatLondonDate(currentMonth, { month: 'long', year: 'numeric' })}
                 </h3>
                 
                 {Object.keys(scrubbingByDate).length === 0 ? (
