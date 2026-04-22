@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ScrubAdvisorChatbot from './chatbot/ScrubAdvisorChatbot';
 
 // UK Admiralty Tidal API Configuration
@@ -266,6 +266,7 @@ export default function TidalCalendarApp() {
   const [selectedBlogPostId, setSelectedBlogPostId] = useState(null);
   const [pendingBlogSlug, setPendingBlogSlug] = useState(initialRoute.blogSlug);
   const [blogEditor, setBlogEditor] = useState({ id: null, title: '', excerpt: '', coverImageUrl: '', contentHtml: '' });
+  const blogCarouselRef = useRef(null);
   const [currentPage, setCurrentPage] = useState(initialRoute.page);
   const [authMode, setAuthMode] = useState('signin');
   const [authForm, setAuthForm] = useState({ email: '', password: '' });
@@ -1706,6 +1707,10 @@ export default function TidalCalendarApp() {
           .profile-log-row { flex-direction: column; align-items: flex-start !important; }
           .profile-log-actions { width: 100%; }
           .profile-log-actions button { flex: 1; }
+          .blog-shell { padding: 18px !important; }
+          .blog-title { font-size: 24px !important; }
+          .blog-carousel-nav { flex-wrap: wrap; }
+          .blog-carousel-nav button { flex: 1; min-width: 140px; }
         }
         ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); } ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 4px; }
       `}</style>
@@ -1810,7 +1815,7 @@ export default function TidalCalendarApp() {
         )}
 
         {currentPage === 'blog' && (
-          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '16px', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
+          <section className="blog-shell" style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '16px', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
             <header style={{ display: 'grid', gap: '6px' }}>
               <p style={{ margin: 0, fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9' }}>Tidal Blog</p>
               <h2 style={{ margin: 0, color: '#0f172a' }}>Latest marine maintenance articles</h2>
@@ -1820,8 +1825,31 @@ export default function TidalCalendarApp() {
             {!blogLoading && blogPosts.length === 0 && <div style={{ color: '#334155' }}>No blog posts have been published yet.</div>}
 
             {!blogLoading && blogPosts.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 340px) 1fr', gap: '18px' }}>
-                <aside style={{ display: 'grid', gap: '10px', alignContent: 'start' }}>
+              <div style={{ display: 'grid', gap: '18px' }}>
+                <div style={{ display: 'grid', gap: '10px' }}>
+                  <div className="blog-carousel-nav" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#475569', fontWeight: 600 }}>Browse articles</p>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => blogCarouselRef.current?.scrollBy({ left: -320, behavior: 'smooth' })}
+                        style={{ padding: '8px 12px', borderRadius: '999px', border: '1px solid #cbd5e1', background: '#fff', color: '#0f172a', cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        ← Previous
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => blogCarouselRef.current?.scrollBy({ left: 320, behavior: 'smooth' })}
+                        style={{ padding: '8px 12px', borderRadius: '999px', border: '1px solid #0284c7', background: '#e0f2fe', color: '#075985', cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    ref={blogCarouselRef}
+                    style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '6px', scrollSnapType: 'x mandatory' }}
+                  >
                   {blogPosts.map((post) => (
                     <button
                       key={post.id}
@@ -1835,6 +1863,10 @@ export default function TidalCalendarApp() {
                         cursor: 'pointer',
                         display: 'grid',
                         gap: '6px',
+                        minWidth: 'min(320px, 86vw)',
+                        maxWidth: '420px',
+                        flex: '0 0 auto',
+                        scrollSnapAlign: 'start',
                       }}
                     >
                       <div style={{ fontWeight: 600, color: '#0f172a' }}>{post.title}</div>
@@ -1842,12 +1874,13 @@ export default function TidalCalendarApp() {
                       <div style={{ fontSize: '13px', color: '#334155' }}>{post.excerpt}</div>
                     </button>
                   ))}
-                </aside>
+                  </div>
+                </div>
 
                 {selectedBlogPost && (
-                  <article style={{ display: 'grid', gap: '12px', alignContent: 'start' }}>
+                  <article style={{ display: 'grid', gap: '12px', alignContent: 'start', width: '100%' }}>
                     <header style={{ display: 'grid', gap: '6px' }}>
-                      <h3 style={{ margin: 0, fontSize: '30px', color: '#0f172a' }}>{selectedBlogPost.title}</h3>
+                      <h3 className="blog-title" style={{ margin: 0, fontSize: '32px', color: '#0f172a', lineHeight: 1.2 }}>{selectedBlogPost.title}</h3>
                       <div style={{ color: '#64748b', fontSize: '13px' }}>
                         {new Date(selectedBlogPost.publishedAt).toLocaleDateString('en-GB')} • {selectedBlogPost.authorEmail || 'Admin'}
                       </div>
