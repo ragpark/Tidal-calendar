@@ -62,6 +62,16 @@ const parseEmbedConfig = () => {
   return { enabled, stationId, view, theme, accent, compact };
 };
 
+const getInitialAppRoute = () => {
+  if (typeof window === 'undefined') return { page: 'calendar', blogSlug: null };
+  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (pathname === '/blog') return { page: 'blog', blogSlug: null };
+  if (pathname.startsWith('/blog/')) {
+    return { page: 'blog', blogSlug: decodeURIComponent(pathname.slice('/blog/'.length)).toLowerCase() || null };
+  }
+  return { page: 'calendar', blogSlug: null };
+};
+
 // Sample stations with tidal characteristics for prediction
 const DEMO_STATIONS = [
   { id: '0001', name: 'Aberdeen', country: 'Scotland', lat: 57.143, lon: -2.079, mhws: 4.3, mhwn: 3.4, mlwn: 1.3, mlws: 0.5 },
@@ -221,6 +231,7 @@ const ScrubbingBadge = ({ small = false }) => {
 // ===========================================
 
 export default function TidalCalendarApp() {
+  const initialRoute = useMemo(() => getInitialAppRoute(), []);
   const [embedConfig] = useState(() => parseEmbedConfig());
   const isEmbed = embedConfig.enabled;
   const accentColor = embedConfig.accent || '#0ea5e9';
@@ -253,8 +264,9 @@ export default function TidalCalendarApp() {
   const [blogError, setBlogError] = useState('');
   const [blogAdminError, setBlogAdminError] = useState('');
   const [selectedBlogPostId, setSelectedBlogPostId] = useState(null);
+  const [pendingBlogSlug, setPendingBlogSlug] = useState(initialRoute.blogSlug);
   const [blogEditor, setBlogEditor] = useState({ id: null, title: '', excerpt: '', coverImageUrl: '', contentHtml: '' });
-  const [currentPage, setCurrentPage] = useState('calendar');
+  const [currentPage, setCurrentPage] = useState(initialRoute.page);
   const [authMode, setAuthMode] = useState('signin');
   const [authForm, setAuthForm] = useState({ email: '', password: '' });
   const [authError, setAuthError] = useState('');
@@ -346,6 +358,33 @@ export default function TidalCalendarApp() {
       throw new Error(message);
     }
     return res.status === 204 ? null : res.json();
+  }, []);
+
+  const setPageWithHistory = useCallback((page) => {
+    setCurrentPage(page);
+    if (typeof window === 'undefined') return;
+    const targetPath = page === 'blog' ? '/blog' : '/';
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
+    if (page !== 'blog') {
+      setPendingBlogSlug(null);
+    }
+  }, []);
+
+  const selectBlogPost = useCallback((post, options = {}) => {
+    if (!post) return;
+    const { replace = false } = options;
+    setSelectedBlogPostId(post.id);
+    setPendingBlogSlug(post.slug || null);
+    if (typeof window === 'undefined') return;
+    const nextPath = post.slug ? `/blog/${encodeURIComponent(post.slug)}` : '/blog';
+    if (window.location.pathname === nextPath) return;
+    if (replace) {
+      window.history.replaceState({}, '', nextPath);
+    } else {
+      window.history.pushState({}, '', nextPath);
+    }
   }, []);
 
   const loadSession = useCallback(async () => {
@@ -751,13 +790,20 @@ export default function TidalCalendarApp() {
       const posts = await apiRequest('/api/blog-posts');
       const normalized = Array.isArray(posts) ? posts : [];
       setBlogPosts(normalized);
-      setSelectedBlogPostId(current => current || normalized[0]?.id || null);
+      setSelectedBlogPostId((current) => {
+        const byCurrent = current ? normalized.find((post) => post.id === current) : null;
+        if (byCurrent) return byCurrent.id;
+        const bySlug = pendingBlogSlug
+          ? normalized.find((post) => (post.slug || '').toLowerCase() === pendingBlogSlug.toLowerCase())
+          : null;
+        return bySlug?.id || normalized[0]?.id || null;
+      });
     } catch (err) {
       setBlogError(err.message || 'Unable to load blog posts.');
     } finally {
       setBlogLoading(false);
     }
-  }, [apiRequest]);
+  }, [apiRequest, pendingBlogSlug]);
 
   const resetBlogEditor = useCallback(() => {
     setBlogEditor({ id: null, title: '', excerpt: '', coverImageUrl: '', contentHtml: '' });
@@ -769,6 +815,17 @@ export default function TidalCalendarApp() {
       setCurrentPage('profile');
     }
   }, [currentPage, user]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onPopState = () => {
+      const route = getInitialAppRoute();
+      setCurrentPage(route.page);
+      setPendingBlogSlug(route.blogSlug);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   useEffect(() => {
     if (currentPage === 'admin') {
@@ -1601,6 +1658,11 @@ export default function TidalCalendarApp() {
 
   const selectedBlogPost = blogPosts.find((post) => post.id === selectedBlogPostId) || blogPosts[0] || null;
 
+  useEffect(() => {
+    if (currentPage !== 'blog' || !selectedBlogPost) return;
+    selectBlogPost(selectedBlogPost, { replace: true });
+  }, [currentPage, selectedBlogPost, selectBlogPost]);
+
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #f7fafc 0%, #eef2f7 40%, #e5ecf5 100%)', color: '#0f172a', fontFamily: "'Outfit', sans-serif", position: 'relative', overflow: 'hidden' }}>
       
@@ -1673,7 +1735,7 @@ export default function TidalCalendarApp() {
           {pages.map(page => (
             <button
               key={page}
-              onClick={() => setCurrentPage(page)}
+              onClick={() => setPageWithHistory(page)}
               style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(14,165,233,0.25)', background: currentPage === page ? '#e0f2fe' : '#ffffff', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }}
             >
               {page === 'calendar' ? 'Calendar' : page === 'profile' ? 'Account' : page === 'about' ? 'Subscribe' : page === 'blog' ? 'Blog' : 'Admin'}
@@ -1763,7 +1825,7 @@ export default function TidalCalendarApp() {
                   {blogPosts.map((post) => (
                     <button
                       key={post.id}
-                      onClick={() => setSelectedBlogPostId(post.id)}
+                      onClick={() => selectBlogPost(post)}
                       style={{
                         textAlign: 'left',
                         border: selectedBlogPost?.id === post.id ? '1px solid #0ea5e9' : '1px solid #e2e8f0',
@@ -1788,6 +1850,18 @@ export default function TidalCalendarApp() {
                       <h3 style={{ margin: 0, fontSize: '30px', color: '#0f172a' }}>{selectedBlogPost.title}</h3>
                       <div style={{ color: '#64748b', fontSize: '13px' }}>
                         {new Date(selectedBlogPost.publishedAt).toLocaleDateString('en-GB')} • {selectedBlogPost.authorEmail || 'Admin'}
+                      </div>
+                      <div>
+                        <a
+                          href={selectedBlogPost.slug ? `/blog/${encodeURIComponent(selectedBlogPost.slug)}` : '/blog'}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            selectBlogPost(selectedBlogPost);
+                          }}
+                          style={{ color: '#0369a1', fontSize: '12px', fontWeight: 600, textDecoration: 'none' }}
+                        >
+                          Permanent link
+                        </a>
                       </div>
                     </header>
                     {selectedBlogPost.coverImageUrl && (

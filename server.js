@@ -144,6 +144,32 @@ const sanitizeBlogHtml = (value = '') => String(value)
   .replace(/\son\w+="[^"]*"/gi, '')
   .replace(/\son\w+='[^']*'/gi, '')
   .trim();
+const toSlugBase = (value = '') => String(value)
+  .toLowerCase()
+  .normalize('NFKD')
+  .replace(/[^\w\s-]/g, '')
+  .replace(/[_\s]+/g, '-')
+  .replace(/-+/g, '-')
+  .replace(/^-|-$/g, '')
+  .slice(0, 90) || 'article';
+
+const buildUniqueBlogSlug = async (title, excludeId = null) => {
+  const base = toSlugBase(title);
+  let candidate = base;
+  let suffix = 2;
+  while (true) {
+    const values = [candidate];
+    const where = ['slug = $1'];
+    if (excludeId) {
+      values.push(excludeId);
+      where.push(`id <> $${values.length}`);
+    }
+    const { rows } = await pool.query(`SELECT 1 FROM blog_posts WHERE ${where.join(' AND ')} LIMIT 1`, values);
+    if (rows.length === 0) return candidate;
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+};
 
 const initialBlogPosts = [
   {
@@ -458,14 +484,25 @@ const ensureSchema = async () => {
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS excerpt TEXT;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS cover_image_url TEXT;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();`);
+  await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS slug TEXT;`);
+
+  const { rows: rowsNeedingSlug } = await pool.query(
+    `SELECT id, title FROM blog_posts WHERE slug IS NULL OR btrim(slug) = '' ORDER BY created_at ASC`,
+  );
+  for (const post of rowsNeedingSlug) {
+    const slug = await buildUniqueBlogSlug(post.title, post.id);
+    await pool.query(`UPDATE blog_posts SET slug = $1 WHERE id = $2`, [slug, post.id]);
+  }
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS blog_posts_slug_unique_idx ON blog_posts(slug);`);
 
   const { rows: blogRows } = await pool.query(`SELECT id FROM blog_posts LIMIT 1`);
   if (blogRows.length === 0) {
     for (const post of initialBlogPosts) {
+      const slug = await buildUniqueBlogSlug(post.title);
       await pool.query(
-        `INSERT INTO blog_posts (title, excerpt, cover_image_url, content_html, published_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, now(), now(), now())`,
-        [post.title, post.excerpt, post.coverImageUrl || null, sanitizeBlogHtml(post.contentHtml)],
+        `INSERT INTO blog_posts (title, excerpt, cover_image_url, content_html, slug, published_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, now(), now(), now())`,
+        [post.title, post.excerpt, post.coverImageUrl || null, sanitizeBlogHtml(post.contentHtml), slug],
       );
     }
   }
@@ -1080,7 +1117,7 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) =
 
 app.get('/api/blog-posts', async (_req, res) => {
   const { rows } = await pool.query(
-    `SELECT p.id, p.title, p.excerpt, p.cover_image_url, p.content_html, p.published_at, p.created_at, p.updated_at,
+    `SELECT p.id, p.slug, p.title, p.excerpt, p.cover_image_url, p.content_html, p.published_at, p.created_at, p.updated_at,
             u.email AS author_email
      FROM blog_posts p
      LEFT JOIN users u ON u.id = p.author_id
@@ -1088,6 +1125,7 @@ app.get('/api/blog-posts', async (_req, res) => {
   );
   const posts = rows.map((row) => ({
     id: row.id,
+    slug: row.slug,
     title: row.title,
     excerpt: row.excerpt || stripHtml(row.content_html).slice(0, 220),
     coverImageUrl: row.cover_image_url || '',
@@ -1100,40 +1138,72 @@ app.get('/api/blog-posts', async (_req, res) => {
   res.json(posts);
 });
 
+app.get('/api/blog-posts/by-slug/:slug', async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT p.id, p.slug, p.title, p.excerpt, p.cover_image_url, p.content_html, p.published_at, p.created_at, p.updated_at,
+            u.email AS author_email
+     FROM blog_posts p
+     LEFT JOIN users u ON u.id = p.author_id
+     WHERE p.slug = $1
+     LIMIT 1`,
+    [String(req.params.slug || '').trim().toLowerCase()],
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'Blog post not found' });
+  const row = rows[0];
+  return res.json({
+    id: row.id,
+    slug: row.slug,
+    title: row.title,
+    excerpt: row.excerpt || stripHtml(row.content_html).slice(0, 220),
+    coverImageUrl: row.cover_image_url || '',
+    contentHtml: row.content_html,
+    publishedAt: row.published_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    authorEmail: row.author_email || 'Admin',
+  });
+});
+
 app.post('/api/admin/blog-posts', requireAuth, requireAdmin, async (req, res) => {
-  const { title, excerpt, coverImageUrl, contentHtml } = req.body || {};
+  const { title, excerpt, coverImageUrl, contentHtml, slug } = req.body || {};
   if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title is required' });
   if (!contentHtml || !String(contentHtml).trim()) return res.status(400).json({ error: 'Post content is required' });
   const cleanContent = sanitizeBlogHtml(contentHtml);
   const cleanExcerpt = excerpt ? stripHtml(excerpt).slice(0, 400) : stripHtml(cleanContent).slice(0, 220);
+  const slugToSave = await buildUniqueBlogSlug(slug || title);
   const { rows } = await pool.query(
-    `INSERT INTO blog_posts (title, excerpt, cover_image_url, content_html, author_id, published_at, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, now(), now(), now())
-     RETURNING id, title, excerpt, cover_image_url, content_html, published_at, created_at, updated_at`,
-    [String(title).trim(), cleanExcerpt, coverImageUrl ? String(coverImageUrl).trim() : null, cleanContent, req.user.id],
+    `INSERT INTO blog_posts (title, excerpt, cover_image_url, content_html, slug, author_id, published_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, now(), now(), now())
+     RETURNING id, slug, title, excerpt, cover_image_url, content_html, published_at, created_at, updated_at`,
+    [String(title).trim(), cleanExcerpt, coverImageUrl ? String(coverImageUrl).trim() : null, cleanContent, slugToSave, req.user.id],
   );
   res.status(201).json(rows[0]);
 });
 
 app.put('/api/admin/blog-posts/:id', requireAuth, requireAdmin, async (req, res) => {
-  const { title, excerpt, coverImageUrl, contentHtml } = req.body || {};
+  const { title, excerpt, coverImageUrl, contentHtml, slug } = req.body || {};
   if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title is required' });
   if (!contentHtml || !String(contentHtml).trim()) return res.status(400).json({ error: 'Post content is required' });
   const cleanContent = sanitizeBlogHtml(contentHtml);
   const cleanExcerpt = excerpt ? stripHtml(excerpt).slice(0, 400) : stripHtml(cleanContent).slice(0, 220);
+  const { rows: existingRows } = await pool.query(`SELECT id, slug FROM blog_posts WHERE id = $1 LIMIT 1`, [req.params.id]);
+  if (existingRows.length === 0) return res.status(404).json({ error: 'Blog post not found' });
+  const slugToSave = slug
+    ? await buildUniqueBlogSlug(slug, req.params.id)
+    : (existingRows[0].slug || await buildUniqueBlogSlug(title, req.params.id));
   const { rows } = await pool.query(
     `UPDATE blog_posts
      SET title = $1,
          excerpt = $2,
          cover_image_url = $3,
          content_html = $4,
-         author_id = $5,
+         slug = $5,
+         author_id = $6,
          updated_at = now()
-     WHERE id = $6
-     RETURNING id, title, excerpt, cover_image_url, content_html, published_at, created_at, updated_at`,
-    [String(title).trim(), cleanExcerpt, coverImageUrl ? String(coverImageUrl).trim() : null, cleanContent, req.user.id, req.params.id],
+     WHERE id = $7
+     RETURNING id, slug, title, excerpt, cover_image_url, content_html, published_at, created_at, updated_at`,
+    [String(title).trim(), cleanExcerpt, coverImageUrl ? String(coverImageUrl).trim() : null, cleanContent, slugToSave, req.user.id, req.params.id],
   );
-  if (rows.length === 0) return res.status(404).json({ error: 'Blog post not found' });
   res.json(rows[0]);
 });
 
