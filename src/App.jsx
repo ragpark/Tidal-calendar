@@ -259,11 +259,12 @@ export default function TidalCalendarApp() {
   const [adminForm, setAdminForm] = useState({ id: null, email: '', password: '', role: 'user', subscriptionStatus: 'inactive', subscriptionPeriodEnd: '' });
   const [adminError, setAdminError] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
-  const [clubAdminData, setClubAdminData] = useState({ club: null, members: [], windows: [], availableUsers: [] });
+  const [clubAdminData, setClubAdminData] = useState({ club: null, members: [], windows: [], availableUsers: [], integrations: [] });
   const [clubAdminLoading, setClubAdminLoading] = useState(false);
   const [clubAdminError, setClubAdminError] = useState('');
   const [clubSetupForm, setClubSetupForm] = useState({ clubName: '', scrubPostCount: 8, homePortId: '', homePortName: '' });
-  const [clubWindowForm, setClubWindowForm] = useState({ date: '', lowWater: '', duration: '', capacity: 8 });
+  const [clubWindowForm, setClubWindowForm] = useState({ date: '', lowWater: '', duration: '', capacity: 8, startsAt: '', notes: '' });
+  const [calendarSyncBusy, setCalendarSyncBusy] = useState(false);
   const [selectedMemberToAdd, setSelectedMemberToAdd] = useState('');
   const [bookingAssignments, setBookingAssignments] = useState({});
   const [blogPosts, setBlogPosts] = useState([]);
@@ -664,6 +665,31 @@ export default function TidalCalendarApp() {
     });
   }, [confirmStripeSession, user]);
 
+  useEffect(() => {
+    if (!(user?.role === 'club_admin' || user?.role === 'admin')) return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const state = params.get('state');
+    if (!code || !state) return;
+    (async () => {
+      try {
+        await apiRequest('/api/club-admin/calendar/oauth/callback', {
+          method: 'POST',
+          body: JSON.stringify({ code, state }),
+        });
+        await loadClubAdminData();
+      } catch (err) {
+        setClubAdminError(err.message || 'Calendar connection callback failed.');
+      } finally {
+        params.delete('code');
+        params.delete('state');
+        params.delete('scope');
+        const clean = params.toString();
+        window.history.replaceState({}, document.title, `${window.location.pathname}${clean ? `?${clean}` : ''}`);
+      }
+    })();
+  }, [apiRequest, loadClubAdminData, user]);
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -803,6 +829,7 @@ export default function TidalCalendarApp() {
         members: Array.isArray(data?.members) ? data.members : [],
         windows: Array.isArray(data?.windows) ? data.windows : [],
         availableUsers: Array.isArray(data?.availableUsers) ? data.availableUsers : [],
+        integrations: Array.isArray(data?.integrations) ? data.integrations : [],
       };
       setClubAdminData(normalized);
       setClubSetupForm((form) => ({
@@ -948,9 +975,11 @@ export default function TidalCalendarApp() {
           lowWater: clubWindowForm.lowWater,
           duration: clubWindowForm.duration,
           capacity: Number(clubWindowForm.capacity) || 1,
+          startsAt: clubWindowForm.startsAt || null,
+          notes: clubWindowForm.notes || '',
         }),
       });
-      setClubWindowForm((form) => ({ ...form, date: '', lowWater: '', duration: '' }));
+      setClubWindowForm((form) => ({ ...form, date: '', lowWater: '', duration: '', startsAt: '', notes: '' }));
       await loadClubAdminData();
     } catch (err) {
       setClubAdminError(err.message || 'Unable to add scrubbing availability.');
@@ -972,6 +1001,40 @@ export default function TidalCalendarApp() {
       await loadClubAdminData();
     } catch (err) {
       setClubAdminError(err.message || 'Unable to book on behalf of user.');
+    }
+  };
+
+  const connectExternalCalendar = async (provider) => {
+    setClubAdminError('');
+    try {
+      const { authorizationUrl } = await apiRequest(`/api/club-admin/calendar/oauth/start?provider=${encodeURIComponent(provider)}`);
+      if (!authorizationUrl) throw new Error('No authorization URL returned.');
+      window.location.href = authorizationUrl;
+    } catch (err) {
+      setClubAdminError(err.message || `Unable to connect ${provider} calendar.`);
+    }
+  };
+
+  const disconnectExternalCalendar = async (integrationId) => {
+    setClubAdminError('');
+    try {
+      await apiRequest(`/api/club-admin/calendar/integrations/${integrationId}`, { method: 'DELETE' });
+      await loadClubAdminData();
+    } catch (err) {
+      setClubAdminError(err.message || 'Unable to disconnect calendar.');
+    }
+  };
+
+  const runCalendarSync = async () => {
+    setClubAdminError('');
+    setCalendarSyncBusy(true);
+    try {
+      await apiRequest('/api/club-admin/calendar/sync', { method: 'POST', body: JSON.stringify({}) });
+      await loadClubAdminData();
+    } catch (err) {
+      setClubAdminError(err.message || 'Unable to sync calendars.');
+    } finally {
+      setCalendarSyncBusy(false);
     }
   };
 
@@ -2394,9 +2457,39 @@ export default function TidalCalendarApp() {
                 <input type="text" placeholder="Date label e.g. Thu 18 Sep" value={clubWindowForm.date} onChange={(event) => setClubWindowForm((form) => ({ ...form, date: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
                 <input type="text" placeholder="Low water e.g. 11:42" value={clubWindowForm.lowWater} onChange={(event) => setClubWindowForm((form) => ({ ...form, lowWater: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
                 <input type="text" placeholder="Duration e.g. 2h 10m" value={clubWindowForm.duration} onChange={(event) => setClubWindowForm((form) => ({ ...form, duration: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+                <input type="datetime-local" value={clubWindowForm.startsAt} onChange={(event) => setClubWindowForm((form) => ({ ...form, startsAt: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                <input type="text" placeholder="Notes (optional)" value={clubWindowForm.notes} onChange={(event) => setClubWindowForm((form) => ({ ...form, notes: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
                 <input type="number" min="1" placeholder="Slots" value={clubWindowForm.capacity} onChange={(event) => setClubWindowForm((form) => ({ ...form, capacity: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
                 <button type="submit" style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>Add calendar availability</button>
               </form>
+            </div>
+
+            <div style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>4) Connect Google / Outlook calendar</h3>
+              <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>Bi-directional sync: create availability in this app and it is pushed to your connected calendar. Run sync to pull external changes back into the club schedule.</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                <button onClick={() => connectExternalCalendar('gmail')} style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #16a34a', background: '#22c55e', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Connect Gmail</button>
+                <button onClick={() => connectExternalCalendar('outlook')} style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #1d4ed8', background: '#2563eb', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Connect Outlook</button>
+                <button onClick={runCalendarSync} disabled={calendarSyncBusy || clubAdminData.integrations.length === 0} style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: '#fff', fontWeight: 700, cursor: calendarSyncBusy ? 'wait' : 'pointer', opacity: calendarSyncBusy || clubAdminData.integrations.length === 0 ? 0.6 : 1 }}>
+                  {calendarSyncBusy ? 'Syncing…' : 'Sync now'}
+                </button>
+              </div>
+              {clubAdminData.integrations.length === 0 ? (
+                <div style={{ fontSize: '12px', color: '#64748b' }}>No external calendars connected yet.</div>
+              ) : (
+                <div style={{ display: 'grid', gap: '8px' }}>
+                  {clubAdminData.integrations.map((integration) => (
+                    <div key={integration.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 10px' }}>
+                      <div style={{ display: 'grid' }}>
+                        <strong style={{ textTransform: 'capitalize', color: '#0f172a' }}>{integration.provider}</strong>
+                        <span style={{ fontSize: '12px', color: '#475569' }}>{integration.metadata?.summary || integration.externalCalendarId}</span>
+                        <span style={{ fontSize: '11px', color: '#64748b' }}>Last sync: {integration.lastSyncedAt ? new Date(integration.lastSyncedAt).toLocaleString('en-GB') : 'Never'}</span>
+                      </div>
+                      <button onClick={() => disconnectExternalCalendar(integration.id)} style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid #dc2626', background: '#fee2e2', color: '#b91c1c', fontWeight: 700, cursor: 'pointer' }}>Disconnect</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', display: 'grid', gap: '10px' }}>
@@ -2415,6 +2508,7 @@ export default function TidalCalendarApp() {
                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Date</th>
                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Low water</th>
                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Duration</th>
+                        <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Exact start (optional)</th>
                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Booked / Capacity</th>
                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Book on behalf of member</th>
                       </tr>
@@ -2425,6 +2519,7 @@ export default function TidalCalendarApp() {
                           <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.date}</td>
                           <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.lowWater}</td>
                           <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.duration}</td>
+                          <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.startsAt ? new Date(window.startsAt).toLocaleString('en-GB') : '—'}</td>
                           <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.booked} / {window.capacity}</td>
                           <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
