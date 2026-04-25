@@ -259,6 +259,13 @@ export default function TidalCalendarApp() {
   const [adminForm, setAdminForm] = useState({ id: null, email: '', password: '', role: 'user', subscriptionStatus: 'inactive', subscriptionPeriodEnd: '' });
   const [adminError, setAdminError] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
+  const [clubAdminData, setClubAdminData] = useState({ club: null, members: [], windows: [], availableUsers: [] });
+  const [clubAdminLoading, setClubAdminLoading] = useState(false);
+  const [clubAdminError, setClubAdminError] = useState('');
+  const [clubSetupForm, setClubSetupForm] = useState({ clubName: '', scrubPostCount: 8, homePortId: '', homePortName: '' });
+  const [clubWindowForm, setClubWindowForm] = useState({ date: '', lowWater: '', duration: '', capacity: 8 });
+  const [selectedMemberToAdd, setSelectedMemberToAdd] = useState('');
+  const [bookingAssignments, setBookingAssignments] = useState({});
   const [blogPosts, setBlogPosts] = useState([]);
   const [blogLoading, setBlogLoading] = useState(false);
   const [blogError, setBlogError] = useState('');
@@ -333,6 +340,7 @@ export default function TidalCalendarApp() {
   }, [role]);
   const pages = useMemo(() => {
     const base = ['calendar', 'profile', 'about', 'blog'];
+    if (user?.role === 'club_admin' || user?.role === 'admin') base.push('club');
     if (user?.role === 'admin') base.push('admin');
     return base;
   }, [user]);
@@ -784,6 +792,37 @@ export default function TidalCalendarApp() {
     }
   }, [apiRequest, user]);
 
+  const loadClubAdminData = useCallback(async () => {
+    if (!user || (user.role !== 'club_admin' && user.role !== 'admin')) return;
+    setClubAdminLoading(true);
+    setClubAdminError('');
+    try {
+      const data = await apiRequest('/api/club-admin/overview');
+      const normalized = {
+        club: data?.club || null,
+        members: Array.isArray(data?.members) ? data.members : [],
+        windows: Array.isArray(data?.windows) ? data.windows : [],
+        availableUsers: Array.isArray(data?.availableUsers) ? data.availableUsers : [],
+      };
+      setClubAdminData(normalized);
+      setClubSetupForm((form) => ({
+        ...form,
+        clubName: normalized.club?.name || form.clubName,
+        scrubPostCount: normalized.club?.capacity || form.scrubPostCount,
+        homePortId: user?.home_port_id || form.homePortId,
+        homePortName: user?.home_port_name || form.homePortName,
+      }));
+      setClubWindowForm((form) => ({
+        ...form,
+        capacity: normalized.club?.capacity || form.capacity,
+      }));
+    } catch (err) {
+      setClubAdminError(err.message || 'Unable to load club admin data.');
+    } finally {
+      setClubAdminLoading(false);
+    }
+  }, [apiRequest, user]);
+
   const loadBlogPosts = useCallback(async () => {
     setBlogLoading(true);
     setBlogError('');
@@ -814,6 +853,10 @@ export default function TidalCalendarApp() {
   useEffect(() => {
     if (currentPage === 'admin' && user?.role !== 'admin') {
       setCurrentPage('profile');
+      return;
+    }
+    if (currentPage === 'club' && !(user?.role === 'club_admin' || user?.role === 'admin')) {
+      setCurrentPage('profile');
     }
   }, [currentPage, user]);
 
@@ -835,6 +878,12 @@ export default function TidalCalendarApp() {
   }, [currentPage, loadAdminData]);
 
   useEffect(() => {
+    if (currentPage === 'club') {
+      loadClubAdminData();
+    }
+  }, [currentPage, loadClubAdminData]);
+
+  useEffect(() => {
     if (currentPage === 'blog' || currentPage === 'admin') {
       loadBlogPosts();
     }
@@ -845,6 +894,85 @@ export default function TidalCalendarApp() {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '—';
     return date.toLocaleDateString('en-GB');
+  };
+
+  const handleClubSetupSubmit = async (event) => {
+    event.preventDefault();
+    setClubAdminError('');
+    try {
+      const data = await apiRequest('/api/club-admin/club', {
+        method: 'PUT',
+        body: JSON.stringify({
+          clubName: clubSetupForm.clubName,
+          scrubPostCount: Number(clubSetupForm.scrubPostCount) || 1,
+          homePortId: clubSetupForm.homePortId || null,
+          homePortName: clubSetupForm.homePortName || null,
+        }),
+      });
+      if (data?.user) {
+        setUser(data.user);
+      }
+      await loadClubAdminData();
+    } catch (err) {
+      setClubAdminError(err.message || 'Unable to save club settings.');
+    }
+  };
+
+  const handleAddClubMember = async (event) => {
+    event.preventDefault();
+    if (!selectedMemberToAdd) {
+      setClubAdminError('Select a calendar user first.');
+      return;
+    }
+    setClubAdminError('');
+    try {
+      await apiRequest('/api/club-admin/members', {
+        method: 'POST',
+        body: JSON.stringify({ userId: selectedMemberToAdd }),
+      });
+      setSelectedMemberToAdd('');
+      await loadClubAdminData();
+    } catch (err) {
+      setClubAdminError(err.message || 'Unable to add member to club group.');
+    }
+  };
+
+  const handleCreateClubWindow = async (event) => {
+    event.preventDefault();
+    setClubAdminError('');
+    try {
+      await apiRequest('/api/club-admin/windows', {
+        method: 'POST',
+        body: JSON.stringify({
+          date: clubWindowForm.date,
+          lowWater: clubWindowForm.lowWater,
+          duration: clubWindowForm.duration,
+          capacity: Number(clubWindowForm.capacity) || 1,
+        }),
+      });
+      setClubWindowForm((form) => ({ ...form, date: '', lowWater: '', duration: '' }));
+      await loadClubAdminData();
+    } catch (err) {
+      setClubAdminError(err.message || 'Unable to add scrubbing availability.');
+    }
+  };
+
+  const handleBookOnBehalf = async (windowId) => {
+    const userId = bookingAssignments[windowId];
+    if (!userId) {
+      setClubAdminError('Choose a club member to book for.');
+      return;
+    }
+    setClubAdminError('');
+    try {
+      await apiRequest(`/api/club-admin/windows/${windowId}/book-on-behalf`, {
+        method: 'POST',
+        body: JSON.stringify({ userId }),
+      });
+      await loadClubAdminData();
+    } catch (err) {
+      setClubAdminError(err.message || 'Unable to book on behalf of user.');
+    }
   };
 
   const handleAdminSubmit = async (event) => {
@@ -1743,7 +1871,7 @@ export default function TidalCalendarApp() {
               onClick={() => setPageWithHistory(page)}
               style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(14,165,233,0.25)', background: currentPage === page ? '#e0f2fe' : '#ffffff', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }}
             >
-              {page === 'calendar' ? 'Calendar' : page === 'profile' ? 'Account' : page === 'about' ? 'Subscribe' : page === 'blog' ? 'Blog' : 'Admin'}
+              {page === 'calendar' ? 'Calendar' : page === 'profile' ? 'Account' : page === 'about' ? 'Subscribe' : page === 'blog' ? 'Blog' : page === 'club' ? 'Club' : 'Admin'}
             </button>
           ))}
         </div>
@@ -2195,6 +2323,140 @@ export default function TidalCalendarApp() {
 
           </section>
         )}
+
+
+        {currentPage === 'club' && (
+          <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '18px', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
+            <header style={{ display: 'grid', gap: '6px' }}>
+              <p style={{ margin: 0, fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9' }}>Club Admin</p>
+              <h2 style={{ margin: 0, color: '#0f172a' }}>Club setup, members, and scrubbing bookings</h2>
+              <p style={{ margin: 0, color: '#475569', fontSize: '13px' }}>Configure your club details, add calendar users to your group, and manage scrubbing facility availability and bookings.</p>
+            </header>
+
+            {clubAdminError && <div style={{ color: '#b91c1c', fontWeight: 600, fontSize: '13px' }}>{clubAdminError}</div>}
+            {clubAdminLoading && <div style={{ color: '#475569', fontSize: '13px' }}>Loading club workspace…</div>}
+
+            <div style={{ display: 'grid', gap: '14px', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+              <form onSubmit={handleClubSetupSubmit} style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>1) Club profile</h3>
+                <input
+                  type="text"
+                  value={clubSetupForm.clubName}
+                  onChange={(event) => setClubSetupForm((form) => ({ ...form, clubName: event.target.value }))}
+                  placeholder="Club name"
+                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  required
+                />
+                <input
+                  type="number"
+                  min="1"
+                  value={clubSetupForm.scrubPostCount}
+                  onChange={(event) => setClubSetupForm((form) => ({ ...form, scrubPostCount: event.target.value }))}
+                  placeholder="Number of scrubbing posts"
+                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  required
+                />
+                <input
+                  type="text"
+                  value={clubSetupForm.homePortName}
+                  onChange={(event) => setClubSetupForm((form) => ({ ...form, homePortName: event.target.value }))}
+                  placeholder="Home port name"
+                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                />
+                <input
+                  type="text"
+                  value={clubSetupForm.homePortId}
+                  onChange={(event) => setClubSetupForm((form) => ({ ...form, homePortId: event.target.value }))}
+                  placeholder="Home port station ID (optional)"
+                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                />
+                <button type="submit" style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>Save club setup</button>
+              </form>
+
+              <form onSubmit={handleAddClubMember} style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>2) Add users to your group</h3>
+                <select
+                  value={selectedMemberToAdd}
+                  onChange={(event) => setSelectedMemberToAdd(event.target.value)}
+                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}
+                >
+                  <option value="">Select calendar user</option>
+                  {clubAdminData.availableUsers.map((record) => (
+                    <option key={record.id} value={record.id}>{record.email}</option>
+                  ))}
+                </select>
+                <button type="submit" style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>Add to club group</button>
+                <div style={{ fontSize: '12px', color: '#475569' }}>Current members: {clubAdminData.members.length}</div>
+              </form>
+
+              <form onSubmit={handleCreateClubWindow} style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>3) Add scrubbing availability</h3>
+                <input type="text" placeholder="Date label e.g. Thu 18 Sep" value={clubWindowForm.date} onChange={(event) => setClubWindowForm((form) => ({ ...form, date: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+                <input type="text" placeholder="Low water e.g. 11:42" value={clubWindowForm.lowWater} onChange={(event) => setClubWindowForm((form) => ({ ...form, lowWater: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+                <input type="text" placeholder="Duration e.g. 2h 10m" value={clubWindowForm.duration} onChange={(event) => setClubWindowForm((form) => ({ ...form, duration: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+                <input type="number" min="1" placeholder="Slots" value={clubWindowForm.capacity} onChange={(event) => setClubWindowForm((form) => ({ ...form, capacity: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+                <button type="submit" style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>Add calendar availability</button>
+              </form>
+            </div>
+
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', display: 'grid', gap: '10px' }}>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>Scrubbing facilities calendar</h3>
+              <div style={{ fontSize: '12px', color: '#475569' }}>
+                Club: <strong style={{ color: '#0f172a' }}>{clubAdminData.club?.name || 'Not set yet'}</strong>
+                {' '}• Scrubbing posts: <strong style={{ color: '#0f172a' }}>{clubAdminData.club?.capacity ?? '—'}</strong>
+              </div>
+              {clubAdminData.windows.length === 0 ? (
+                <div style={{ fontSize: '12px', color: '#64748b' }}>No availability windows yet. Add your first one above.</div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
+                    <thead>
+                      <tr style={{ background: '#e2e8f0', color: '#0f172a', fontSize: '12px' }}>
+                        <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Date</th>
+                        <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Low water</th>
+                        <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Duration</th>
+                        <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Booked / Capacity</th>
+                        <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Book on behalf of member</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clubAdminData.windows.map((window) => (
+                        <tr key={window.id} style={{ background: '#fff', fontSize: '12px' }}>
+                          <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.date}</td>
+                          <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.lowWater}</td>
+                          <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.duration}</td>
+                          <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.booked} / {window.capacity}</td>
+                          <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              <select
+                                value={bookingAssignments[window.id] || ''}
+                                onChange={(event) => setBookingAssignments((current) => ({ ...current, [window.id]: event.target.value }))}
+                                style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', minWidth: '180px' }}
+                              >
+                                <option value="">Select member</option>
+                                {clubAdminData.members.map((member) => (
+                                  <option key={member.id} value={member.id}>{member.email}</option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => handleBookOnBehalf(window.id)}
+                                style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid #0284c7', background: '#e0f2fe', color: '#075985', fontWeight: 700, cursor: 'pointer' }}
+                              >
+                                Book
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
 
         {currentPage === 'admin' && (
           <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>

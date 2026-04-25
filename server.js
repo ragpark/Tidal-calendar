@@ -427,6 +427,14 @@ const ensureSchema = async () => {
         created_by UUID REFERENCES users(id),
         created_at TIMESTAMPTZ DEFAULT now()
       );
+      CREATE TABLE IF NOT EXISTS club_memberships (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        added_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        UNIQUE(club_id, user_id)
+      );
       CREATE TABLE IF NOT EXISTS scrub_windows (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
@@ -480,6 +488,18 @@ const ensureSchema = async () => {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_last_session_id TEXT;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS maintenance_reminders_enabled BOOLEAN NOT NULL DEFAULT false;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS home_port_id TEXT;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS home_port_name TEXT;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS home_club_id UUID;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS home_club_name TEXT;`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS club_memberships (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    added_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(club_id, user_id)
+  );`);
   await pool.query(`ALTER TABLE maintenance_logs ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS excerpt TEXT;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS cover_image_url TEXT;`);
@@ -585,6 +605,14 @@ const requireAuth = async (req, res, next) => {
 const requireAdmin = (req, res, next) => {
   if (req.user?.role !== 'admin') {
     res.status(403).json({ error: 'Admin permission required' });
+    return;
+  }
+  next();
+};
+
+const requireClubAdmin = (req, res, next) => {
+  if (req.user?.role !== 'club_admin' && req.user?.role !== 'admin') {
+    res.status(403).json({ error: 'Club admin permission required' });
     return;
   }
   next();
@@ -1829,6 +1857,177 @@ app.post('/api/payments/stripe/webhook', async (req, res) => {
     console.error('Stripe webhook handling failed', err);
     res.status(500).json({ error: 'Stripe webhook handling failed' });
   }
+});
+
+const resolveManagedClub = async (userId) => {
+  const { rows } = await pool.query(
+    `SELECT c.id, c.name, c.capacity
+     FROM users u
+     LEFT JOIN clubs c ON c.id = u.home_club_id
+     WHERE u.id = $1`,
+    [userId],
+  );
+  return rows[0] || null;
+};
+
+app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, res) => {
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) {
+    return res.json({ club: null, members: [], windows: [], availableUsers: [] });
+  }
+
+  const [membersResult, windowsResult, availableResult] = await Promise.all([
+    pool.query(
+      `SELECT u.id, u.email, u.role, u.home_port_name, u.home_club_name
+       FROM users u
+       WHERE u.home_club_id = $1
+       ORDER BY u.email ASC`,
+      [club.id],
+    ),
+    pool.query(
+      `SELECT w.id, w.date_label as date, w.low_water as "lowWater", w.duration, w.capacity,
+              (SELECT COUNT(*) FROM bookings b WHERE b.window_id = w.id)::int AS booked
+       FROM scrub_windows w
+       WHERE w.club_id = $1
+       ORDER BY w.created_at ASC`,
+      [club.id],
+    ),
+    pool.query(
+      `SELECT id, email FROM users
+       WHERE (home_club_id IS NULL OR home_club_id <> $1)
+       ORDER BY email ASC
+       LIMIT 200`,
+      [club.id],
+    ),
+  ]);
+
+  return res.json({
+    club,
+    members: membersResult.rows,
+    windows: windowsResult.rows,
+    availableUsers: availableResult.rows,
+  });
+});
+
+app.put('/api/club-admin/club', requireAuth, requireClubAdmin, async (req, res) => {
+  const { clubName, scrubPostCount, homePortId, homePortName } = req.body || {};
+  const cleanedName = String(clubName || '').trim();
+  if (!cleanedName) return res.status(400).json({ error: 'Club name is required' });
+
+  let clubId = req.user.home_club_id;
+  const postCount = Math.max(Number(scrubPostCount) || 1, 1);
+  if (clubId) {
+    const { rows: updated } = await pool.query(
+      `UPDATE clubs
+       SET name = $1, capacity = $2
+       WHERE id = $3
+       RETURNING id, name, capacity`,
+      [cleanedName, postCount, clubId],
+    );
+    if (updated.length === 0) {
+      clubId = null;
+    }
+  }
+
+  if (!clubId) {
+    const { rows: created } = await pool.query(
+      `INSERT INTO clubs (name, capacity, created_by)
+       VALUES ($1, $2, $3)
+       RETURNING id, name, capacity`,
+      [cleanedName, postCount, req.user.id],
+    );
+    clubId = created[0].id;
+  }
+
+  const { rows: profileRows } = await pool.query(
+    `UPDATE users
+     SET home_port_id = COALESCE($1, home_port_id),
+         home_port_name = COALESCE($2, home_port_name),
+         home_club_id = $3,
+         home_club_name = $4
+     WHERE id = $5
+     RETURNING id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
+    [homePortId ?? null, homePortName ?? null, clubId, cleanedName, req.user.id],
+  );
+
+  await pool.query(
+    `INSERT INTO club_memberships (club_id, user_id, added_by)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (club_id, user_id) DO NOTHING`,
+    [clubId, req.user.id, req.user.id],
+  );
+
+  return res.json({ user: profileRows[0], club: { id: clubId, name: cleanedName, capacity: postCount } });
+});
+
+app.post('/api/club-admin/members', requireAuth, requireClubAdmin, async (req, res) => {
+  const { userId } = req.body || {};
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
+
+  const { rows: targetRows } = await pool.query(
+    `UPDATE users
+     SET home_club_id = $1,
+         home_club_name = $2
+     WHERE id = $3
+     RETURNING id, email, role, home_port_name, home_club_id, home_club_name`,
+    [club.id, club.name, userId],
+  );
+  if (targetRows.length === 0) return res.status(404).json({ error: 'User not found' });
+
+  await pool.query(
+    `INSERT INTO club_memberships (club_id, user_id, added_by)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (club_id, user_id) DO NOTHING`,
+    [club.id, userId, req.user.id],
+  );
+
+  return res.status(201).json(targetRows[0]);
+});
+
+app.post('/api/club-admin/windows', requireAuth, requireClubAdmin, async (req, res) => {
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
+
+  const { date, lowWater, duration, capacity } = req.body || {};
+  if (!date || !lowWater || !duration) return res.status(400).json({ error: 'All fields required' });
+
+  const { rows } = await pool.query(
+    `INSERT INTO scrub_windows (club_id, date_label, low_water, duration, capacity)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, date_label as date, low_water as "lowWater", duration, capacity`,
+    [club.id, date, lowWater, duration, Math.max(Number(capacity) || Number(club.capacity) || 1, 1)],
+  );
+  return res.status(201).json(rows[0]);
+});
+
+app.post('/api/club-admin/windows/:windowId/book-on-behalf', requireAuth, requireClubAdmin, async (req, res) => {
+  const { userId } = req.body || {};
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
+
+  const { rows: memberRows } = await pool.query(
+    `SELECT id FROM users WHERE id = $1 AND home_club_id = $2 LIMIT 1`,
+    [userId, club.id],
+  );
+  if (memberRows.length === 0) return res.status(400).json({ error: 'User is not in this club group' });
+
+  const { rows: windowRows } = await pool.query(
+    `SELECT id FROM scrub_windows WHERE id = $1 AND club_id = $2 LIMIT 1`,
+    [req.params.windowId, club.id],
+  );
+  if (windowRows.length === 0) return res.status(404).json({ error: 'Scrub window not found' });
+
+  await pool.query(
+    `INSERT INTO bookings (window_id, user_id)
+     VALUES ($1, $2)
+     ON CONFLICT DO NOTHING`,
+    [req.params.windowId, userId],
+  );
+  return res.json({ ok: true });
 });
 
 // Clubs and scrub windows
