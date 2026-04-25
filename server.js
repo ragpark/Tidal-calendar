@@ -2255,6 +2255,31 @@ const syncIntegrationPull = async ({ integration, clubId }) => {
   return imported;
 };
 
+const syncWindowToExternalCalendars = async ({ club, windowId }) => {
+  if (!club?.id || !windowId) return;
+  try {
+    const [integrations, windows] = await Promise.all([
+      fetchClubIntegrations(club.id),
+      getScrubWindowsForClub(club.id),
+    ]);
+    const targetWindow = windows.find((window) => window.id === windowId);
+    if (!targetWindow || integrations.length === 0) return;
+    for (const integration of integrations) {
+      try {
+        await syncIntegrationPush({ integration, club, windows: [targetWindow] });
+      } catch (err) {
+        console.warn(
+          `Calendar sync push failed (non-fatal) for club ${club.id}, window ${windowId}, integration ${integration.id}: ${err?.message || err}`,
+        );
+      }
+    }
+  } catch (err) {
+    console.warn(
+      `Calendar sync preparation failed (non-fatal) for club ${club?.id || 'unknown'}, window ${windowId}: ${err?.message || err}`,
+    );
+  }
+};
+
 app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, res) => {
   const club = await resolveManagedClub(req.user.id);
   if (!club?.id) {
@@ -2499,10 +2524,7 @@ app.post('/api/club-admin/windows', requireAuth, requireClubAdmin, async (req, r
     [club.id, date, lowWater, duration, parsed.startsAt, parsed.endsAt, notes || null, Math.max(Number(capacity) || Number(club.capacity) || 1, 1)],
   );
   const created = formatClubWindow(rows[0]);
-  const integrations = await fetchClubIntegrations(club.id);
-  for (const integration of integrations) {
-    await syncIntegrationPush({ integration, club, windows: [created] });
-  }
+  await syncWindowToExternalCalendars({ club, windowId: created.id });
   return res.status(201).json(created);
 });
 
@@ -2530,14 +2552,7 @@ app.post('/api/club-admin/windows/:windowId/book-on-behalf', requireAuth, requir
      ON CONFLICT DO NOTHING`,
     [req.params.windowId, userId],
   );
-  const integrations = await fetchClubIntegrations(club.id);
-  const windows = await getScrubWindowsForClub(club.id);
-  const targetWindow = windows.find((window) => window.id === req.params.windowId);
-  if (targetWindow) {
-    for (const integration of integrations) {
-      await syncIntegrationPush({ integration, club, windows: [targetWindow] });
-    }
-  }
+  await syncWindowToExternalCalendars({ club, windowId: req.params.windowId });
   return res.json({ ok: true });
 });
 
@@ -2607,6 +2622,11 @@ app.post('/api/clubs/:id/windows/:windowId/book', requireAuth, async (req, res) 
       `INSERT INTO bookings (window_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       [req.params.windowId, req.user.id],
     );
+    const { rows: clubRows } = await pool.query(
+      `SELECT id, name, capacity FROM clubs WHERE id = $1 LIMIT 1`,
+      [req.params.id],
+    );
+    await syncWindowToExternalCalendars({ club: clubRows[0] || null, windowId: req.params.windowId });
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
