@@ -441,6 +441,9 @@ const ensureSchema = async () => {
         date_label TEXT NOT NULL,
         low_water TEXT NOT NULL,
         duration TEXT NOT NULL,
+        starts_at TIMESTAMPTZ,
+        ends_at TIMESTAMPTZ,
+        notes TEXT,
         capacity INT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT now()
       );
@@ -473,6 +476,34 @@ const ensureSchema = async () => {
         created_at TIMESTAMPTZ DEFAULT now(),
         updated_at TIMESTAMPTZ DEFAULT now()
       );
+      CREATE TABLE IF NOT EXISTS club_calendar_integrations (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        external_calendar_id TEXT NOT NULL,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT,
+        token_expires_at TIMESTAMPTZ,
+        remote_sync_cursor TEXT,
+        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now(),
+        last_synced_at TIMESTAMPTZ,
+        UNIQUE(club_id, provider, external_calendar_id)
+      );
+      CREATE TABLE IF NOT EXISTS club_calendar_event_links (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        integration_id UUID REFERENCES club_calendar_integrations(id) ON DELETE CASCADE,
+        scrub_window_id UUID REFERENCES scrub_windows(id) ON DELETE CASCADE,
+        external_event_id TEXT NOT NULL,
+        external_etag TEXT,
+        last_pushed_at TIMESTAMPTZ DEFAULT now(),
+        created_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now(),
+        UNIQUE(integration_id, scrub_window_id),
+        UNIQUE(integration_id, external_event_id)
+      );
     `);
     console.log('Database schema created successfully');
   } catch (err) {
@@ -501,6 +532,9 @@ const ensureSchema = async () => {
     UNIQUE(club_id, user_id)
   );`);
   await pool.query(`ALTER TABLE maintenance_logs ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE scrub_windows ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE scrub_windows ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE scrub_windows ADD COLUMN IF NOT EXISTS notes TEXT;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS excerpt TEXT;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS cover_image_url TEXT;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();`);
@@ -617,6 +651,109 @@ const requireClubAdmin = (req, res, next) => {
   }
   next();
 };
+
+const OAUTH_STATE_SECRET = process.env.CALENDAR_OAUTH_STATE_SECRET || process.env.SESSION_SECRET || 'tidal-calendar-oauth-state';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CALENDAR_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '';
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_CALENDAR_REDIRECT_URI || '';
+const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CALENDAR_CLIENT_ID || '';
+const MICROSOFT_CLIENT_SECRET = process.env.MICROSOFT_CALENDAR_CLIENT_SECRET || '';
+const MICROSOFT_REDIRECT_URI = process.env.MICROSOFT_CALENDAR_REDIRECT_URI || '';
+
+const getOAuthProviderConfig = (provider) => {
+  if (provider === 'gmail') {
+    return {
+      provider: 'gmail',
+      authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+      tokenUrl: 'https://oauth2.googleapis.com/token',
+      clientId: GOOGLE_CLIENT_ID,
+      clientSecret: GOOGLE_CLIENT_SECRET,
+      redirectUri: GOOGLE_REDIRECT_URI,
+      scope: 'https://www.googleapis.com/auth/calendar',
+    };
+  }
+  if (provider === 'outlook') {
+    return {
+      provider: 'outlook',
+      authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+      tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      clientId: MICROSOFT_CLIENT_ID,
+      clientSecret: MICROSOFT_CLIENT_SECRET,
+      redirectUri: MICROSOFT_REDIRECT_URI,
+      scope: 'offline_access Calendars.ReadWrite',
+    };
+  }
+  return null;
+};
+
+const createOAuthState = ({ userId, clubId, provider }) => {
+  const payload = `${userId}.${clubId}.${provider}.${Date.now()}`;
+  const signature = createHmac('sha256', OAUTH_STATE_SECRET).update(payload).digest('hex');
+  return Buffer.from(`${payload}.${signature}`).toString('base64url');
+};
+
+const verifyOAuthState = (state) => {
+  try {
+    const raw = Buffer.from(String(state || ''), 'base64url').toString('utf8');
+    const parts = raw.split('.');
+    if (parts.length < 5) return null;
+    const signature = parts.pop();
+    const payload = parts.join('.');
+    const expected = createHmac('sha256', OAUTH_STATE_SECRET).update(payload).digest('hex');
+    if (signature !== expected) return null;
+    const [userId, clubId, provider, issuedAtRaw] = parts;
+    const issuedAt = Number(issuedAtRaw);
+    if (!Number.isFinite(issuedAt) || (Date.now() - issuedAt) > (1000 * 60 * 20)) return null;
+    return { userId, clubId, provider };
+  } catch {
+    return null;
+  }
+};
+
+const parseDurationToMinutes = (value) => {
+  const text = String(value || '').trim();
+  const hmMatch = text.match(/(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?/i);
+  if (hmMatch && (hmMatch[1] || hmMatch[2])) {
+    const hours = Number(hmMatch[1] || 0);
+    const minutes = Number(hmMatch[2] || 0);
+    return (hours * 60) + minutes;
+  }
+  const numeric = Number(text);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 120;
+};
+
+const toWindowTimestamps = ({ startsAt, endsAt, date, lowWater, duration }) => {
+  if (startsAt) {
+    const parsedStart = new Date(startsAt);
+    if (!Number.isNaN(parsedStart.getTime())) {
+      let parsedEnd = endsAt ? new Date(endsAt) : null;
+      if (!parsedEnd || Number.isNaN(parsedEnd.getTime()) || parsedEnd <= parsedStart) {
+        parsedEnd = new Date(parsedStart.getTime() + parseDurationToMinutes(duration) * 60 * 1000);
+      }
+      return { startsAt: parsedStart.toISOString(), endsAt: parsedEnd.toISOString() };
+    }
+  }
+  if (date && lowWater) {
+    const parsedStart = new Date(`${date}T${lowWater}:00`);
+    if (!Number.isNaN(parsedStart.getTime())) {
+      const parsedEnd = new Date(parsedStart.getTime() + parseDurationToMinutes(duration) * 60 * 1000);
+      return { startsAt: parsedStart.toISOString(), endsAt: parsedEnd.toISOString() };
+    }
+  }
+  return { startsAt: null, endsAt: null };
+};
+
+const formatClubWindow = (row) => ({
+  id: row.id,
+  date: row.date,
+  lowWater: row.lowWater,
+  duration: row.duration,
+  capacity: Number(row.capacity),
+  booked: Number(row.booked || 0),
+  startsAt: row.startsAt || null,
+  endsAt: row.endsAt || null,
+  notes: row.notes || '',
+});
 
 const hasPaidCalendarAccess = (user) => {
   if (!user) return false;
@@ -1870,13 +2007,257 @@ const resolveManagedClub = async (userId) => {
   return rows[0] || null;
 };
 
+const fetchClubIntegrations = async (clubId) => {
+  const { rows } = await pool.query(
+    `SELECT id, provider, external_calendar_id, metadata, last_synced_at, created_at, updated_at
+     FROM club_calendar_integrations
+     WHERE club_id = $1
+     ORDER BY created_at ASC`,
+    [clubId],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    provider: row.provider,
+    externalCalendarId: row.external_calendar_id,
+    metadata: row.metadata || {},
+    lastSyncedAt: row.last_synced_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+};
+
+const getIntegrationAuthToken = async (integrationId) => {
+  const { rows } = await pool.query(
+    `SELECT id, provider, access_token, refresh_token, token_expires_at
+     FROM club_calendar_integrations
+     WHERE id = $1
+     LIMIT 1`,
+    [integrationId],
+  );
+  return rows[0] || null;
+};
+
+const refreshIntegrationAccessTokenIfNeeded = async (integration) => {
+  if (!integration) return null;
+  const providerCfg = getOAuthProviderConfig(integration.provider);
+  if (!providerCfg) return integration.access_token;
+  const expiresSoon = integration.token_expires_at
+    ? (new Date(integration.token_expires_at).getTime() - Date.now()) < (60 * 1000)
+    : false;
+  if (!expiresSoon) return integration.access_token;
+  if (!integration.refresh_token) return integration.access_token;
+
+  const form = new URLSearchParams();
+  form.set('client_id', providerCfg.clientId);
+  form.set('client_secret', providerCfg.clientSecret);
+  form.set('refresh_token', integration.refresh_token);
+  form.set('grant_type', 'refresh_token');
+  const response = await fetch(providerCfg.tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form.toString(),
+  });
+  const data = await parseJsonResponse(response, `${integration.provider} refresh token`);
+  if (!response.ok || !data?.access_token) {
+    throw new Error(`Unable to refresh ${integration.provider} calendar token`);
+  }
+  const expiresAt = data.expires_in ? new Date(Date.now() + Number(data.expires_in) * 1000).toISOString() : null;
+  await pool.query(
+    `UPDATE club_calendar_integrations
+     SET access_token = $1,
+         refresh_token = COALESCE($2, refresh_token),
+         token_expires_at = COALESCE($3::timestamptz, token_expires_at),
+         updated_at = now()
+     WHERE id = $4`,
+    [data.access_token, data.refresh_token || null, expiresAt, integration.id],
+  );
+  return data.access_token;
+};
+
+const getScrubWindowsForClub = async (clubId) => {
+  const { rows } = await pool.query(
+    `SELECT w.id, w.date_label as date, w.low_water as "lowWater", w.duration, w.capacity,
+            w.starts_at as "startsAt", w.ends_at as "endsAt", w.notes,
+            (SELECT COUNT(*) FROM bookings b WHERE b.window_id = w.id)::int AS booked
+     FROM scrub_windows w
+     WHERE w.club_id = $1
+     ORDER BY COALESCE(w.starts_at, w.created_at) ASC`,
+    [clubId],
+  );
+  return rows.map(formatClubWindow);
+};
+
+const buildWindowExternalEventPayload = (window, clubName) => {
+  if (!window.startsAt || !window.endsAt) return null;
+  return {
+    summary: `${clubName} scrub window`,
+    body: {
+      summary: `${clubName} scrub window`,
+      description: `Scrubbing slot\nBooked: ${window.booked}/${window.capacity}\nLow water: ${window.lowWater}\nDuration: ${window.duration}${window.notes ? `\nNotes: ${window.notes}` : ''}`,
+      start: { dateTime: window.startsAt },
+      end: { dateTime: window.endsAt },
+    },
+    outlook: {
+      subject: `${clubName} scrub window`,
+      body: {
+        contentType: 'text',
+        content: `Scrubbing slot\nBooked: ${window.booked}/${window.capacity}\nLow water: ${window.lowWater}\nDuration: ${window.duration}${window.notes ? `\nNotes: ${window.notes}` : ''}`,
+      },
+      start: { dateTime: new Date(window.startsAt).toISOString(), timeZone: 'UTC' },
+      end: { dateTime: new Date(window.endsAt).toISOString(), timeZone: 'UTC' },
+    },
+  };
+};
+
+const upsertExternalEventLink = async ({ integrationId, windowId, externalEventId, externalEtag = null }) => {
+  await pool.query(
+    `INSERT INTO club_calendar_event_links (integration_id, scrub_window_id, external_event_id, external_etag, last_pushed_at, updated_at)
+     VALUES ($1, $2, $3, $4, now(), now())
+     ON CONFLICT (integration_id, scrub_window_id)
+     DO UPDATE SET external_event_id = EXCLUDED.external_event_id,
+                   external_etag = EXCLUDED.external_etag,
+                   last_pushed_at = now(),
+                   updated_at = now()`,
+    [integrationId, windowId, externalEventId, externalEtag],
+  );
+};
+
+const syncIntegrationPush = async ({ integration, club, windows }) => {
+  const authRow = await getIntegrationAuthToken(integration.id);
+  const accessToken = await refreshIntegrationAccessTokenIfNeeded(authRow);
+  const createdOrUpdated = [];
+  for (const window of windows) {
+    const payload = buildWindowExternalEventPayload(window, club.name);
+    if (!payload) continue;
+    const { rows: linkRows } = await pool.query(
+      `SELECT external_event_id FROM club_calendar_event_links WHERE integration_id = $1 AND scrub_window_id = $2 LIMIT 1`,
+      [integration.id, window.id],
+    );
+    if (integration.provider === 'gmail') {
+      const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(integration.externalCalendarId)}/events`;
+      const existingEventId = linkRows[0]?.external_event_id || null;
+      const method = existingEventId ? 'PUT' : 'POST';
+      const target = existingEventId ? `${base}/${encodeURIComponent(existingEventId)}` : base;
+      const response = await fetch(target, {
+        method,
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload.body),
+      });
+      const data = await parseJsonResponse(response, 'Google Calendar events');
+      if (!response.ok || !data?.id) throw new Error(data?.error?.message || 'Google event sync failed');
+      await upsertExternalEventLink({ integrationId: integration.id, windowId: window.id, externalEventId: data.id, externalEtag: data.etag || null });
+      createdOrUpdated.push(data.id);
+    } else if (integration.provider === 'outlook') {
+      const existingEventId = linkRows[0]?.external_event_id || null;
+      const base = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(integration.externalCalendarId)}/events`;
+      const method = existingEventId ? 'PATCH' : 'POST';
+      const target = existingEventId ? `${base}/${encodeURIComponent(existingEventId)}` : base;
+      const response = await fetch(target, {
+        method,
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload.outlook),
+      });
+      const data = response.status === 204 ? { id: existingEventId } : await parseJsonResponse(response, 'Microsoft Calendar events');
+      if (!response.ok) throw new Error(data?.error?.message || 'Outlook event sync failed');
+      const externalId = data?.id || existingEventId;
+      if (externalId) {
+        await upsertExternalEventLink({ integrationId: integration.id, windowId: window.id, externalEventId: externalId, externalEtag: data?.['@odata.etag'] || null });
+        createdOrUpdated.push(externalId);
+      }
+    }
+  }
+  return createdOrUpdated;
+};
+
+const syncIntegrationPull = async ({ integration, clubId }) => {
+  const authRow = await getIntegrationAuthToken(integration.id);
+  const accessToken = await refreshIntegrationAccessTokenIfNeeded(authRow);
+  const imported = [];
+  if (integration.provider === 'gmail') {
+    const from = new Date();
+    const to = new Date(Date.now() + 1000 * 60 * 60 * 24 * 180);
+    const listUrl = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(integration.externalCalendarId)}/events`);
+    listUrl.searchParams.set('singleEvents', 'true');
+    listUrl.searchParams.set('timeMin', from.toISOString());
+    listUrl.searchParams.set('timeMax', to.toISOString());
+    listUrl.searchParams.set('maxResults', '200');
+    const response = await fetch(listUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+    const data = await parseJsonResponse(response, 'Google calendar list events');
+    if (!response.ok) throw new Error(data?.error?.message || 'Google calendar pull failed');
+    for (const event of data.items || []) {
+      const startsAt = event?.start?.dateTime;
+      const endsAt = event?.end?.dateTime;
+      if (!startsAt || !endsAt) continue;
+      const { rows: found } = await pool.query(
+        `SELECT scrub_window_id FROM club_calendar_event_links WHERE integration_id = $1 AND external_event_id = $2 LIMIT 1`,
+        [integration.id, event.id],
+      );
+      if (found[0]?.scrub_window_id) continue;
+      const dateObj = new Date(startsAt);
+      const dateLabel = dateObj.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' });
+      const lowWater = dateObj.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const durationMin = Math.max(15, Math.round((new Date(endsAt).getTime() - dateObj.getTime()) / (60 * 1000)));
+      const duration = `${Math.floor(durationMin / 60)}h ${durationMin % 60}m`;
+      const { rows: inserted } = await pool.query(
+        `INSERT INTO scrub_windows (club_id, date_label, low_water, duration, starts_at, ends_at, notes, capacity)
+         VALUES ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7, $8)
+         RETURNING id`,
+        [clubId, dateLabel, lowWater, duration, startsAt, endsAt, event.summary || '', 1],
+      );
+      await upsertExternalEventLink({ integrationId: integration.id, windowId: inserted[0].id, externalEventId: event.id, externalEtag: event.etag || null });
+      imported.push(event.id);
+    }
+  } else if (integration.provider === 'outlook') {
+    const from = new Date().toISOString();
+    const to = new Date(Date.now() + 1000 * 60 * 60 * 24 * 180).toISOString();
+    const listUrl = new URL(`https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(integration.externalCalendarId)}/calendarView`);
+    listUrl.searchParams.set('startDateTime', from);
+    listUrl.searchParams.set('endDateTime', to);
+    listUrl.searchParams.set('$top', '200');
+    const response = await fetch(listUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+    const data = await parseJsonResponse(response, 'Microsoft calendar list events');
+    if (!response.ok) throw new Error(data?.error?.message || 'Outlook calendar pull failed');
+    for (const event of data.value || []) {
+      const startsAt = event?.start?.dateTime;
+      const endsAt = event?.end?.dateTime;
+      if (!startsAt || !endsAt) continue;
+      const { rows: found } = await pool.query(
+        `SELECT scrub_window_id FROM club_calendar_event_links WHERE integration_id = $1 AND external_event_id = $2 LIMIT 1`,
+        [integration.id, event.id],
+      );
+      if (found[0]?.scrub_window_id) continue;
+      const dateObj = new Date(startsAt);
+      const dateLabel = dateObj.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' });
+      const lowWater = dateObj.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const durationMin = Math.max(15, Math.round((new Date(endsAt).getTime() - dateObj.getTime()) / (60 * 1000)));
+      const duration = `${Math.floor(durationMin / 60)}h ${durationMin % 60}m`;
+      const { rows: inserted } = await pool.query(
+        `INSERT INTO scrub_windows (club_id, date_label, low_water, duration, starts_at, ends_at, notes, capacity)
+         VALUES ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7, $8)
+         RETURNING id`,
+        [clubId, dateLabel, lowWater, duration, startsAt, endsAt, event.subject || '', 1],
+      );
+      await upsertExternalEventLink({ integrationId: integration.id, windowId: inserted[0].id, externalEventId: event.id, externalEtag: event?.['@odata.etag'] || null });
+      imported.push(event.id);
+    }
+  }
+  await pool.query(
+    `UPDATE club_calendar_integrations
+     SET last_synced_at = now(),
+         updated_at = now()
+     WHERE id = $1`,
+    [integration.id],
+  );
+  return imported;
+};
+
 app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, res) => {
   const club = await resolveManagedClub(req.user.id);
   if (!club?.id) {
-    return res.json({ club: null, members: [], windows: [], availableUsers: [] });
+    return res.json({ club: null, members: [], windows: [], availableUsers: [], integrations: [] });
   }
 
-  const [membersResult, windowsResult, availableResult] = await Promise.all([
+  const [membersResult, windows, availableResult, integrations] = await Promise.all([
     pool.query(
       `SELECT u.id, u.email, u.role, u.home_port_name, u.home_club_name
        FROM users u
@@ -1884,14 +2265,7 @@ app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, r
        ORDER BY u.email ASC`,
       [club.id],
     ),
-    pool.query(
-      `SELECT w.id, w.date_label as date, w.low_water as "lowWater", w.duration, w.capacity,
-              (SELECT COUNT(*) FROM bookings b WHERE b.window_id = w.id)::int AS booked
-       FROM scrub_windows w
-       WHERE w.club_id = $1
-       ORDER BY w.created_at ASC`,
-      [club.id],
-    ),
+    getScrubWindowsForClub(club.id),
     pool.query(
       `SELECT id, email FROM users
        WHERE (home_club_id IS NULL OR home_club_id <> $1)
@@ -1899,14 +2273,133 @@ app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, r
        LIMIT 200`,
       [club.id],
     ),
+    fetchClubIntegrations(club.id),
   ]);
 
   return res.json({
     club,
     members: membersResult.rows,
-    windows: windowsResult.rows,
+    windows,
     availableUsers: availableResult.rows,
+    integrations,
   });
+});
+
+app.get('/api/club-admin/calendar/oauth/start', requireAuth, requireClubAdmin, async (req, res) => {
+  const provider = String(req.query.provider || '').trim();
+  const cfg = getOAuthProviderConfig(provider);
+  if (!cfg) return res.status(400).json({ error: 'Unsupported provider' });
+  if (!cfg.clientId || !cfg.clientSecret || !cfg.redirectUri) {
+    return res.status(400).json({ error: `${provider} calendar integration is not configured on the server` });
+  }
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
+  const state = createOAuthState({ userId: req.user.id, clubId: club.id, provider });
+  const url = new URL(cfg.authUrl);
+  url.searchParams.set('client_id', cfg.clientId);
+  url.searchParams.set('redirect_uri', cfg.redirectUri);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope', cfg.scope);
+  url.searchParams.set('state', state);
+  if (provider === 'gmail') {
+    url.searchParams.set('access_type', 'offline');
+    url.searchParams.set('prompt', 'consent');
+  }
+  return res.json({ authorizationUrl: url.toString() });
+});
+
+app.post('/api/club-admin/calendar/oauth/callback', requireAuth, requireClubAdmin, async (req, res) => {
+  const { code, state } = req.body || {};
+  if (!code || !state) return res.status(400).json({ error: 'code and state are required' });
+  const decodedState = verifyOAuthState(state);
+  if (!decodedState || decodedState.userId !== req.user.id) return res.status(400).json({ error: 'Invalid OAuth state' });
+  const cfg = getOAuthProviderConfig(decodedState.provider);
+  if (!cfg) return res.status(400).json({ error: 'Unsupported provider' });
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id || club.id !== decodedState.clubId) return res.status(400).json({ error: 'Club context mismatch' });
+
+  const form = new URLSearchParams();
+  form.set('client_id', cfg.clientId);
+  form.set('client_secret', cfg.clientSecret);
+  form.set('redirect_uri', cfg.redirectUri);
+  form.set('code', code);
+  form.set('grant_type', 'authorization_code');
+  const tokenResponse = await fetch(cfg.tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form.toString(),
+  });
+  const tokenData = await parseJsonResponse(tokenResponse, `${cfg.provider} token exchange`);
+  if (!tokenResponse.ok || !tokenData?.access_token) {
+    return res.status(400).json({ error: tokenData?.error_description || tokenData?.error || 'OAuth token exchange failed' });
+  }
+
+  let calendarId = 'primary';
+  let metadata = {};
+  if (cfg.provider === 'gmail') {
+    const me = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList/primary', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const meData = await parseJsonResponse(me, 'Google calendar primary');
+    if (!me.ok) return res.status(400).json({ error: meData?.error?.message || 'Unable to resolve Google calendar' });
+    calendarId = meData.id || 'primary';
+    metadata = { summary: meData.summary || 'Primary calendar', timeZone: meData.timeZone || 'UTC' };
+  } else if (cfg.provider === 'outlook') {
+    const me = await fetch('https://graph.microsoft.com/v1.0/me/calendar', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const meData = await parseJsonResponse(me, 'Outlook calendar primary');
+    if (!me.ok) return res.status(400).json({ error: meData?.error?.message || 'Unable to resolve Outlook calendar' });
+    calendarId = meData.id;
+    metadata = { summary: meData.name || 'Calendar', owner: meData.owner?.address || '' };
+  }
+
+  const expiresAt = tokenData.expires_in ? new Date(Date.now() + Number(tokenData.expires_in) * 1000).toISOString() : null;
+  await pool.query(
+    `INSERT INTO club_calendar_integrations (club_id, provider, external_calendar_id, access_token, refresh_token, token_expires_at, metadata, created_by, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::jsonb, $8, now())
+     ON CONFLICT (club_id, provider, external_calendar_id)
+     DO UPDATE SET access_token = EXCLUDED.access_token,
+                   refresh_token = COALESCE(EXCLUDED.refresh_token, club_calendar_integrations.refresh_token),
+                   token_expires_at = EXCLUDED.token_expires_at,
+                   metadata = EXCLUDED.metadata,
+                   updated_at = now()`,
+    [club.id, cfg.provider, calendarId, tokenData.access_token, tokenData.refresh_token || null, expiresAt, JSON.stringify(metadata), req.user.id],
+  );
+  return res.json({ ok: true, provider: cfg.provider, calendarId, metadata });
+});
+
+app.post('/api/club-admin/calendar/sync', requireAuth, requireClubAdmin, async (req, res) => {
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
+  const { integrationId } = req.body || {};
+  const params = [club.id];
+  let filterSql = '';
+  if (integrationId) {
+    params.push(integrationId);
+    filterSql = ` AND id = $${params.length}`;
+  }
+  const { rows: integrations } = await pool.query(
+    `SELECT id, provider, external_calendar_id as "externalCalendarId"
+     FROM club_calendar_integrations
+     WHERE club_id = $1 ${filterSql}`,
+    params,
+  );
+  const windows = await getScrubWindowsForClub(club.id);
+  const summary = [];
+  for (const integration of integrations) {
+    const pushedIds = await syncIntegrationPush({ integration, club, windows });
+    const pulledIds = await syncIntegrationPull({ integration, clubId: club.id });
+    summary.push({ integrationId: integration.id, provider: integration.provider, pushed: pushedIds.length, pulled: pulledIds.length });
+  }
+  return res.json({ synced: summary });
+});
+
+app.delete('/api/club-admin/calendar/integrations/:id', requireAuth, requireClubAdmin, async (req, res) => {
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
+  await pool.query(`DELETE FROM club_calendar_integrations WHERE id = $1 AND club_id = $2`, [req.params.id, club.id]);
+  return res.status(204).send();
 });
 
 app.put('/api/club-admin/club', requireAuth, requireClubAdmin, async (req, res) => {
@@ -1991,16 +2484,22 @@ app.post('/api/club-admin/windows', requireAuth, requireClubAdmin, async (req, r
   const club = await resolveManagedClub(req.user.id);
   if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
 
-  const { date, lowWater, duration, capacity } = req.body || {};
+  const { date, lowWater, duration, capacity, startsAt, endsAt, notes } = req.body || {};
   if (!date || !lowWater || !duration) return res.status(400).json({ error: 'All fields required' });
+  const parsed = toWindowTimestamps({ startsAt, endsAt, date, lowWater, duration });
 
   const { rows } = await pool.query(
-    `INSERT INTO scrub_windows (club_id, date_label, low_water, duration, capacity)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, date_label as date, low_water as "lowWater", duration, capacity`,
-    [club.id, date, lowWater, duration, Math.max(Number(capacity) || Number(club.capacity) || 1, 1)],
+    `INSERT INTO scrub_windows (club_id, date_label, low_water, duration, starts_at, ends_at, notes, capacity)
+     VALUES ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7, $8)
+     RETURNING id, date_label as date, low_water as "lowWater", duration, starts_at as "startsAt", ends_at as "endsAt", notes, capacity`,
+    [club.id, date, lowWater, duration, parsed.startsAt, parsed.endsAt, notes || null, Math.max(Number(capacity) || Number(club.capacity) || 1, 1)],
   );
-  return res.status(201).json(rows[0]);
+  const created = formatClubWindow(rows[0]);
+  const integrations = await fetchClubIntegrations(club.id);
+  for (const integration of integrations) {
+    await syncIntegrationPush({ integration, club, windows: [created] });
+  }
+  return res.status(201).json(created);
 });
 
 app.post('/api/club-admin/windows/:windowId/book-on-behalf', requireAuth, requireClubAdmin, async (req, res) => {
@@ -2027,6 +2526,14 @@ app.post('/api/club-admin/windows/:windowId/book-on-behalf', requireAuth, requir
      ON CONFLICT DO NOTHING`,
     [req.params.windowId, userId],
   );
+  const integrations = await fetchClubIntegrations(club.id);
+  const windows = await getScrubWindowsForClub(club.id);
+  const targetWindow = windows.find((window) => window.id === req.params.windowId);
+  if (targetWindow) {
+    for (const integration of integrations) {
+      await syncIntegrationPush({ integration, club, windows: [targetWindow] });
+    }
+  }
   return res.json({ ok: true });
 });
 

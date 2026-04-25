@@ -6,9 +6,9 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "node server.js",
+    "dev": "node scripts/build.mjs && node server.js",
     "build": "node scripts/build.mjs",
-    "start": "node server.js",
+    "start": "node scripts/build.mjs && node server.js",
     "mcp": "node mcp/server.js"
   },
   "dependencies": {
