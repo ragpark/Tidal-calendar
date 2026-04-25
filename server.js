@@ -346,6 +346,7 @@ const createRateLimiter = ({ windowMs, max, message }) => {
 };
 
 const publicPath = path.join(__dirname, 'public');
+const frontendBundlePath = path.join(publicPath, 'assets', 'bundle.js');
 
 const mimeTypes = {
   '.html': 'text/html',
@@ -2942,7 +2943,8 @@ app.use(express.static(publicPath));
 app.get('*', async (req, res) => {
   // skip API routes
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
-  let filePath = path.join(publicPath, req.path);
+  const hasFileExtension = Boolean(path.extname(req.path));
+  let filePath = path.resolve(publicPath, `.${req.path}`);
   if (req.path === '/' || !path.extname(filePath)) {
     filePath = path.join(publicPath, 'index.html');
   }
@@ -2955,6 +2957,10 @@ app.get('*', async (req, res) => {
     }
   } catch {
     // fallthrough to index.html for SPA routes
+  }
+
+  if (hasFileExtension) {
+    return res.status(404).send('Not Found');
   }
 
   const indexPath = path.join(publicPath, 'index.html');
@@ -2991,6 +2997,15 @@ const startServer = async () => {
     console.log('Starting Tidal Calendar Server...');
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`Port: ${PORT}`);
+
+    if (!existsSync(frontendBundlePath)) {
+      console.warn(`Frontend bundle missing at ${frontendBundlePath}. Building now...`);
+      await import('./scripts/build.mjs');
+      if (!existsSync(frontendBundlePath)) {
+        throw new Error(`Frontend bundle build did not produce ${frontendBundlePath}`);
+      }
+      console.log('✓ Frontend bundle generated successfully');
+    }
 
     // Start Express server
     const server = app.listen(PORT, '0.0.0.0', () => {
