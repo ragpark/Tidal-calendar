@@ -269,6 +269,7 @@ export default function TidalCalendarApp() {
   const [myClubCalendarLoading, setMyClubCalendarLoading] = useState(false);
   const [myClubCalendarError, setMyClubCalendarError] = useState('');
   const [myClubBookingBusy, setMyClubBookingBusy] = useState({});
+  const [myClubBookingModalDateKey, setMyClubBookingModalDateKey] = useState('');
   const [selectedMemberToAdd, setSelectedMemberToAdd] = useState('');
   const [facilityFormName, setFacilityFormName] = useState('');
   const [bookingAssignments, setBookingAssignments] = useState({});
@@ -1692,6 +1693,21 @@ export default function TidalCalendarApp() {
     });
     return grouped;
   }, [myClubCalendar.windows, getLondonDateKey]);
+  const myClubBookingModalWindows = useMemo(() => {
+    if (!myClubBookingModalDateKey) return [];
+    return [...(clubWindowsByDay[myClubBookingModalDateKey] || [])].sort((a, b) => {
+      const aTs = new Date(a.startsAt || a.date || 0).getTime();
+      const bTs = new Date(b.startsAt || b.date || 0).getTime();
+      return aTs - bTs;
+    });
+  }, [clubWindowsByDay, myClubBookingModalDateKey]);
+  const myClubBookingModalDateLabel = useMemo(() => {
+    if (!myClubBookingModalDateKey) return '';
+    const [year, month, day] = myClubBookingModalDateKey.split('-').map(Number);
+    if (!year || !month || !day) return myClubBookingModalDateKey;
+    const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+    return formatLondonDate(date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  }, [formatLondonDate, myClubBookingModalDateKey]);
   const bookMyClubWindow = useCallback(async (windowId) => {
     if (!windowId) return;
     setMyClubBookingBusy((state) => ({ ...state, [windowId]: true }));
@@ -3229,6 +3245,12 @@ export default function TidalCalendarApp() {
                               <div style={{ fontSize: '10px', color: availableCount > 0 ? '#166534' : '#b91c1c', fontFamily: "'Outfit', sans-serif" }}>
                                 {availableCount > 0 ? `Available: ${availableCount}` : 'Fully booked'}
                               </div>
+                              <button
+                                onClick={() => setMyClubBookingModalDateKey(dateStr)}
+                                style={{ marginTop: '4px', padding: '6px 8px', borderRadius: '7px', border: '1px solid #7dd3fc', background: '#e0f2fe', color: '#0369a1', fontSize: '10px', fontWeight: 700, cursor: 'pointer' }}
+                              >
+                                View / book
+                              </button>
                             </div>
                           )}
                         </div>
@@ -3625,6 +3647,48 @@ export default function TidalCalendarApp() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {myClubBookingModalDateKey && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 1000 }} onClick={() => setMyClubBookingModalDateKey('')}>
+          <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', maxWidth: '560px', width: '100%', boxShadow: '0 20px 60px rgba(15,23,42,0.25)', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', gap: '12px' }}>
+              <div>
+                <div style={{ fontSize: '16px', color: '#0f172a', fontWeight: 700 }}>Book Scrubbing Facility</div>
+                <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>{myClubBookingModalDateLabel}</div>
+              </div>
+              <button onClick={() => setMyClubBookingModalDateKey('')} style={{ padding: '6px 10px', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', cursor: 'pointer', fontWeight: 600 }}>Close</button>
+            </div>
+            <div style={{ padding: '16px', display: 'grid', gap: '10px' }}>
+              {myClubBookingModalWindows.length === 0 ? (
+                <div style={{ fontSize: '13px', color: '#475569', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px' }}>
+                  No facilities are currently published for this date.
+                </div>
+              ) : myClubBookingModalWindows.map((window) => {
+                const available = Number(window.booked) < Number(window.capacity);
+                const busy = Boolean(myClubBookingBusy[window.id]);
+                return (
+                  <div key={window.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', background: '#f8fafc' }}>
+                    <div style={{ display: 'grid', gap: '3px' }}>
+                      <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 700 }}>{window.facilityName || 'Scrub facility'}</div>
+                      <div style={{ fontSize: '12px', color: '#475569' }}>
+                        {window.startsAt ? `${formatTime(window.startsAt)} - ${formatTime(window.endsAt || window.startsAt)}` : `Low water ${window.lowWater}`} • {window.duration}
+                      </div>
+                      <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>{window.booked}/{window.capacity} booked</div>
+                    </div>
+                    <button
+                      onClick={() => bookMyClubWindow(window.id)}
+                      disabled={!available || busy}
+                      style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
+                    >
+                      {busy ? 'Booking…' : available ? 'Book facility' : 'Unavailable'}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
