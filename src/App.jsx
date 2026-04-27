@@ -3790,8 +3790,71 @@ export default function TidalCalendarApp() {
                         disabled={!selectedFacilityId || !available || busy}
                         style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
                       >
-                        {busy ? 'Booking…' : available ? 'Book facility' : 'Unavailable'}
-                      </button>
+                        {myClubBookingModalWindows.map((window) => (
+                          <option key={window.id} value={window.id}>
+                            {window.facilityName || 'Scrub facility'} ({window.booked}/{window.capacity} booked)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {activeWindow && (
+                      <>
+                        <div style={{ display: 'grid', gap: '3px' }}>
+                          <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 700 }}>{activeWindow.facilityName || 'Scrub facility'}</div>
+                          <div style={{ fontSize: '12px', color: '#475569' }}>
+                            {activeWindow.startsAt ? `${formatTime(activeWindow.startsAt)} - ${formatTime(activeWindow.endsAt || activeWindow.startsAt)}` : `Low water ${activeWindow.lowWater}`} • {activeWindow.duration}
+                          </div>
+                          <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>{activeWindow.booked}/{activeWindow.capacity} booked</div>
+                          {activeWindow.myBooking && <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}</div>}
+                        </div>
+                        <div style={{ display: 'grid', gap: '6px' }}>
+                          <label style={{ fontSize: '12px', color: '#334155', fontWeight: 600 }}>Boat name</label>
+                          <input
+                            type="text"
+                            value={myClubBoatNames[activeWindow.id] ?? activeWindow.myBooking?.boatName ?? ''}
+                            onChange={(event) => setMyClubBoatNames((state) => ({ ...state, [activeWindow.id]: event.target.value }))}
+                            placeholder="e.g. Sea Mist"
+                            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}
+                          />
+                        </div>
+                        {(user?.role === 'club_admin' || user?.role === 'admin') ? (
+                          <div style={{ display: 'grid', gap: '6px' }}>
+                            <select
+                              value={bookingAssignments[activeWindow.id] || ''}
+                              onChange={(event) => setBookingAssignments((state) => ({ ...state, [activeWindow.id]: event.target.value }))}
+                              style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', minWidth: '190px' }}
+                            >
+                              <option value="">Select member</option>
+                              {clubAdminData.members.map((member) => (
+                                <option key={member.id} value={member.id}>{member.email}</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => bookMyClubWindowOnBehalf(activeWindow.id, bookingAssignments[activeWindow.id], myClubBoatNames[activeWindow.id] ?? activeWindow.myBooking?.boatName ?? '')}
+                              disabled={!available || busy || !bookingAssignments[activeWindow.id]}
+                              style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
+                            >
+                              {busy ? 'Booking…' : available ? 'Book for member' : 'Unavailable'}
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => bookMyClubWindow(activeWindow.id, myClubBoatNames[activeWindow.id] ?? activeWindow.myBooking?.boatName ?? '')}
+                            disabled={!available || busy}
+                            style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
+                          >
+                            {busy ? 'Booking…' : available ? 'Book facility' : 'Unavailable'}
+                          </button>
+                        )}
+                        {(user?.role === 'club_admin' || user?.role === 'admin') && Array.isArray(activeWindow.bookingDetails) && activeWindow.bookingDetails.length > 0 && (
+                          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px', display: 'grid', gap: '4px' }}>
+                            <div style={{ fontSize: '11px', color: '#334155', fontWeight: 700 }}>Current bookings</div>
+                            {activeWindow.bookingDetails.map((booking) => (
+                              <div key={booking.bookingId} style={{ fontSize: '11px', color: '#475569' }}>{booking.email} • {booking.boatName || 'No boat name'}</div>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
 
                     {(user?.role === 'club_admin' || user?.role === 'admin') && Array.isArray(activeWindow?.bookingDetails) && activeWindow.bookingDetails.length > 0 && (
