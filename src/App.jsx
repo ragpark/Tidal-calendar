@@ -1750,23 +1750,69 @@ export default function TidalCalendarApp() {
       setMyClubBookingBusy((state) => ({ ...state, [busyKey]: false }));
     }
   }, [apiRequest, loadMyClubCalendar]);
+  const stripDeletedBookingFromWindows = useCallback((windows, bookingId) => {
+    if (!Array.isArray(windows) || !bookingId) return Array.isArray(windows) ? windows : [];
+    return windows.map((window) => {
+      const bookingDetails = Array.isArray(window.bookingDetails) ? window.bookingDetails : [];
+      const nextBookingDetails = bookingDetails.filter((booking) => booking.bookingId !== bookingId);
+      const hadBooking = bookingDetails.length !== nextBookingDetails.length
+        || window?.myBooking?.bookingId === bookingId;
+      if (!hadBooking) return window;
+
+      const bookedBoats = Array.isArray(window.bookedBoats) ? window.bookedBoats : [];
+      const deletedBoatName = bookingDetails.find((booking) => booking.bookingId === bookingId)?.boatName
+        || window?.myBooking?.boatName
+        || null;
+      let removedBoat = false;
+      const nextBookedBoats = bookedBoats.filter((boat) => {
+        if (!removedBoat && deletedBoatName && boat === deletedBoatName) {
+          removedBoat = true;
+          return false;
+        }
+        return true;
+      });
+
+      return {
+        ...window,
+        booked: Math.max(0, Number(window.booked || 0) - 1),
+        bookingDetails: nextBookingDetails,
+        myBooking: window?.myBooking?.bookingId === bookingId ? null : window.myBooking,
+        bookedBoats: nextBookedBoats,
+      };
+    });
+  }, []);
   const deleteMyClubBooking = useCallback(async (bookingId) => {
     if (!bookingId) return;
     const busyKey = `delete-${bookingId}`;
     setMyClubBookingBusy((state) => ({ ...state, [busyKey]: true }));
     setMyClubCalendarError('');
+    setMyClubCalendar((state) => ({
+      ...state,
+      windows: stripDeletedBookingFromWindows(state.windows, bookingId),
+    }));
+    setClubAdminData((state) => ({
+      ...state,
+      windows: stripDeletedBookingFromWindows(state.windows, bookingId),
+    }));
     try {
       await apiRequest(`/api/my-club/bookings/${bookingId}`, { method: 'DELETE' });
-      await Promise.all([
+      const refreshes = [loadMyClubCalendar()];
+      if (user?.role === 'club_admin' || user?.role === 'admin') refreshes.push(loadClubAdminData());
+      const results = await Promise.allSettled(refreshes);
+      const failedRefresh = results.find((result) => result.status === 'rejected');
+      if (failedRefresh) {
+        setMyClubCalendarError('Booking deleted, but one or more calendar views failed to refresh.');
+      }
+    } catch (err) {
+      setMyClubCalendarError(err.message || 'Unable to delete this booking.');
+      await Promise.allSettled([
         loadMyClubCalendar(),
         (user?.role === 'club_admin' || user?.role === 'admin') ? loadClubAdminData() : Promise.resolve(),
       ]);
-    } catch (err) {
-      setMyClubCalendarError(err.message || 'Unable to delete this booking.');
     } finally {
       setMyClubBookingBusy((state) => ({ ...state, [busyKey]: false }));
     }
-  }, [apiRequest, loadClubAdminData, loadMyClubCalendar, user?.role]);
+  }, [apiRequest, loadClubAdminData, loadMyClubCalendar, stripDeletedBookingFromWindows, user?.role]);
   const selectedDayEvents = selectedDay ? eventsByDay[getLondonDateKey(selectedDay)] || [] : [];
   const selectedDayHasUkhoApi = selectedDayEvents.some(e => e.Source === 'UKHO');
   const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
