@@ -510,17 +510,12 @@ export default function TidalCalendarApp() {
       });
     }
 
-    let nextEvents = apiEvents;
-    if (!shouldBlendPredictedEvents) {
-      if (apiFetchFailed || apiEvents.length === 0) {
-        nextEvents = predictTidalEvents(station, monthStart, predictionDays);
-      }
-    } else {
-      // Non-premium users (guest + signed-in basic users) should always receive
-      // prediction blending beyond the clamped UKHO data window.
-      const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
-      const apiDateSet = new Set(apiEvents.map(e => getLondonDateKey(e.DateTime)));
-      nextEvents = [...apiEvents, ...predictedEvents.filter(e => !apiDateSet.has(getLondonDateKey(e.DateTime)))];
+    const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
+    const apiDateSet = new Set(apiEvents.map((event) => getLondonDateKey(event.DateTime)));
+
+    let nextEvents = [...apiEvents, ...predictedEvents.filter((event) => !apiDateSet.has(getLondonDateKey(event.DateTime)))];
+    if (!shouldBlendPredictedEvents && (apiFetchFailed || apiEvents.length === 0)) {
+      nextEvents = predictedEvents;
     }
 
     setTidalEvents(nextEvents.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)));
@@ -3600,7 +3595,11 @@ export default function TidalCalendarApp() {
                   {canAccessMyClubCalendar && (
                     <button
                       onClick={async () => {
-                        await loadMyClubCalendar();
+                        try {
+                          await loadMyClubCalendar();
+                        } catch (err) {
+                          console.warn('Unable to refresh My Club availability before booking modal opens.', err);
+                        }
                         setScrubModal(null);
                         setMyClubBookingModalDateKey(getLondonDateKey(scrubModal.date));
                       }}
