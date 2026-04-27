@@ -263,7 +263,6 @@ export default function TidalCalendarApp() {
   const [clubAdminLoading, setClubAdminLoading] = useState(false);
   const [clubAdminError, setClubAdminError] = useState('');
   const [clubSetupForm, setClubSetupForm] = useState({ clubName: '', scrubPostCount: 8, homePortId: '', homePortName: '' });
-  const [clubWindowForm, setClubWindowForm] = useState({ date: '', lowWater: '', duration: '', facilityId: '', capacity: 1, startsAt: '', notes: '' });
   const [calendarSyncBusy, setCalendarSyncBusy] = useState(false);
   const [myClubCalendar, setMyClubCalendar] = useState({ club: null, windows: [] });
   const [myClubCalendarLoading, setMyClubCalendarLoading] = useState(false);
@@ -825,10 +824,6 @@ export default function TidalCalendarApp() {
         homePortId: user?.home_port_id || form.homePortId,
         homePortName: user?.home_port_name || form.homePortName,
       }));
-      setClubWindowForm((form) => ({
-        ...form,
-        capacity: normalized.club?.capacity || form.capacity,
-      }));
     } catch (err) {
       setClubAdminError(err.message || 'Unable to load club admin data.');
     } finally {
@@ -940,6 +935,12 @@ export default function TidalCalendarApp() {
   }, [currentPage, loadClubAdminData]);
 
   useEffect(() => {
+    if (currentPage === 'calendar' && viewMode === 'my_club' && (user?.role === 'club_admin' || user?.role === 'admin')) {
+      loadClubAdminData();
+    }
+  }, [currentPage, loadClubAdminData, user, viewMode]);
+
+  useEffect(() => {
     if (currentPage !== 'calendar' || !canAccessMyClubCalendar) return;
     loadMyClubCalendar();
   }, [canAccessMyClubCalendar, currentPage, loadMyClubCalendar]);
@@ -1021,29 +1022,6 @@ export default function TidalCalendarApp() {
       await loadClubAdminData();
     } catch (err) {
       setClubAdminError(err.message || 'Unable to save facility label.');
-    }
-  };
-
-  const handleCreateClubWindow = async (event) => {
-    event.preventDefault();
-    setClubAdminError('');
-    try {
-      await apiRequest('/api/club-admin/windows', {
-        method: 'POST',
-        body: JSON.stringify({
-          date: clubWindowForm.date,
-          lowWater: clubWindowForm.lowWater,
-          duration: clubWindowForm.duration,
-          facilityId: clubWindowForm.facilityId,
-          capacity: Number(clubWindowForm.capacity) || 1,
-          startsAt: clubWindowForm.startsAt || null,
-          notes: clubWindowForm.notes || '',
-        }),
-      });
-      setClubWindowForm((form) => ({ ...form, date: '', lowWater: '', duration: '', startsAt: '', notes: '' }));
-      await loadClubAdminData();
-    } catch (err) {
-      setClubAdminError(err.message || 'Unable to add scrubbing availability.');
     }
   };
 
@@ -1721,6 +1699,22 @@ export default function TidalCalendarApp() {
       setMyClubBookingBusy((state) => ({ ...state, [windowId]: false }));
     }
   }, [apiRequest, loadMyClubCalendar]);
+  const bookMyClubWindowOnBehalf = useCallback(async (windowId, userId) => {
+    if (!windowId || !userId) return;
+    setMyClubBookingBusy((state) => ({ ...state, [windowId]: true }));
+    setMyClubCalendarError('');
+    try {
+      await apiRequest(`/api/club-admin/windows/${windowId}/book-on-behalf`, {
+        method: 'POST',
+        body: JSON.stringify({ userId }),
+      });
+      await Promise.all([loadMyClubCalendar(), loadClubAdminData()]);
+    } catch (err) {
+      setMyClubCalendarError(err.message || 'Unable to book this facility slot.');
+    } finally {
+      setMyClubBookingBusy((state) => ({ ...state, [windowId]: false }));
+    }
+  }, [apiRequest, loadClubAdminData, loadMyClubCalendar]);
   const selectedDayEvents = selectedDay ? eventsByDay[getLondonDateKey(selectedDay)] || [] : [];
   const selectedDayHasUkhoApi = selectedDayEvents.some(e => e.Source === 'UKHO');
   const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
@@ -2496,7 +2490,7 @@ export default function TidalCalendarApp() {
             <header style={{ display: 'grid', gap: '6px' }}>
               <p style={{ margin: 0, fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9' }}>Club Admin</p>
               <h2 style={{ margin: 0, color: '#0f172a' }}>Club setup, members, and scrubbing bookings</h2>
-              <p style={{ margin: 0, color: '#475569', fontSize: '13px' }}>Configure your club details, add calendar users to your group, and manage scrubbing facility availability and bookings.</p>
+              <p style={{ margin: 0, color: '#475569', fontSize: '13px' }}>Configure your club details, add calendar users to your group, and manage connected calendar sync. Facility booking is now handled in the My Club calendar view.</p>
             </header>
 
             {clubAdminError && <div style={{ color: '#b91c1c', fontWeight: 600, fontSize: '13px' }}>{clubAdminError}</div>}
@@ -2569,26 +2563,10 @@ export default function TidalCalendarApp() {
                 <div style={{ fontSize: '12px', color: '#475569' }}>Named facilities: {clubAdminData.facilities.length}</div>
               </form>
 
-              <form onSubmit={handleCreateClubWindow} style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
-                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>4) Add scrubbing availability</h3>
-                <select value={clubWindowForm.facilityId} onChange={(event) => setClubWindowForm((form) => ({ ...form, facilityId: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }} required>
-                  <option value="">Select facility</option>
-                  {clubAdminData.facilities.map((facility) => (
-                    <option key={facility.id} value={facility.id}>{facility.name}</option>
-                  ))}
-                </select>
-                <input type="text" placeholder="Date label e.g. Thu 18 Sep" value={clubWindowForm.date} onChange={(event) => setClubWindowForm((form) => ({ ...form, date: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
-                <input type="text" placeholder="Low water e.g. 11:42" value={clubWindowForm.lowWater} onChange={(event) => setClubWindowForm((form) => ({ ...form, lowWater: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
-                <input type="text" placeholder="Duration e.g. 2h 10m" value={clubWindowForm.duration} onChange={(event) => setClubWindowForm((form) => ({ ...form, duration: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
-                <input type="datetime-local" value={clubWindowForm.startsAt} onChange={(event) => setClubWindowForm((form) => ({ ...form, startsAt: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-                <input type="text" placeholder="Notes (optional)" value={clubWindowForm.notes} onChange={(event) => setClubWindowForm((form) => ({ ...form, notes: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-                <input type="number" min="1" placeholder="Slots" value={clubWindowForm.capacity} onChange={(event) => setClubWindowForm((form) => ({ ...form, capacity: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
-                <button type="submit" style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>Add calendar availability</button>
-              </form>
             </div>
 
             <div style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
-              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>5) Connect Google / Outlook calendar</h3>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>4) Connect Google / Outlook calendar</h3>
               <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>Bi-directional sync: create availability in this app and it is pushed to your connected calendar. Run sync to pull external changes back into the club schedule.</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 <button onClick={() => connectExternalCalendar('gmail')} style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #16a34a', background: '#22c55e', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Connect Gmail</button>
@@ -2622,7 +2600,7 @@ export default function TidalCalendarApp() {
                 {' '}• Scrubbing posts: <strong style={{ color: '#0f172a' }}>{clubAdminData.club?.capacity ?? '—'}</strong>
               </div>
               {clubAdminData.windows.length === 0 ? (
-                <div style={{ fontSize: '12px', color: '#64748b' }}>No availability windows yet. Add your first one above.</div>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>No availability windows yet. Booking is managed in My Club calendar when slots exist.</div>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
@@ -3239,17 +3217,17 @@ export default function TidalCalendarApp() {
                             </span>
                             {windows.length > 0 && <span style={{ fontSize: '10px', color: '#334155' }}>{windows.length} slot{windows.length > 1 ? 's' : ''}</span>}
                           </div>
-                          {isCurrentMonth && windows.length > 0 && (
+                          {isCurrentMonth && (
                             <div style={{ display: 'grid', gap: '4px' }}>
                               <div style={{ fontSize: '10px', color: '#334155', fontFamily: "'Outfit', sans-serif" }}>In use: {usedCount}</div>
                               <div style={{ fontSize: '10px', color: availableCount > 0 ? '#166534' : '#b91c1c', fontFamily: "'Outfit', sans-serif" }}>
-                                {availableCount > 0 ? `Available: ${availableCount}` : 'Fully booked'}
+                                {windows.length === 0 ? 'No slots' : availableCount > 0 ? `Available: ${availableCount}` : 'Fully booked'}
                               </div>
                               <button
                                 onClick={() => setMyClubBookingModalDateKey(dateStr)}
                                 style={{ marginTop: '4px', padding: '6px 8px', borderRadius: '7px', border: '1px solid #7dd3fc', background: '#e0f2fe', color: '#0369a1', fontSize: '10px', fontWeight: 700, cursor: 'pointer' }}
                               >
-                                View / book
+                                Book
                               </button>
                             </div>
                           )}
@@ -3679,13 +3657,35 @@ export default function TidalCalendarApp() {
                       </div>
                       <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>{window.booked}/{window.capacity} booked</div>
                     </div>
-                    <button
-                      onClick={() => bookMyClubWindow(window.id)}
-                      disabled={!available || busy}
-                      style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
-                    >
-                      {busy ? 'Booking…' : available ? 'Book facility' : 'Unavailable'}
-                    </button>
+                    {(user?.role === 'club_admin' || user?.role === 'admin') ? (
+                      <div style={{ display: 'grid', gap: '6px' }}>
+                        <select
+                          value={bookingAssignments[window.id] || ''}
+                          onChange={(event) => setBookingAssignments((state) => ({ ...state, [window.id]: event.target.value }))}
+                          style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', minWidth: '190px' }}
+                        >
+                          <option value="">Select member</option>
+                          {clubAdminData.members.map((member) => (
+                            <option key={member.id} value={member.id}>{member.email}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => bookMyClubWindowOnBehalf(window.id, bookingAssignments[window.id])}
+                          disabled={!available || busy || !bookingAssignments[window.id]}
+                          style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
+                        >
+                          {busy ? 'Booking…' : available ? 'Book for member' : 'Unavailable'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => bookMyClubWindow(window.id)}
+                        disabled={!available || busy}
+                        style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
+                      >
+                        {busy ? 'Booking…' : available ? 'Book facility' : 'Unavailable'}
+                      </button>
+                    )}
                   </div>
                 );
               })}
