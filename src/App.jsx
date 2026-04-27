@@ -358,8 +358,8 @@ export default function TidalCalendarApp() {
     return Boolean(user.has_pdf_calendar_access);
   }, [user]);
   const canAccessMyClubCalendar = useMemo(
-    () => Boolean(user && (user.role === 'club_admin' || user.role === 'admin' || user.home_club_id)),
-    [user],
+    () => Boolean(user && (user.home_club_id || clubAdminData.club?.id)),
+    [clubAdminData.club?.id, user],
   );
 
   const apiRequest = useCallback(async (url, options = {}) => {
@@ -935,10 +935,10 @@ export default function TidalCalendarApp() {
   }, [currentPage, loadClubAdminData]);
 
   useEffect(() => {
-    if (currentPage === 'calendar' && viewMode === 'my_club' && (user?.role === 'club_admin' || user?.role === 'admin')) {
+    if (currentPage === 'calendar' && (user?.role === 'club_admin' || user?.role === 'admin')) {
       loadClubAdminData();
     }
-  }, [currentPage, loadClubAdminData, user, viewMode]);
+  }, [currentPage, loadClubAdminData, user]);
 
   useEffect(() => {
     if (currentPage !== 'calendar' || !canAccessMyClubCalendar) return;
