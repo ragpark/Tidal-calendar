@@ -3291,7 +3291,9 @@ export default function TidalCalendarApp() {
                         return start && !Number.isNaN(start.getTime()) && start.getFullYear() === currentMonth.getFullYear() && start.getMonth() === currentMonth.getMonth();
                       })
                       .map((window) => {
+                        const isBookedByMe = Boolean(window.myBooking);
                         const available = Number(window.booked) < Number(window.capacity);
+                        const canBook = available && !isBookedByMe;
                         const busy = Boolean(myClubBookingBusy[window.id]);
                         return (
                           <div key={window.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', background: '#f8fafc' }}>
@@ -3321,7 +3323,7 @@ export default function TidalCalendarApp() {
                               disabled={!available || busy}
                               style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
                             >
-                              {busy ? 'Booking…' : available ? 'Book facility' : 'Unavailable'}
+                              {busy ? 'Booking…' : isBookedByMe ? 'Booked' : available ? 'Book facility' : 'Unavailable'}
                             </button>
                           </div>
                         );
