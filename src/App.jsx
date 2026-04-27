@@ -666,31 +666,6 @@ export default function TidalCalendarApp() {
     });
   }, [confirmStripeSession, user]);
 
-  useEffect(() => {
-    if (!(user?.role === 'club_admin' || user?.role === 'admin')) return;
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    const state = params.get('state');
-    if (!code || !state) return;
-    (async () => {
-      try {
-        await apiRequest('/api/club-admin/calendar/oauth/callback', {
-          method: 'POST',
-          body: JSON.stringify({ code, state }),
-        });
-        await loadClubAdminData();
-      } catch (err) {
-        setClubAdminError(err.message || 'Calendar connection callback failed.');
-      } finally {
-        params.delete('code');
-        params.delete('state');
-        params.delete('scope');
-        const clean = params.toString();
-        window.history.replaceState({}, document.title, `${window.location.pathname}${clean ? `?${clean}` : ''}`);
-      }
-    })();
-  }, [apiRequest, loadClubAdminData, user]);
-
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
