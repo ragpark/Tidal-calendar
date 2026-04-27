@@ -3291,7 +3291,9 @@ export default function TidalCalendarApp() {
                         return start && !Number.isNaN(start.getTime()) && start.getFullYear() === currentMonth.getFullYear() && start.getMonth() === currentMonth.getMonth();
                       })
                       .map((window) => {
+                        const isBookedByMe = Boolean(window.myBooking);
                         const available = Number(window.booked) < Number(window.capacity);
+                        const canBook = available && !isBookedByMe;
                         const busy = Boolean(myClubBookingBusy[window.id]);
                         return (
                           <div key={window.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', background: '#f8fafc' }}>
@@ -3313,10 +3315,10 @@ export default function TidalCalendarApp() {
                             </div>
                             <button
                               onClick={() => bookMyClubWindow(window.id, myClubBoatNames[window.id] || window.myBooking?.boatName || '')}
-                              disabled={!available || busy}
-                              style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
+                              disabled={!canBook || busy}
+                              style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${canBook ? '#0284c7' : '#cbd5e1'}`, background: canBook ? '#0ea5e9' : '#e2e8f0', color: canBook ? '#fff' : '#64748b', fontWeight: 700, cursor: canBook ? 'pointer' : 'not-allowed' }}
                             >
-                              {busy ? 'Booking…' : available ? 'Book facility' : 'Unavailable'}
+                              {busy ? 'Booking…' : isBookedByMe ? 'Booked' : available ? 'Book facility' : 'Unavailable'}
                             </button>
                           </div>
                         );
@@ -3702,6 +3704,7 @@ export default function TidalCalendarApp() {
                 const activeWindow = selectedFacilityId ? windowByFacilityId[selectedFacilityId] || null : null;
                 const createBusyKey = `${myClubBookingModalDateKey}:${selectedFacilityId}`;
                 const busy = Boolean(myClubBookingBusy[activeWindow?.id || createBusyKey]);
+                const isBookedByMe = Boolean(activeWindow?.myBooking);
                 const available = activeWindow ? Number(activeWindow.booked) < Number(activeWindow.capacity) : true;
 
                 if (facilities.length === 0) {
@@ -3790,10 +3793,10 @@ export default function TidalCalendarApp() {
                         return (
                           <button
                             onClick={handleMemberBooking}
-                            disabled={!selectedFacilityId || !available || busy}
-                            style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
+                            disabled={!selectedFacilityId || !available || isBookedByMe || busy}
+                            style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${selectedFacilityId && available && !isBookedByMe ? '#0284c7' : '#cbd5e1'}`, background: selectedFacilityId && available && !isBookedByMe ? '#0ea5e9' : '#e2e8f0', color: selectedFacilityId && available && !isBookedByMe ? '#fff' : '#64748b', fontWeight: 700, cursor: selectedFacilityId && available && !isBookedByMe ? 'pointer' : 'not-allowed' }}
                           >
-                            {busy ? 'Booking…' : available ? 'Book facility' : 'Unavailable'}
+                            {busy ? 'Booking…' : isBookedByMe ? 'Booked' : available ? 'Book facility' : 'Unavailable'}
                           </button>
                         );
                       })()
