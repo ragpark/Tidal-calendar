@@ -1750,6 +1750,23 @@ export default function TidalCalendarApp() {
       setMyClubBookingBusy((state) => ({ ...state, [busyKey]: false }));
     }
   }, [apiRequest, loadMyClubCalendar]);
+  const deleteMyClubBooking = useCallback(async (bookingId) => {
+    if (!bookingId) return;
+    const busyKey = `delete-${bookingId}`;
+    setMyClubBookingBusy((state) => ({ ...state, [busyKey]: true }));
+    setMyClubCalendarError('');
+    try {
+      await apiRequest(`/api/my-club/bookings/${bookingId}`, { method: 'DELETE' });
+      await Promise.all([
+        loadMyClubCalendar(),
+        (user?.role === 'club_admin' || user?.role === 'admin') ? loadClubAdminData() : Promise.resolve(),
+      ]);
+    } catch (err) {
+      setMyClubCalendarError(err.message || 'Unable to delete this booking.');
+    } finally {
+      setMyClubBookingBusy((state) => ({ ...state, [busyKey]: false }));
+    }
+  }, [apiRequest, loadClubAdminData, loadMyClubCalendar, user?.role]);
   const selectedDayEvents = selectedDay ? eventsByDay[getLondonDateKey(selectedDay)] || [] : [];
   const selectedDayHasUkhoApi = selectedDayEvents.some(e => e.Source === 'UKHO');
   const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
@@ -3751,7 +3768,18 @@ export default function TidalCalendarApp() {
                               Boats: {activeWindow.bookedBoats.join(', ')}
                             </div>
                           )}
-                          {activeWindow.myBooking && <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}</div>}
+                          {activeWindow.myBooking && (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                              <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}</div>
+                              <button
+                                onClick={() => deleteMyClubBooking(activeWindow.myBooking.bookingId)}
+                                disabled={Boolean(myClubBookingBusy[`delete-${activeWindow.myBooking.bookingId}`])}
+                                style={{ padding: '5px 8px', borderRadius: '8px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}
+                              >
+                                {myClubBookingBusy[`delete-${activeWindow.myBooking.bookingId}`] ? 'Deleting…' : 'Delete booking'}
+                              </button>
+                            </div>
+                          )}
                         </>
                       ) : (
                         <div style={{ fontSize: '12px', color: '#475569' }}>No slot published yet for this facility on this date. Booking will create one.</div>
@@ -3815,7 +3843,16 @@ export default function TidalCalendarApp() {
                       <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px', display: 'grid', gap: '4px' }}>
                         <div style={{ fontSize: '11px', color: '#334155', fontWeight: 700 }}>Current bookings</div>
                         {activeWindow.bookingDetails.map((booking) => (
-                          <div key={booking.bookingId} style={{ fontSize: '11px', color: '#475569' }}>{booking.email} • {booking.boatName || 'No boat name'}</div>
+                          <div key={booking.bookingId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                            <div style={{ fontSize: '11px', color: '#475569' }}>{booking.email} • {booking.boatName || 'No boat name'}</div>
+                            <button
+                              onClick={() => deleteMyClubBooking(booking.bookingId)}
+                              disabled={Boolean(myClubBookingBusy[`delete-${booking.bookingId}`])}
+                              style={{ padding: '4px 7px', borderRadius: '7px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: 'pointer', fontSize: '10px', whiteSpace: 'nowrap' }}
+                            >
+                              {myClubBookingBusy[`delete-${booking.bookingId}`] ? 'Deleting…' : 'Delete'}
+                            </button>
+                          </div>
                         ))}
                       </div>
                     )}
