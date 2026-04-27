@@ -786,6 +786,7 @@ const formatClubWindow = (row) => ({
   facilityName: row.facilityName || 'Unassigned facility',
   myBooking: row.myBooking || null,
   bookingDetails: Array.isArray(row.bookingDetails) ? row.bookingDetails : [],
+  bookedBoats: Array.isArray(row.bookedBoats) ? row.bookedBoats.filter(Boolean) : [],
 });
 
 const hasPaidCalendarAccess = (user) => {
@@ -2145,7 +2146,15 @@ const getScrubWindowsForClub = async (clubId, options = {}) => {
                 WHERE b.window_id = w.id
               )
               ELSE '[]'::json
-            END AS "bookingDetails"
+            END AS "bookingDetails",
+            (
+              SELECT COALESCE(
+                json_agg(b.boat_name ORDER BY b.created_at ASC) FILTER (WHERE b.boat_name IS NOT NULL AND btrim(b.boat_name) <> ''),
+                '[]'::json
+              )
+              FROM bookings b
+              WHERE b.window_id = w.id
+            ) AS "bookedBoats"
      FROM scrub_windows w
      LEFT JOIN club_facilities cf ON cf.id = w.facility_id
      WHERE w.club_id = $1

@@ -3307,6 +3307,11 @@ export default function TidalCalendarApp() {
                               <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>
                                 {window.booked}/{window.capacity} booked
                               </div>
+                              {Array.isArray(window.bookedBoats) && window.bookedBoats.length > 0 && (
+                                <div style={{ fontSize: '11px', color: '#334155' }}>
+                                  Boats: {window.bookedBoats.join(', ')}
+                                </div>
+                              )}
                               {window.myBooking && (
                                 <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>
                                   Status: Booked • Boat: {window.myBooking.boatName || 'Not provided'}
@@ -3315,8 +3320,8 @@ export default function TidalCalendarApp() {
                             </div>
                             <button
                               onClick={() => bookMyClubWindow(window.id, myClubBoatNames[window.id] || window.myBooking?.boatName || '')}
-                              disabled={!canBook || busy}
-                              style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${canBook ? '#0284c7' : '#cbd5e1'}`, background: canBook ? '#0ea5e9' : '#e2e8f0', color: canBook ? '#fff' : '#64748b', fontWeight: 700, cursor: canBook ? 'pointer' : 'not-allowed' }}
+                              disabled={!available || busy}
+                              style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
                             >
                               {busy ? 'Booking…' : isBookedByMe ? 'Booked' : available ? 'Book facility' : 'Unavailable'}
                             </button>
@@ -3704,7 +3709,6 @@ export default function TidalCalendarApp() {
                 const activeWindow = selectedFacilityId ? windowByFacilityId[selectedFacilityId] || null : null;
                 const createBusyKey = `${myClubBookingModalDateKey}:${selectedFacilityId}`;
                 const busy = Boolean(myClubBookingBusy[activeWindow?.id || createBusyKey]);
-                const isBookedByMe = Boolean(activeWindow?.myBooking);
                 const available = activeWindow ? Number(activeWindow.booked) < Number(activeWindow.capacity) : true;
 
                 if (facilities.length === 0) {
@@ -3742,6 +3746,11 @@ export default function TidalCalendarApp() {
                             {activeWindow.startsAt ? `${formatTime(activeWindow.startsAt)} - ${formatTime(activeWindow.endsAt || activeWindow.startsAt)}` : `Low water ${activeWindow.lowWater}`} • {activeWindow.duration}
                           </div>
                           <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>{activeWindow.booked}/{activeWindow.capacity} booked</div>
+                          {Array.isArray(activeWindow.bookedBoats) && activeWindow.bookedBoats.length > 0 && (
+                            <div style={{ fontSize: '11px', color: '#334155' }}>
+                              Boats: {activeWindow.bookedBoats.join(', ')}
+                            </div>
+                          )}
                           {activeWindow.myBooking && <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}</div>}
                         </>
                       ) : (
@@ -3793,10 +3802,10 @@ export default function TidalCalendarApp() {
                         return (
                           <button
                             onClick={handleMemberBooking}
-                            disabled={!selectedFacilityId || !available || isBookedByMe || busy}
-                            style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${selectedFacilityId && available && !isBookedByMe ? '#0284c7' : '#cbd5e1'}`, background: selectedFacilityId && available && !isBookedByMe ? '#0ea5e9' : '#e2e8f0', color: selectedFacilityId && available && !isBookedByMe ? '#fff' : '#64748b', fontWeight: 700, cursor: selectedFacilityId && available && !isBookedByMe ? 'pointer' : 'not-allowed' }}
+                            disabled={!selectedFacilityId || !available || busy}
+                            style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
                           >
-                            {busy ? 'Booking…' : isBookedByMe ? 'Booked' : available ? 'Book facility' : 'Unavailable'}
+                            {busy ? 'Booking…' : available ? 'Book facility' : 'Unavailable'}
                           </button>
                         );
                       })()
