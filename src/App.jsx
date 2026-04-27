@@ -264,7 +264,7 @@ export default function TidalCalendarApp() {
   const [clubAdminError, setClubAdminError] = useState('');
   const [clubSetupForm, setClubSetupForm] = useState({ clubName: '', scrubPostCount: 8, homePortId: '', homePortName: '' });
   const [calendarSyncBusy, setCalendarSyncBusy] = useState(false);
-  const [myClubCalendar, setMyClubCalendar] = useState({ club: null, windows: [] });
+  const [myClubCalendar, setMyClubCalendar] = useState({ club: null, windows: [], facilities: [] });
   const [myClubCalendarLoading, setMyClubCalendarLoading] = useState(false);
   const [myClubCalendarError, setMyClubCalendarError] = useState('');
   const [myClubBookingBusy, setMyClubBookingBusy] = useState({});
@@ -842,10 +842,11 @@ export default function TidalCalendarApp() {
       setMyClubCalendar({
         club: data?.club || null,
         windows: Array.isArray(data?.windows) ? data.windows : [],
+        facilities: Array.isArray(data?.facilities) ? data.facilities : [],
       });
     } catch (err) {
       setMyClubCalendarError(err.message || 'Unable to load My Club calendar.');
-      setMyClubCalendar({ club: null, windows: [] });
+      setMyClubCalendar({ club: null, windows: [], facilities: [] });
     } finally {
       setMyClubCalendarLoading(false);
     }
@@ -1727,6 +1728,28 @@ export default function TidalCalendarApp() {
       setMyClubBookingBusy((state) => ({ ...state, [windowId]: false }));
     }
   }, [apiRequest, loadClubAdminData, loadMyClubCalendar]);
+  const bookMyClubFacilityByDate = useCallback(async (dateKey, facilityId, boatName) => {
+    if (!dateKey || !facilityId) return;
+    const normalizedBoatName = String(boatName || '').trim();
+    if (!normalizedBoatName) {
+      setMyClubCalendarError('Boat name is required to book a facility slot.');
+      return;
+    }
+    const busyKey = `${dateKey}:${facilityId}`;
+    setMyClubBookingBusy((state) => ({ ...state, [busyKey]: true }));
+    setMyClubCalendarError('');
+    try {
+      await apiRequest('/api/my-club/bookings', {
+        method: 'POST',
+        body: JSON.stringify({ date: dateKey, facilityId, boatName: normalizedBoatName }),
+      });
+      await loadMyClubCalendar();
+    } catch (err) {
+      setMyClubCalendarError(err.message || 'Unable to create a booking for this facility.');
+    } finally {
+      setMyClubBookingBusy((state) => ({ ...state, [busyKey]: false }));
+    }
+  }, [apiRequest, loadMyClubCalendar]);
   const selectedDayEvents = selectedDay ? eventsByDay[getLondonDateKey(selectedDay)] || [] : [];
   const selectedDayHasUkhoApi = selectedDayEvents.some(e => e.Source === 'UKHO');
   const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
@@ -3665,9 +3688,58 @@ export default function TidalCalendarApp() {
             </div>
             <div style={{ padding: '16px', display: 'grid', gap: '10px' }}>
               {myClubBookingModalWindows.length === 0 ? (
-                <div style={{ fontSize: '13px', color: '#475569', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px' }}>
-                  No facilities are currently published for this date.
-                </div>
+                (() => {
+                  const selectedFacilityId = myClubSelectedFacilityByDate[myClubBookingModalDateKey] || myClubCalendar.facilities?.[0]?.id || '';
+                  const selectedFacility = (myClubCalendar.facilities || []).find((facility) => facility.id === selectedFacilityId);
+                  const busyKey = `${myClubBookingModalDateKey}:${selectedFacilityId}`;
+                  const busy = Boolean(myClubBookingBusy[busyKey]);
+                  return (
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px', background: '#f8fafc' }}>
+                      {(myClubCalendar.facilities || []).length === 0 ? (
+                        <div style={{ fontSize: '13px', color: '#475569', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px' }}>
+                          No facilities are configured for this club yet.
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display: 'grid', gap: '6px' }}>
+                            <label style={{ fontSize: '12px', color: '#334155', fontWeight: 600 }}>Facility</label>
+                            <select
+                              value={selectedFacilityId}
+                              onChange={(event) => setMyClubSelectedFacilityByDate((state) => ({ ...state, [myClubBookingModalDateKey]: event.target.value }))}
+                              style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}
+                            >
+                              {(myClubCalendar.facilities || []).map((facility) => (
+                                <option key={facility.id} value={facility.id}>{facility.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          {selectedFacility && (
+                            <div style={{ fontSize: '12px', color: '#475569' }}>
+                              Booking for: <strong style={{ color: '#0f172a' }}>{selectedFacility.name}</strong> on {myClubBookingModalDateLabel}
+                            </div>
+                          )}
+                          <div style={{ display: 'grid', gap: '6px' }}>
+                            <label style={{ fontSize: '12px', color: '#334155', fontWeight: 600 }}>Boat name</label>
+                            <input
+                              type="text"
+                              value={myClubBoatNames[busyKey] || ''}
+                              onChange={(event) => setMyClubBoatNames((state) => ({ ...state, [busyKey]: event.target.value }))}
+                              placeholder="e.g. Sea Mist"
+                              style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}
+                            />
+                          </div>
+                          <button
+                            onClick={() => bookMyClubFacilityByDate(myClubBookingModalDateKey, selectedFacilityId, myClubBoatNames[busyKey] || '')}
+                            disabled={busy || !selectedFacilityId}
+                            style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: busy || !selectedFacilityId ? 0.65 : 1 }}
+                          >
+                            {busy ? 'Booking…' : 'Book facility'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()
               ) : (() => {
                 const selectedWindowId = myClubSelectedFacilityByDate[myClubBookingModalDateKey] || myClubBookingModalWindows[0]?.id || '';
                 const activeWindow = myClubBookingModalWindows.find((window) => window.id === selectedWindowId) || myClubBookingModalWindows[0];

@@ -2698,7 +2698,11 @@ app.get('/api/my-club/calendar', requireAuth, async (req, res) => {
     viewerUserId: req.user.id,
     includeBookingDetails,
   });
-  return res.json({ club: rows[0], windows });
+  const { rows: facilityRows } = await pool.query(
+    `SELECT id, name FROM club_facilities WHERE club_id = $1 ORDER BY name ASC`,
+    [clubId],
+  );
+  return res.json({ club: rows[0], windows, facilities: facilityRows });
 });
 
 app.post('/api/my-club/windows/:windowId/book', requireAuth, async (req, res) => {
@@ -2742,6 +2746,88 @@ app.post('/api/my-club/windows/:windowId/book', requireAuth, async (req, res) =>
   const { rows: clubRows } = await pool.query(`SELECT id, name, capacity FROM clubs WHERE id = $1 LIMIT 1`, [clubId]);
   await syncWindowToExternalCalendars({ club: clubRows[0] || null, windowId: req.params.windowId });
   return res.json({ ok: true, alreadyBooked: false });
+});
+
+app.post('/api/my-club/bookings', requireAuth, async (req, res) => {
+  const { date, facilityId, boatName } = req.body || {};
+  const normalizedDate = String(date || '').trim();
+  const normalizedFacilityId = String(facilityId || '').trim();
+  const normalizedBoatName = String(boatName || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) return res.status(400).json({ error: 'Date must be in YYYY-MM-DD format' });
+  if (!normalizedFacilityId) return res.status(400).json({ error: 'facilityId is required' });
+  if (!normalizedBoatName) return res.status(400).json({ error: 'Boat name is required' });
+
+  const managedClub = (req.user.role === 'club_admin' || req.user.role === 'admin')
+    ? await resolveManagedClub(req.user.id)
+    : null;
+  const clubId = managedClub?.id || req.user.home_club_id;
+  if (!clubId) return res.status(403).json({ error: 'Club membership required' });
+
+  const { rows: facilityRows } = await pool.query(
+    `SELECT id FROM club_facilities WHERE id = $1 AND club_id = $2 LIMIT 1`,
+    [normalizedFacilityId, clubId],
+  );
+  if (facilityRows.length === 0) return res.status(404).json({ error: 'Facility not found for your club' });
+
+  const { rows: clubRows } = await pool.query(`SELECT id, name, capacity FROM clubs WHERE id = $1 LIMIT 1`, [clubId]);
+  const club = clubRows[0];
+  if (!club) return res.status(404).json({ error: 'Club not found' });
+
+  const startIso = `${normalizedDate}T12:00:00.000Z`;
+  const endIso = `${normalizedDate}T13:00:00.000Z`;
+
+  const { rows: existingWindowRows } = await pool.query(
+    `SELECT id FROM scrub_windows
+     WHERE club_id = $1
+       AND facility_id = $2
+       AND (
+         date_label = $3
+         OR (starts_at IS NOT NULL AND (starts_at AT TIME ZONE 'UTC')::date = $3::date)
+       )
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [clubId, normalizedFacilityId, normalizedDate],
+  );
+
+  let windowId = existingWindowRows[0]?.id || null;
+  if (!windowId) {
+    const { rows: createdWindowRows } = await pool.query(
+      `INSERT INTO scrub_windows (club_id, date_label, low_water, duration, starts_at, ends_at, notes, facility_id, capacity)
+       VALUES ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7, $8, $9)
+       RETURNING id`,
+      [clubId, normalizedDate, '--:--', 'Booked slot', startIso, endIso, 'Member-created booking', normalizedFacilityId, Math.max(Number(club.capacity) || 1, 1)],
+    );
+    windowId = createdWindowRows[0]?.id || null;
+  }
+  if (!windowId) return res.status(500).json({ error: 'Unable to create booking slot' });
+
+  const { rows: existingBookingRows } = await pool.query(
+    `SELECT id FROM bookings WHERE window_id = $1 AND user_id = $2 LIMIT 1`,
+    [windowId, req.user.id],
+  );
+  if (existingBookingRows.length > 0) {
+    await pool.query(
+      `UPDATE bookings SET boat_name = $3 WHERE window_id = $1 AND user_id = $2`,
+      [windowId, req.user.id, normalizedBoatName],
+    );
+  } else {
+    const { rows: capacityRows } = await pool.query(
+      `SELECT w.capacity, (SELECT COUNT(*) FROM bookings b WHERE b.window_id = w.id)::int AS booked
+       FROM scrub_windows w
+       WHERE w.id = $1
+       LIMIT 1`,
+      [windowId],
+    );
+    const slot = capacityRows[0];
+    if (!slot) return res.status(404).json({ error: 'Scrub window not found' });
+    if (Number(slot.booked) >= Number(slot.capacity)) {
+      return res.status(400).json({ error: 'This facility slot is fully booked' });
+    }
+    await pool.query(`INSERT INTO bookings (window_id, user_id, boat_name) VALUES ($1, $2, $3)`, [windowId, req.user.id, normalizedBoatName]);
+  }
+
+  await syncWindowToExternalCalendars({ club, windowId });
+  return res.json({ ok: true, windowId });
 });
 
 app.get('/api/facilities/search', async (req, res) => {
