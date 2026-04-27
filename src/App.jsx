@@ -3290,18 +3290,25 @@ export default function TidalCalendarApp() {
                 </div>
 
                 <div style={{ marginTop: '18px', display: 'grid', gap: '10px' }}>
-                  {myClubCalendar.windows.length === 0 ? (
-                    <div style={{ fontSize: '12px', color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
-                      No club facility availability has been published yet for this club.
-                    </div>
-                  ) : (
-                    myClubCalendar.windows
+                  {(() => {
+                    const monthlyBookedWindows = myClubCalendar.windows
                       .filter((window) => {
                         const source = window.startsAt || window.date;
                         const start = source ? new Date(source) : null;
-                        return start && !Number.isNaN(start.getTime()) && start.getFullYear() === currentMonth.getFullYear() && start.getMonth() === currentMonth.getMonth();
-                      })
-                      .map((window) => {
+                        if (!start || Number.isNaN(start.getTime())) return false;
+                        const inCurrentMonth = start.getFullYear() === currentMonth.getFullYear() && start.getMonth() === currentMonth.getMonth();
+                        return inCurrentMonth && Number(window.booked || 0) > 0;
+                      });
+
+                    if (monthlyBookedWindows.length === 0) {
+                      return (
+                        <div style={{ fontSize: '12px', color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
+                          No booked facilities for this month.
+                        </div>
+                      );
+                    }
+
+                    return monthlyBookedWindows.map((window) => {
                         const isBookedByMe = Boolean(window.myBooking);
                         const available = Number(window.booked) < Number(window.capacity);
                         const canBook = available && !isBookedByMe;
@@ -3338,8 +3345,8 @@ export default function TidalCalendarApp() {
                             </button>
                           </div>
                         );
-                      })
-                  )}
+                      });
+                  })()}
                 </div>
               </div>
             )}
