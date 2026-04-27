@@ -265,6 +265,10 @@ export default function TidalCalendarApp() {
   const [clubSetupForm, setClubSetupForm] = useState({ clubName: '', scrubPostCount: 8, homePortId: '', homePortName: '' });
   const [clubWindowForm, setClubWindowForm] = useState({ date: '', lowWater: '', duration: '', facilityId: '', capacity: 1, startsAt: '', notes: '' });
   const [calendarSyncBusy, setCalendarSyncBusy] = useState(false);
+  const [myClubCalendar, setMyClubCalendar] = useState({ club: null, windows: [] });
+  const [myClubCalendarLoading, setMyClubCalendarLoading] = useState(false);
+  const [myClubCalendarError, setMyClubCalendarError] = useState('');
+  const [myClubBookingBusy, setMyClubBookingBusy] = useState({});
   const [selectedMemberToAdd, setSelectedMemberToAdd] = useState('');
   const [facilityFormName, setFacilityFormName] = useState('');
   const [bookingAssignments, setBookingAssignments] = useState({});
@@ -353,6 +357,10 @@ export default function TidalCalendarApp() {
     if (!user) return false;
     return Boolean(user.has_pdf_calendar_access);
   }, [user]);
+  const canAccessMyClubCalendar = useMemo(
+    () => Boolean(user && (user.role === 'club_admin' || user.role === 'admin' || user.home_club_id)),
+    [user],
+  );
 
   const apiRequest = useCallback(async (url, options = {}) => {
     const res = await fetch(url, {
@@ -827,6 +835,24 @@ export default function TidalCalendarApp() {
     }
   }, [apiRequest, user]);
 
+  const loadMyClubCalendar = useCallback(async () => {
+    if (!canAccessMyClubCalendar) return;
+    setMyClubCalendarLoading(true);
+    setMyClubCalendarError('');
+    try {
+      const data = await apiRequest('/api/my-club/calendar');
+      setMyClubCalendar({
+        club: data?.club || null,
+        windows: Array.isArray(data?.windows) ? data.windows : [],
+      });
+    } catch (err) {
+      setMyClubCalendarError(err.message || 'Unable to load My Club calendar.');
+      setMyClubCalendar({ club: null, windows: [] });
+    } finally {
+      setMyClubCalendarLoading(false);
+    }
+  }, [apiRequest, canAccessMyClubCalendar]);
+
   useEffect(() => {
     if (!(user?.role === 'club_admin' || user?.role === 'admin')) return;
     const params = new URLSearchParams(window.location.search);
@@ -911,6 +937,17 @@ export default function TidalCalendarApp() {
       loadClubAdminData();
     }
   }, [currentPage, loadClubAdminData]);
+
+  useEffect(() => {
+    if (currentPage !== 'calendar' || !canAccessMyClubCalendar) return;
+    loadMyClubCalendar();
+  }, [canAccessMyClubCalendar, currentPage, loadMyClubCalendar]);
+
+  useEffect(() => {
+    if (viewMode === 'my_club' && !canAccessMyClubCalendar) {
+      setViewMode('monthly');
+    }
+  }, [canAccessMyClubCalendar, viewMode]);
 
   useEffect(() => {
     if (currentPage === 'blog' || currentPage === 'admin') {
@@ -1641,6 +1678,33 @@ export default function TidalCalendarApp() {
     });
     return grouped;
   }, [tidalEvents, getLondonDateKey]);
+  const clubWindowsByDay = useMemo(() => {
+    const grouped = {};
+    if (!Array.isArray(myClubCalendar.windows)) return grouped;
+    myClubCalendar.windows.forEach((window) => {
+      const sourceDate = window?.startsAt || window?.date;
+      if (!sourceDate) return;
+      const parsed = new Date(sourceDate);
+      if (Number.isNaN(parsed.getTime())) return;
+      const key = getLondonDateKey(parsed);
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(window);
+    });
+    return grouped;
+  }, [myClubCalendar.windows, getLondonDateKey]);
+  const bookMyClubWindow = useCallback(async (windowId) => {
+    if (!windowId) return;
+    setMyClubBookingBusy((state) => ({ ...state, [windowId]: true }));
+    setMyClubCalendarError('');
+    try {
+      await apiRequest(`/api/my-club/windows/${windowId}/book`, { method: 'POST', body: JSON.stringify({}) });
+      await loadMyClubCalendar();
+    } catch (err) {
+      setMyClubCalendarError(err.message || 'Unable to book this facility slot.');
+    } finally {
+      setMyClubBookingBusy((state) => ({ ...state, [windowId]: false }));
+    }
+  }, [apiRequest, loadMyClubCalendar]);
   const selectedDayEvents = selectedDay ? eventsByDay[getLondonDateKey(selectedDay)] || [] : [];
   const selectedDayHasUkhoApi = selectedDayEvents.some(e => e.Source === 'UKHO');
   const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
@@ -2951,10 +3015,10 @@ export default function TidalCalendarApp() {
                             Set as home port
                           </button>
                         )}
-                        <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px' }}>
-                          {['monthly', 'scrubbing'].map(mode => (
+                        <div style={{ display: 'flex', gap: '8px', background: 'rgba(14,165,233,0.08)', padding: '4px', borderRadius: '12px', flexWrap: 'wrap' }}>
+                          {['monthly', 'scrubbing', ...(canAccessMyClubCalendar ? ['my_club'] : [])].map(mode => (
                             <button key={mode} className="view-btn" onClick={() => setViewMode(mode)} style={{ padding: '10px 18px', background: viewMode === mode ? '#0ea5e9' : mode === 'scrubbing' ? '#dbeafe' : 'transparent', border: 'none', borderRadius: '8px', color: viewMode === mode ? '#ffffff' : mode === 'scrubbing' ? '#1d4ed8' : '#475569', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '12px', fontWeight: 700, transition: 'all 0.3s' }}>
-                              {mode === 'monthly' ? '📅 Month view' : '🧽 Scrubbing Day Finder'}
+                              {mode === 'monthly' ? '📅 Month view' : mode === 'scrubbing' ? '🧽 Scrubbing Day Finder' : '🏟️ My Club'}
                             </button>
                           ))}
                         </div>
@@ -3103,6 +3167,115 @@ export default function TidalCalendarApp() {
                   <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#0f172a', textAlign: 'center' }}>
                     <strong style={{ color: '#0ea5e9' }}>UKHO</strong> = official UKHO event data when available for the selected date.
                   </div>
+                </div>
+              </div>
+            )}
+
+            {!loading && viewMode === 'my_club' && canAccessMyClubCalendar && (
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', marginBottom: '24px', boxShadow: '0 10px 24px rgba(15,23,42,0.06)' }}>
+                <div className="calendar-nav" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', gap: '12px' }}>
+                  <button onClick={() => navigateMonth(-1)} style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 20px', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600, flex: '1 1 160px' }}>← Previous</button>
+                  <div style={{ textAlign: 'center' }}>
+                    <h3 style={{ fontSize: '28px', fontWeight: 600, margin: '0 0 4px', color: '#0f172a' }}>My Club · {formatLondonDate(currentMonth, { month: 'long', year: 'numeric' })}</h3>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#475569', fontFamily: "'Outfit', sans-serif" }}>
+                      {myClubCalendar.club?.name || user?.home_club_name || 'Club schedule'}
+                    </p>
+                  </div>
+                  <button onClick={() => navigateMonth(1)} style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '10px 20px', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: 600, flex: '1 1 160px' }}>Next →</button>
+                </div>
+
+                {myClubCalendarError && (
+                  <div style={{ marginBottom: '12px', fontSize: '13px', color: '#b91c1c', fontWeight: 600 }}>{myClubCalendarError}</div>
+                )}
+                {myClubCalendarLoading && (
+                  <div style={{ marginBottom: '12px', fontSize: '13px', color: '#475569' }}>Loading My Club calendar…</div>
+                )}
+
+                <div className="calendar-weekdays" style={{ marginBottom: '8px' }}>
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+                    <div key={day} style={{ padding: '12px 8px', textAlign: 'center', fontFamily: "'Outfit', sans-serif", fontSize: '11px', letterSpacing: '1px', textTransform: 'uppercase', color: '#475569' }}>{day}</div>
+                  ))}
+                </div>
+                <div className="calendar-grid-wrapper">
+                  <div className="calendar-grid">
+                    {getMonthData().map(({ date, isCurrentMonth }, i) => {
+                      const dateStr = getLondonDateKey(date);
+                      const windows = clubWindowsByDay[dateStr] || [];
+                      const isToday = getLondonDateKey(new Date()) === dateStr;
+                      const usedCount = windows.filter((window) => Number(window.booked) > 0).length;
+                      const availableCount = windows.filter((window) => Number(window.booked) < Number(window.capacity)).length;
+                      return (
+                        <div
+                          key={i}
+                          style={{
+                            background: '#ffffff',
+                            border: `1px solid ${isToday ? '#94a3b8' : '#e2e8f0'}`,
+                            borderRadius: '10px',
+                            padding: '10px 8px',
+                            minHeight: '90px',
+                            opacity: isCurrentMonth ? 1 : 0.4,
+                            boxShadow: '0 2px 10px rgba(15,23,42,0.05)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                            <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: isToday ? 700 : 500, color: isToday ? '#0ea5e9' : '#0f172a' }}>
+                              {formatLondonDate(date, { day: 'numeric' })}
+                            </span>
+                            {windows.length > 0 && <span style={{ fontSize: '10px', color: '#334155' }}>{windows.length} slot{windows.length > 1 ? 's' : ''}</span>}
+                          </div>
+                          {isCurrentMonth && windows.length > 0 && (
+                            <div style={{ display: 'grid', gap: '4px' }}>
+                              <div style={{ fontSize: '10px', color: '#334155', fontFamily: "'Outfit', sans-serif" }}>In use: {usedCount}</div>
+                              <div style={{ fontSize: '10px', color: availableCount > 0 ? '#166534' : '#b91c1c', fontFamily: "'Outfit', sans-serif" }}>
+                                {availableCount > 0 ? `Available: ${availableCount}` : 'Fully booked'}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '18px', display: 'grid', gap: '10px' }}>
+                  {myClubCalendar.windows.length === 0 ? (
+                    <div style={{ fontSize: '12px', color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
+                      No club facility availability has been published yet for this club.
+                    </div>
+                  ) : (
+                    myClubCalendar.windows
+                      .filter((window) => {
+                        const source = window.startsAt || window.date;
+                        const start = source ? new Date(source) : null;
+                        return start && !Number.isNaN(start.getTime()) && start.getFullYear() === currentMonth.getFullYear() && start.getMonth() === currentMonth.getMonth();
+                      })
+                      .map((window) => {
+                        const available = Number(window.booked) < Number(window.capacity);
+                        const busy = Boolean(myClubBookingBusy[window.id]);
+                        return (
+                          <div key={window.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', background: '#f8fafc' }}>
+                            <div style={{ display: 'grid', gap: '3px' }}>
+                              <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 700 }}>
+                                {window.facilityName || 'Scrub facility'} · {formatLondonDate(window.startsAt || window.date, { weekday: 'short', day: 'numeric', month: 'short' })}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#475569' }}>
+                                {window.startsAt ? `${formatTime(window.startsAt)} - ${formatTime(window.endsAt || window.startsAt)}` : `Low water ${window.lowWater}`} • {window.duration}
+                              </div>
+                              <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>
+                                {window.booked}/{window.capacity} booked
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => bookMyClubWindow(window.id)}
+                              disabled={!available || busy}
+                              style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
+                            >
+                              {busy ? 'Booking…' : available ? 'Book facility' : 'Unavailable'}
+                            </button>
+                          </div>
+                        );
+                      })
+                  )}
                 </div>
               </div>
             )}
