@@ -2395,10 +2395,7 @@ app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, r
        ORDER BY u.email ASC`,
       [club.id],
     ),
-    getScrubWindowsForClub(club.id, {
-      viewerUserId: req.user.id,
-      includeBookingDetails: true,
-    }),
+    getScrubWindowsForClub(club.id, { viewerUserId: req.user.id }),
     pool.query(
       `SELECT id, email FROM users
        WHERE (home_club_id IS NULL OR home_club_id <> $1)

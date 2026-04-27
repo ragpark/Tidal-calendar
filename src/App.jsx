@@ -3831,11 +3831,6 @@ export default function TidalCalendarApp() {
                             {activeWindow.startsAt ? `${formatTime(activeWindow.startsAt)} - ${formatTime(activeWindow.endsAt || activeWindow.startsAt)}` : `Low water ${activeWindow.lowWater}`} • {activeWindow.duration}
                           </div>
                           <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>{activeWindow.booked}/{activeWindow.capacity} booked</div>
-                          {Array.isArray(activeWindow.bookedBoats) && activeWindow.bookedBoats.length > 0 && (
-                            <div style={{ fontSize: '11px', color: '#334155' }}>
-                              Boats: {activeWindow.bookedBoats.join(', ')}
-                            </div>
-                          )}
                           {activeWindow.myBooking && (
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                               <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}</div>
@@ -3905,24 +3900,6 @@ export default function TidalCalendarApp() {
                           </button>
                         );
                       })()
-                    )}
-
-                    {(user?.role === 'club_admin' || user?.role === 'admin') && Array.isArray(activeWindow?.bookingDetails) && activeWindow.bookingDetails.length > 0 && (
-                      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px', display: 'grid', gap: '4px' }}>
-                        <div style={{ fontSize: '11px', color: '#334155', fontWeight: 700 }}>Current bookings</div>
-                        {activeWindow.bookingDetails.map((booking) => (
-                          <div key={booking.bookingId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                            <div style={{ fontSize: '11px', color: '#475569' }}>{booking.email} • {booking.boatName || 'No boat name'}</div>
-                            <button
-                              onClick={() => deleteMyClubBooking(booking.bookingId)}
-                              disabled={Boolean(myClubBookingBusy[`delete-${booking.bookingId}`])}
-                              style={{ padding: '4px 7px', borderRadius: '7px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: 'pointer', fontSize: '10px', whiteSpace: 'nowrap' }}
-                            >
-                              {myClubBookingBusy[`delete-${booking.bookingId}`] ? 'Deleting…' : 'Delete'}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
                     )}
                   </div>
                 );
