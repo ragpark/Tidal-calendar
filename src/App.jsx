@@ -1765,18 +1765,25 @@ export default function TidalCalendarApp() {
         || myBookingId === normalizedBookingId;
       if (!hadBooking) return window;
 
-      const bookedBoats = Array.isArray(window.bookedBoats) ? window.bookedBoats : [];
       const deletedBoatName = deletedBooking?.boatName
         || window?.myBooking?.boatName
         || null;
-      let removedBoat = false;
-      const nextBookedBoats = bookedBoats.filter((boat) => {
-        if (!removedBoat && deletedBoatName && boat === deletedBoatName) {
-          removedBoat = true;
-          return false;
-        }
-        return true;
-      });
+      const bookedBoats = Array.isArray(window.bookedBoats) ? window.bookedBoats : [];
+      const boatsFromRemainingDetails = nextBookingDetails
+        .map((booking) => String(booking?.boatName || '').trim())
+        .filter(Boolean);
+      const nextBookedBoats = boatsFromRemainingDetails.length > 0
+        ? boatsFromRemainingDetails
+        : (() => {
+          let removedBoat = false;
+          return bookedBoats.filter((boat) => {
+            if (!removedBoat && deletedBoatName && boat === deletedBoatName) {
+              removedBoat = true;
+              return false;
+            }
+            return true;
+          });
+        })();
 
       return {
         ...window,
@@ -3244,6 +3251,11 @@ export default function TidalCalendarApp() {
                       const isToday = getLondonDateKey(new Date()) === dateStr;
                       const usedCount = windows.filter((window) => Number(window.booked) > 0).length;
                       const availableCount = windows.filter((window) => Number(window.booked) < Number(window.capacity)).length;
+                      const dailyAvailabilityLabel = windows.length === 0
+                        ? 'No facilities scheduled'
+                        : availableCount > 0
+                          ? `Facilities available: ${availableCount}`
+                          : 'No facilities available';
                       const myBookedCount = windows.filter((window) => Boolean(window.myBooking)).length;
                       return (
                         <div
@@ -3266,9 +3278,9 @@ export default function TidalCalendarApp() {
                           </div>
                           {isCurrentMonth && (
                             <div style={{ display: 'grid', gap: '4px' }}>
-                              <div style={{ fontSize: '10px', color: '#334155', fontFamily: "'Outfit', sans-serif" }}>In use: {usedCount}</div>
+                              <div style={{ fontSize: '10px', color: '#334155', fontFamily: "'Outfit', sans-serif" }}>Facilities in use: {usedCount}</div>
                               <div style={{ fontSize: '10px', color: availableCount > 0 ? '#166534' : '#b91c1c', fontFamily: "'Outfit', sans-serif" }}>
-                                {windows.length === 0 ? 'No slots' : availableCount > 0 ? `Available: ${availableCount}` : 'Fully booked'}
+                                {dailyAvailabilityLabel}
                               </div>
                               {myBookedCount > 0 && (
                                 <div style={{ fontSize: '10px', color: '#0369a1', fontFamily: "'Outfit', sans-serif", fontWeight: 700 }}>
@@ -3749,7 +3761,7 @@ export default function TidalCalendarApp() {
                         {facilities.map((facility) => {
                           const facilityWindow = windowByFacilityId[facility.id];
                           const label = facilityWindow
-                            ? `${facility.name} (${facilityWindow.booked}/${facilityWindow.capacity} booked)`
+                            ? `${facility.name} (${facilityWindow.booked}/${facilityWindow.capacity} in use)`
                             : `${facility.name} (available)`;
                           return <option key={facility.id} value={facility.id}>{label}</option>;
                         })}
@@ -3763,7 +3775,9 @@ export default function TidalCalendarApp() {
                           <div style={{ fontSize: '12px', color: '#475569' }}>
                             {activeWindow.startsAt ? `${formatTime(activeWindow.startsAt)} - ${formatTime(activeWindow.endsAt || activeWindow.startsAt)}` : `Low water ${activeWindow.lowWater}`} • {activeWindow.duration}
                           </div>
-                          <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>{activeWindow.booked}/{activeWindow.capacity} booked</div>
+                          <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>
+                            {available ? 'Available' : 'Unavailable'} • {activeWindow.booked}/{activeWindow.capacity} in use
+                          </div>
                           {activeWindow.myBooking && (
                             <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>
                               Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}
