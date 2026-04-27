@@ -431,6 +431,14 @@ const ensureSchema = async () => {
         created_by UUID REFERENCES users(id),
         created_at TIMESTAMPTZ DEFAULT now()
       );
+      CREATE TABLE IF NOT EXISTS club_facilities (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        UNIQUE(club_id, name)
+      );
       CREATE TABLE IF NOT EXISTS club_memberships (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
@@ -448,6 +456,7 @@ const ensureSchema = async () => {
         starts_at TIMESTAMPTZ,
         ends_at TIMESTAMPTZ,
         notes TEXT,
+        facility_id UUID REFERENCES club_facilities(id) ON DELETE SET NULL,
         capacity INT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT now()
       );
@@ -539,6 +548,15 @@ const ensureSchema = async () => {
   await pool.query(`ALTER TABLE scrub_windows ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE scrub_windows ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ;`);
   await pool.query(`ALTER TABLE scrub_windows ADD COLUMN IF NOT EXISTS notes TEXT;`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS club_facilities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(club_id, name)
+  );`);
+  await pool.query(`ALTER TABLE scrub_windows ADD COLUMN IF NOT EXISTS facility_id UUID REFERENCES club_facilities(id) ON DELETE SET NULL;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS excerpt TEXT;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS cover_image_url TEXT;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();`);
@@ -572,6 +590,11 @@ const ensureSchema = async () => {
       ['Solent Cruising Club', 8],
     );
     const clubId = clubRows[0].id;
+    const { rows: facilityRows } = await pool.query(
+      `INSERT INTO club_facilities (club_id, name) VALUES ($1, $2) RETURNING id`,
+      [clubId, 'Main scrubbing post'],
+    );
+    const facilityId = facilityRows[0].id;
     const windows = [
       { date: 'Thu 18 Sep', lowWater: '11:42', duration: '2h 20m', capacity: 8 },
       { date: 'Fri 19 Sep', lowWater: '12:28', duration: '2h 10m', capacity: 8 },
@@ -579,8 +602,8 @@ const ensureSchema = async () => {
     ];
     for (const w of windows) {
       await pool.query(
-        `INSERT INTO scrub_windows (club_id, date_label, low_water, duration, capacity) VALUES ($1, $2, $3, $4, $5)`,
-        [clubId, w.date, w.lowWater, w.duration, w.capacity],
+        `INSERT INTO scrub_windows (club_id, date_label, low_water, duration, facility_id, capacity) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [clubId, w.date, w.lowWater, w.duration, facilityId, w.capacity],
       );
     }
   }
@@ -757,6 +780,8 @@ const formatClubWindow = (row) => ({
   startsAt: row.startsAt || null,
   endsAt: row.endsAt || null,
   notes: row.notes || '',
+  facilityId: row.facilityId || null,
+  facilityName: row.facilityName || 'Unassigned facility',
 });
 
 const hasPaidCalendarAccess = (user) => {
@@ -2082,8 +2107,10 @@ const getScrubWindowsForClub = async (clubId) => {
   const { rows } = await pool.query(
     `SELECT w.id, w.date_label as date, w.low_water as "lowWater", w.duration, w.capacity,
             w.starts_at as "startsAt", w.ends_at as "endsAt", w.notes,
+            w.facility_id as "facilityId", cf.name as "facilityName",
             (SELECT COUNT(*) FROM bookings b WHERE b.window_id = w.id)::int AS booked
      FROM scrub_windows w
+     LEFT JOIN club_facilities cf ON cf.id = w.facility_id
      WHERE w.club_id = $1
      ORDER BY COALESCE(w.starts_at, w.created_at) ASC`,
     [clubId],
@@ -2094,18 +2121,18 @@ const getScrubWindowsForClub = async (clubId) => {
 const buildWindowExternalEventPayload = (window, clubName) => {
   if (!window.startsAt || !window.endsAt) return null;
   return {
-    summary: `${clubName} scrub window`,
+    summary: `${clubName} - ${window.facilityName || 'Scrub facility'} scrub window`,
     body: {
-      summary: `${clubName} scrub window`,
+      summary: `${clubName} - ${window.facilityName || 'Scrub facility'} scrub window`,
       description: `Scrubbing slot\nBooked: ${window.booked}/${window.capacity}\nLow water: ${window.lowWater}\nDuration: ${window.duration}${window.notes ? `\nNotes: ${window.notes}` : ''}`,
       start: { dateTime: window.startsAt },
       end: { dateTime: window.endsAt },
     },
     outlook: {
-      subject: `${clubName} scrub window`,
+      subject: `${clubName} - ${window.facilityName || 'Scrub facility'} scrub window`,
       body: {
         contentType: 'text',
-        content: `Scrubbing slot\nBooked: ${window.booked}/${window.capacity}\nLow water: ${window.lowWater}\nDuration: ${window.duration}${window.notes ? `\nNotes: ${window.notes}` : ''}`,
+        content: `Facility: ${window.facilityName || 'Unassigned'}\nScrubbing slot\nBooked: ${window.booked}/${window.capacity}\nLow water: ${window.lowWater}\nDuration: ${window.duration}${window.notes ? `\nNotes: ${window.notes}` : ''}`,
       },
       start: { dateTime: new Date(window.startsAt).toISOString(), timeZone: 'UTC' },
       end: { dateTime: new Date(window.endsAt).toISOString(), timeZone: 'UTC' },
@@ -2280,13 +2307,41 @@ const syncWindowToExternalCalendars = async ({ club, windowId }) => {
   }
 };
 
+
+const getClubFacilities = async (clubId) => {
+  const { rows } = await pool.query(
+    `SELECT id, name, created_at as "createdAt"
+     FROM club_facilities
+     WHERE club_id = $1
+     ORDER BY name ASC`,
+    [clubId],
+  );
+  return rows;
+};
+
+app.post('/api/club-admin/facilities', requireAuth, requireClubAdmin, async (req, res) => {
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Facility name is required' });
+
+  const { rows } = await pool.query(
+    `INSERT INTO club_facilities (club_id, name, created_by)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (club_id, name) DO UPDATE SET name = EXCLUDED.name
+     RETURNING id, name, created_at as "createdAt"`,
+    [club.id, name, req.user.id],
+  );
+  return res.status(201).json(rows[0]);
+});
+
 app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, res) => {
   const club = await resolveManagedClub(req.user.id);
   if (!club?.id) {
-    return res.json({ club: null, members: [], windows: [], availableUsers: [], integrations: [] });
+    return res.json({ club: null, members: [], windows: [], availableUsers: [], integrations: [], facilities: [] });
   }
 
-  const [membersResult, windows, availableResult, integrations] = await Promise.all([
+  const [membersResult, windows, availableResult, integrations, facilities] = await Promise.all([
     pool.query(
       `SELECT u.id, u.email, u.role, u.home_port_name, u.home_club_name
        FROM users u
@@ -2303,6 +2358,7 @@ app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, r
       [club.id],
     ),
     fetchClubIntegrations(club.id),
+    getClubFacilities(club.id),
   ]);
 
   return res.json({
@@ -2311,6 +2367,7 @@ app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, r
     windows,
     availableUsers: availableResult.rows,
     integrations,
+    facilities,
   });
 });
 
@@ -2513,15 +2570,21 @@ app.post('/api/club-admin/windows', requireAuth, requireClubAdmin, async (req, r
   const club = await resolveManagedClub(req.user.id);
   if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
 
-  const { date, lowWater, duration, capacity, startsAt, endsAt, notes } = req.body || {};
-  if (!date || !lowWater || !duration) return res.status(400).json({ error: 'All fields required' });
+  const { date, lowWater, duration, capacity, startsAt, endsAt, notes, facilityId } = req.body || {};
+  if (!date || !lowWater || !duration || !facilityId) return res.status(400).json({ error: 'Date, low water, duration, and facility are required' });
   const parsed = toWindowTimestamps({ startsAt, endsAt, date, lowWater, duration });
 
+  const { rows: facilityRows } = await pool.query(
+    `SELECT id FROM club_facilities WHERE id = $1 AND club_id = $2 LIMIT 1`,
+    [facilityId, club.id],
+  );
+  if (facilityRows.length === 0) return res.status(400).json({ error: 'Facility not found for this club' });
+
   const { rows } = await pool.query(
-    `INSERT INTO scrub_windows (club_id, date_label, low_water, duration, starts_at, ends_at, notes, capacity)
-     VALUES ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7, $8)
-     RETURNING id, date_label as date, low_water as "lowWater", duration, starts_at as "startsAt", ends_at as "endsAt", notes, capacity`,
-    [club.id, date, lowWater, duration, parsed.startsAt, parsed.endsAt, notes || null, Math.max(Number(capacity) || Number(club.capacity) || 1, 1)],
+    `INSERT INTO scrub_windows (club_id, date_label, low_water, duration, starts_at, ends_at, notes, facility_id, capacity)
+     VALUES ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7, $8, $9)
+     RETURNING id, date_label as date, low_water as "lowWater", duration, starts_at as "startsAt", ends_at as "endsAt", notes, facility_id as "facilityId", capacity`,
+    [club.id, date, lowWater, duration, parsed.startsAt, parsed.endsAt, notes || null, facilityId, Math.max(Number(capacity) || 1, 1)],
   );
   const created = formatClubWindow(rows[0]);
   await syncWindowToExternalCalendars({ club, windowId: created.id });
@@ -2563,8 +2626,11 @@ const hydrateClubs = async () => {
   for (const club of clubRows) {
     const { rows: windows } = await pool.query(
       `SELECT w.id, w.date_label as date, w.low_water as "lowWater", w.duration, w.capacity,
+              w.facility_id as "facilityId", COALESCE(cf.name, 'Unassigned facility') as "facilityName",
               (SELECT COUNT(*) FROM bookings b WHERE b.window_id = w.id) AS booked
-       FROM scrub_windows w WHERE w.club_id = $1 ORDER BY w.created_at`,
+       FROM scrub_windows w
+       LEFT JOIN club_facilities cf ON cf.id = w.facility_id
+       WHERE w.club_id = $1 ORDER BY w.created_at`,
       [club.id],
     );
     clubs.push({ ...club, windows: windows.map(w => ({ ...w, booked: Number(w.booked) })) });

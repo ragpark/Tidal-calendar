@@ -259,13 +259,14 @@ export default function TidalCalendarApp() {
   const [adminForm, setAdminForm] = useState({ id: null, email: '', password: '', role: 'user', subscriptionStatus: 'inactive', subscriptionPeriodEnd: '' });
   const [adminError, setAdminError] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
-  const [clubAdminData, setClubAdminData] = useState({ club: null, members: [], windows: [], availableUsers: [], integrations: [] });
+  const [clubAdminData, setClubAdminData] = useState({ club: null, members: [], windows: [], availableUsers: [], integrations: [], facilities: [] });
   const [clubAdminLoading, setClubAdminLoading] = useState(false);
   const [clubAdminError, setClubAdminError] = useState('');
   const [clubSetupForm, setClubSetupForm] = useState({ clubName: '', scrubPostCount: 8, homePortId: '', homePortName: '' });
-  const [clubWindowForm, setClubWindowForm] = useState({ date: '', lowWater: '', duration: '', capacity: 8, startsAt: '', notes: '' });
+  const [clubWindowForm, setClubWindowForm] = useState({ date: '', lowWater: '', duration: '', facilityId: '', capacity: 1, startsAt: '', notes: '' });
   const [calendarSyncBusy, setCalendarSyncBusy] = useState(false);
   const [selectedMemberToAdd, setSelectedMemberToAdd] = useState('');
+  const [facilityFormName, setFacilityFormName] = useState('');
   const [bookingAssignments, setBookingAssignments] = useState({});
   const [blogPosts, setBlogPosts] = useState([]);
   const [blogLoading, setBlogLoading] = useState(false);
@@ -665,31 +666,6 @@ export default function TidalCalendarApp() {
     });
   }, [confirmStripeSession, user]);
 
-  useEffect(() => {
-    if (!(user?.role === 'club_admin' || user?.role === 'admin')) return;
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    const state = params.get('state');
-    if (!code || !state) return;
-    (async () => {
-      try {
-        await apiRequest('/api/club-admin/calendar/oauth/callback', {
-          method: 'POST',
-          body: JSON.stringify({ code, state }),
-        });
-        await loadClubAdminData();
-      } catch (err) {
-        setClubAdminError(err.message || 'Calendar connection callback failed.');
-      } finally {
-        params.delete('code');
-        params.delete('state');
-        params.delete('scope');
-        const clean = params.toString();
-        window.history.replaceState({}, document.title, `${window.location.pathname}${clean ? `?${clean}` : ''}`);
-      }
-    })();
-  }, [apiRequest, loadClubAdminData, user]);
-
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -830,6 +806,7 @@ export default function TidalCalendarApp() {
         windows: Array.isArray(data?.windows) ? data.windows : [],
         availableUsers: Array.isArray(data?.availableUsers) ? data.availableUsers : [],
         integrations: Array.isArray(data?.integrations) ? data.integrations : [],
+        facilities: Array.isArray(data?.facilities) ? data.facilities : [],
       };
       setClubAdminData(normalized);
       setClubSetupForm((form) => ({
@@ -989,6 +966,26 @@ export default function TidalCalendarApp() {
     }
   };
 
+  const handleCreateFacility = async (event) => {
+    event.preventDefault();
+    const name = facilityFormName.trim();
+    if (!name) {
+      setClubAdminError('Enter a facility name first.');
+      return;
+    }
+    setClubAdminError('');
+    try {
+      await apiRequest('/api/club-admin/facilities', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      setFacilityFormName('');
+      await loadClubAdminData();
+    } catch (err) {
+      setClubAdminError(err.message || 'Unable to save facility label.');
+    }
+  };
+
   const handleCreateClubWindow = async (event) => {
     event.preventDefault();
     setClubAdminError('');
@@ -999,6 +996,7 @@ export default function TidalCalendarApp() {
           date: clubWindowForm.date,
           lowWater: clubWindowForm.lowWater,
           duration: clubWindowForm.duration,
+          facilityId: clubWindowForm.facilityId,
           capacity: Number(clubWindowForm.capacity) || 1,
           startsAt: clubWindowForm.startsAt || null,
           notes: clubWindowForm.notes || '',
@@ -2477,8 +2475,28 @@ export default function TidalCalendarApp() {
                 <div style={{ fontSize: '12px', color: '#475569' }}>Current members: {clubAdminData.members.length}</div>
               </form>
 
+              <form onSubmit={handleCreateFacility} style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>3) Label your facilities</h3>
+                <input
+                  type="text"
+                  placeholder="Facility name e.g. Scrub Pad A"
+                  value={facilityFormName}
+                  onChange={(event) => setFacilityFormName(event.target.value)}
+                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  required
+                />
+                <button type="submit" style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>Add facility label</button>
+                <div style={{ fontSize: '12px', color: '#475569' }}>Named facilities: {clubAdminData.facilities.length}</div>
+              </form>
+
               <form onSubmit={handleCreateClubWindow} style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
-                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>3) Add scrubbing availability</h3>
+                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>4) Add scrubbing availability</h3>
+                <select value={clubWindowForm.facilityId} onChange={(event) => setClubWindowForm((form) => ({ ...form, facilityId: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }} required>
+                  <option value="">Select facility</option>
+                  {clubAdminData.facilities.map((facility) => (
+                    <option key={facility.id} value={facility.id}>{facility.name}</option>
+                  ))}
+                </select>
                 <input type="text" placeholder="Date label e.g. Thu 18 Sep" value={clubWindowForm.date} onChange={(event) => setClubWindowForm((form) => ({ ...form, date: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
                 <input type="text" placeholder="Low water e.g. 11:42" value={clubWindowForm.lowWater} onChange={(event) => setClubWindowForm((form) => ({ ...form, lowWater: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
                 <input type="text" placeholder="Duration e.g. 2h 10m" value={clubWindowForm.duration} onChange={(event) => setClubWindowForm((form) => ({ ...form, duration: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
@@ -2490,7 +2508,7 @@ export default function TidalCalendarApp() {
             </div>
 
             <div style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
-              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>4) Connect Google / Outlook calendar</h3>
+              <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>5) Connect Google / Outlook calendar</h3>
               <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>Bi-directional sync: create availability in this app and it is pushed to your connected calendar. Run sync to pull external changes back into the club schedule.</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 <button onClick={() => connectExternalCalendar('gmail')} style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #16a34a', background: '#22c55e', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Connect Gmail</button>
@@ -2530,6 +2548,7 @@ export default function TidalCalendarApp() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '760px' }}>
                     <thead>
                       <tr style={{ background: '#e2e8f0', color: '#0f172a', fontSize: '12px' }}>
+                        <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Facility</th>
                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Date</th>
                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Low water</th>
                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Duration</th>
@@ -2541,6 +2560,7 @@ export default function TidalCalendarApp() {
                     <tbody>
                       {clubAdminData.windows.map((window) => (
                         <tr key={window.id} style={{ background: '#fff', fontSize: '12px' }}>
+                          <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0', fontWeight: 600 }}>{window.facilityName || 'Unassigned facility'}</td>
                           <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.date}</td>
                           <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.lowWater}</td>
                           <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.duration}</td>
