@@ -510,17 +510,12 @@ export default function TidalCalendarApp() {
       });
     }
 
-    let nextEvents = apiEvents;
-    if (!shouldBlendPredictedEvents) {
-      if (apiFetchFailed || apiEvents.length === 0) {
-        nextEvents = predictTidalEvents(station, monthStart, predictionDays);
-      }
-    } else {
-      // Non-premium users (guest + signed-in basic users) should always receive
-      // prediction blending beyond the clamped UKHO data window.
-      const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
-      const apiDateSet = new Set(apiEvents.map(e => getLondonDateKey(e.DateTime)));
-      nextEvents = [...apiEvents, ...predictedEvents.filter(e => !apiDateSet.has(getLondonDateKey(e.DateTime)))];
+    const predictedEvents = predictTidalEvents(station, monthStart, predictionDays);
+    const apiDateSet = new Set(apiEvents.map((event) => getLondonDateKey(event.DateTime)));
+
+    let nextEvents = [...apiEvents, ...predictedEvents.filter((event) => !apiDateSet.has(getLondonDateKey(event.DateTime)))];
+    if (!shouldBlendPredictedEvents && (apiFetchFailed || apiEvents.length === 0)) {
+      nextEvents = predictedEvents;
     }
 
     setTidalEvents(nextEvents.sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)));
@@ -3597,6 +3592,31 @@ export default function TidalCalendarApp() {
                 </div>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                   {maintenanceError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{maintenanceError}</div>}
+                  {canAccessMyClubCalendar && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          await loadMyClubCalendar();
+                        } catch (err) {
+                          console.warn('Unable to refresh My Club availability before booking modal opens.', err);
+                        }
+                        setScrubModal(null);
+                        setMyClubBookingModalDateKey(getLondonDateKey(scrubModal.date));
+                      }}
+                      style={{
+                        padding: '10px 14px',
+                        background: '#0ea5e9',
+                        border: '1px solid #0284c7',
+                        borderRadius: '10px',
+                        color: '#ffffff',
+                        cursor: 'pointer',
+                        fontWeight: 700,
+                        boxShadow: '0 4px 12px rgba(14,165,233,0.25)',
+                      }}
+                    >
+                      Book club facility
+                    </button>
+                  )}
                   <button
                     disabled={!user || !scrubModal.data}
                     onClick={async () => {
