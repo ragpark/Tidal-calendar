@@ -3597,6 +3597,27 @@ export default function TidalCalendarApp() {
                 </div>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                   {maintenanceError && <div style={{ color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>{maintenanceError}</div>}
+                  {canAccessMyClubCalendar && (
+                    <button
+                      onClick={async () => {
+                        await loadMyClubCalendar();
+                        setScrubModal(null);
+                        setMyClubBookingModalDateKey(getLondonDateKey(scrubModal.date));
+                      }}
+                      style={{
+                        padding: '10px 14px',
+                        background: '#0ea5e9',
+                        border: '1px solid #0284c7',
+                        borderRadius: '10px',
+                        color: '#ffffff',
+                        cursor: 'pointer',
+                        fontWeight: 700,
+                        boxShadow: '0 4px 12px rgba(14,165,233,0.25)',
+                      }}
+                    >
+                      Book club facility
+                    </button>
+                  )}
                   <button
                     disabled={!user || !scrubModal.data}
                     onClick={async () => {
