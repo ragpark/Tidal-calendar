@@ -1752,15 +1752,21 @@ export default function TidalCalendarApp() {
   }, [apiRequest, loadMyClubCalendar]);
   const stripDeletedBookingFromWindows = useCallback((windows, bookingId) => {
     if (!Array.isArray(windows) || !bookingId) return Array.isArray(windows) ? windows : [];
+    const normalizedBookingId = String(bookingId);
     return windows.map((window) => {
       const bookingDetails = Array.isArray(window.bookingDetails) ? window.bookingDetails : [];
-      const nextBookingDetails = bookingDetails.filter((booking) => booking.bookingId !== bookingId);
+      const deletedBooking = bookingDetails.find((booking) => String(booking?.bookingId ?? booking?.id ?? '') === normalizedBookingId) || null;
+      const nextBookingDetails = bookingDetails.filter((booking) => String(booking?.bookingId ?? booking?.id ?? '') !== normalizedBookingId);
+      const myBookingId = String(window?.myBooking?.bookingId ?? window?.myBooking?.id ?? '');
+      const removedFromDetails = bookingDetails.length - nextBookingDetails.length;
+      const removedFromMyBooking = myBookingId === normalizedBookingId ? 1 : 0;
+      const removedCount = Math.max(removedFromDetails, removedFromMyBooking);
       const hadBooking = bookingDetails.length !== nextBookingDetails.length
-        || window?.myBooking?.bookingId === bookingId;
+        || myBookingId === normalizedBookingId;
       if (!hadBooking) return window;
 
       const bookedBoats = Array.isArray(window.bookedBoats) ? window.bookedBoats : [];
-      const deletedBoatName = bookingDetails.find((booking) => booking.bookingId === bookingId)?.boatName
+      const deletedBoatName = deletedBooking?.boatName
         || window?.myBooking?.boatName
         || null;
       let removedBoat = false;
@@ -1774,9 +1780,9 @@ export default function TidalCalendarApp() {
 
       return {
         ...window,
-        booked: Math.max(0, Number(window.booked || 0) - 1),
+        booked: Math.max(0, Number(window.booked || 0) - removedCount),
         bookingDetails: nextBookingDetails,
-        myBooking: window?.myBooking?.bookingId === bookingId ? null : window.myBooking,
+        myBooking: myBookingId === normalizedBookingId ? null : window.myBooking,
         bookedBoats: nextBookedBoats,
       };
     });
@@ -3284,22 +3290,27 @@ export default function TidalCalendarApp() {
                 </div>
 
                 <div style={{ marginTop: '18px', display: 'grid', gap: '10px' }}>
-                  {myClubCalendar.windows.length === 0 ? (
-                    <div style={{ fontSize: '12px', color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
-                      No club facility availability has been published yet for this club.
-                    </div>
-                  ) : (
-                    myClubCalendar.windows
+                  {(() => {
+                    const monthlyBookedWindows = myClubCalendar.windows
                       .filter((window) => {
                         const source = window.startsAt || window.date;
                         const start = source ? new Date(source) : null;
-                        return start && !Number.isNaN(start.getTime()) && start.getFullYear() === currentMonth.getFullYear() && start.getMonth() === currentMonth.getMonth();
-                      })
-                      .map((window) => {
-                        const isBookedByMe = Boolean(window.myBooking);
+                        if (!start || Number.isNaN(start.getTime())) return false;
+                        const inCurrentMonth = start.getFullYear() === currentMonth.getFullYear() && start.getMonth() === currentMonth.getMonth();
+                        return inCurrentMonth && Number(window.booked || 0) > 0;
+                      });
+
+                    if (monthlyBookedWindows.length === 0) {
+                      return (
+                        <div style={{ fontSize: '12px', color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
+                          No booked facilities for this month.
+                        </div>
+                      );
+                    }
+
+                    return monthlyBookedWindows.map((window) => {
                         const available = Number(window.booked) < Number(window.capacity);
-                        const canBook = available && !isBookedByMe;
-                        const busy = Boolean(myClubBookingBusy[window.id]);
+                        const deleteBusy = Boolean(myClubBookingBusy[`delete-${window?.myBooking?.bookingId}`]);
                         return (
                           <div key={window.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', background: '#f8fafc' }}>
                             <div style={{ display: 'grid', gap: '3px' }}>
@@ -3323,17 +3334,19 @@ export default function TidalCalendarApp() {
                                 </div>
                               )}
                             </div>
-                            <button
-                              onClick={() => bookMyClubWindow(window.id, myClubBoatNames[window.id] || window.myBooking?.boatName || '')}
-                              disabled={!available || busy}
-                              style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
-                            >
-                              {busy ? 'Booking…' : isBookedByMe ? 'Booked' : available ? 'Book facility' : 'Unavailable'}
-                            </button>
+                            {window.myBooking ? (
+                              <button
+                                onClick={() => deleteMyClubBooking(window.myBooking.bookingId)}
+                                disabled={deleteBusy}
+                                style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: deleteBusy ? 'wait' : 'pointer' }}
+                              >
+                                {deleteBusy ? 'Deleting…' : 'Delete booking'}
+                              </button>
+                            ) : null}
                           </div>
                         );
-                      })
-                  )}
+                      });
+                  })()}
                 </div>
               </div>
             )}
@@ -3752,15 +3765,8 @@ export default function TidalCalendarApp() {
                           </div>
                           <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>{activeWindow.booked}/{activeWindow.capacity} booked</div>
                           {activeWindow.myBooking && (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                              <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}</div>
-                              <button
-                                onClick={() => deleteMyClubBooking(activeWindow.myBooking.bookingId)}
-                                disabled={Boolean(myClubBookingBusy[`delete-${activeWindow.myBooking.bookingId}`])}
-                                style={{ padding: '5px 8px', borderRadius: '8px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}
-                              >
-                                {myClubBookingBusy[`delete-${activeWindow.myBooking.bookingId}`] ? 'Deleting…' : 'Delete booking'}
-                              </button>
+                            <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>
+                              Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}
                             </div>
                           )}
                         </>
