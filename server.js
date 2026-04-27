@@ -2643,6 +2643,54 @@ app.get('/api/clubs', async (_req, res) => {
   res.json(clubs);
 });
 
+app.get('/api/my-club/calendar', requireAuth, async (req, res) => {
+  const managedClub = (req.user.role === 'club_admin' || req.user.role === 'admin')
+    ? await resolveManagedClub(req.user.id)
+    : null;
+  const clubId = managedClub?.id || req.user.home_club_id;
+  if (!clubId) return res.status(403).json({ error: 'Club membership required' });
+
+  const { rows } = await pool.query(`SELECT id, name, capacity FROM clubs WHERE id = $1 LIMIT 1`, [clubId]);
+  if (rows.length === 0) return res.status(404).json({ error: 'Club not found' });
+
+  const windows = await getScrubWindowsForClub(clubId);
+  return res.json({ club: rows[0], windows });
+});
+
+app.post('/api/my-club/windows/:windowId/book', requireAuth, async (req, res) => {
+  const managedClub = (req.user.role === 'club_admin' || req.user.role === 'admin')
+    ? await resolveManagedClub(req.user.id)
+    : null;
+  const clubId = managedClub?.id || req.user.home_club_id;
+  if (!clubId) return res.status(403).json({ error: 'Club membership required' });
+
+  const { rows: windowRows } = await pool.query(
+    `SELECT id, capacity,
+            (SELECT COUNT(*) FROM bookings b WHERE b.window_id = w.id)::int AS booked
+     FROM scrub_windows w
+     WHERE id = $1 AND club_id = $2
+     LIMIT 1`,
+    [req.params.windowId, clubId],
+  );
+  if (windowRows.length === 0) return res.status(404).json({ error: 'Scrub window not found for your club' });
+
+  const { rows: existingRows } = await pool.query(
+    `SELECT id FROM bookings WHERE window_id = $1 AND user_id = $2 LIMIT 1`,
+    [req.params.windowId, req.user.id],
+  );
+  if (existingRows.length > 0) return res.json({ ok: true, alreadyBooked: true });
+
+  const window = windowRows[0];
+  if (Number(window.booked) >= Number(window.capacity)) {
+    return res.status(400).json({ error: 'This facility slot is fully booked' });
+  }
+
+  await pool.query(`INSERT INTO bookings (window_id, user_id) VALUES ($1, $2)`, [req.params.windowId, req.user.id]);
+  const { rows: clubRows } = await pool.query(`SELECT id, name, capacity FROM clubs WHERE id = $1 LIMIT 1`, [clubId]);
+  await syncWindowToExternalCalendars({ club: clubRows[0] || null, windowId: req.params.windowId });
+  return res.json({ ok: true, alreadyBooked: false });
+});
+
 app.get('/api/facilities/search', async (req, res) => {
   try {
     const draft = Number(req.query.draft);
