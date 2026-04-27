@@ -2395,7 +2395,7 @@ app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, r
        ORDER BY u.email ASC`,
       [club.id],
     ),
-    getScrubWindowsForClub(club.id),
+    getScrubWindowsForClub(club.id, { viewerUserId: req.user.id }),
     pool.query(
       `SELECT id, email FROM users
        WHERE (home_club_id IS NULL OR home_club_id <> $1)
@@ -2841,6 +2841,51 @@ app.post('/api/my-club/bookings', requireAuth, async (req, res) => {
 
   await syncWindowToExternalCalendars({ club, windowId });
   return res.json({ ok: true, windowId });
+});
+
+app.delete('/api/my-club/bookings/:bookingId', requireAuth, async (req, res) => {
+  const bookingId = String(req.params.bookingId || '').trim();
+  if (!bookingId) return res.status(400).json({ error: 'bookingId is required' });
+
+  const managedClub = (req.user.role === 'club_admin' || req.user.role === 'admin')
+    ? await resolveManagedClub(req.user.id)
+    : null;
+  const clubId = managedClub?.id || req.user.home_club_id;
+  if (!clubId) return res.status(403).json({ error: 'Club membership required' });
+
+  let deleted = null;
+  if (req.user.role === 'club_admin' || req.user.role === 'admin') {
+    const { rows } = await pool.query(
+      `DELETE FROM bookings b
+       USING scrub_windows w, users u
+       WHERE b.id = $1
+         AND b.window_id = w.id
+         AND w.club_id = $2
+         AND u.id = b.user_id
+         AND u.home_club_id = $2
+       RETURNING b.id, b.window_id`,
+      [bookingId, clubId],
+    );
+    deleted = rows[0] || null;
+  } else {
+    const { rows } = await pool.query(
+      `DELETE FROM bookings b
+       USING scrub_windows w
+       WHERE b.id = $1
+         AND b.window_id = w.id
+         AND w.club_id = $2
+         AND b.user_id = $3
+       RETURNING b.id, b.window_id`,
+      [bookingId, clubId, req.user.id],
+    );
+    deleted = rows[0] || null;
+  }
+
+  if (!deleted) return res.status(404).json({ error: 'Booking not found or you do not have permission to delete it' });
+
+  const { rows: clubRows } = await pool.query(`SELECT id, name, capacity FROM clubs WHERE id = $1 LIMIT 1`, [clubId]);
+  await syncWindowToExternalCalendars({ club: clubRows[0] || null, windowId: deleted.window_id });
+  return res.json({ ok: true, bookingId: deleted.id });
 });
 
 app.get('/api/facilities/search', async (req, res) => {

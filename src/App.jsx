@@ -1750,6 +1750,69 @@ export default function TidalCalendarApp() {
       setMyClubBookingBusy((state) => ({ ...state, [busyKey]: false }));
     }
   }, [apiRequest, loadMyClubCalendar]);
+  const stripDeletedBookingFromWindows = useCallback((windows, bookingId) => {
+    if (!Array.isArray(windows) || !bookingId) return Array.isArray(windows) ? windows : [];
+    return windows.map((window) => {
+      const bookingDetails = Array.isArray(window.bookingDetails) ? window.bookingDetails : [];
+      const nextBookingDetails = bookingDetails.filter((booking) => booking.bookingId !== bookingId);
+      const hadBooking = bookingDetails.length !== nextBookingDetails.length
+        || window?.myBooking?.bookingId === bookingId;
+      if (!hadBooking) return window;
+
+      const bookedBoats = Array.isArray(window.bookedBoats) ? window.bookedBoats : [];
+      const deletedBoatName = bookingDetails.find((booking) => booking.bookingId === bookingId)?.boatName
+        || window?.myBooking?.boatName
+        || null;
+      let removedBoat = false;
+      const nextBookedBoats = bookedBoats.filter((boat) => {
+        if (!removedBoat && deletedBoatName && boat === deletedBoatName) {
+          removedBoat = true;
+          return false;
+        }
+        return true;
+      });
+
+      return {
+        ...window,
+        booked: Math.max(0, Number(window.booked || 0) - 1),
+        bookingDetails: nextBookingDetails,
+        myBooking: window?.myBooking?.bookingId === bookingId ? null : window.myBooking,
+        bookedBoats: nextBookedBoats,
+      };
+    });
+  }, []);
+  const deleteMyClubBooking = useCallback(async (bookingId) => {
+    if (!bookingId) return;
+    const busyKey = `delete-${bookingId}`;
+    setMyClubBookingBusy((state) => ({ ...state, [busyKey]: true }));
+    setMyClubCalendarError('');
+    setMyClubCalendar((state) => ({
+      ...state,
+      windows: stripDeletedBookingFromWindows(state.windows, bookingId),
+    }));
+    setClubAdminData((state) => ({
+      ...state,
+      windows: stripDeletedBookingFromWindows(state.windows, bookingId),
+    }));
+    try {
+      await apiRequest(`/api/my-club/bookings/${bookingId}`, { method: 'DELETE' });
+      const refreshes = [loadMyClubCalendar()];
+      if (user?.role === 'club_admin' || user?.role === 'admin') refreshes.push(loadClubAdminData());
+      const results = await Promise.allSettled(refreshes);
+      const failedRefresh = results.find((result) => result.status === 'rejected');
+      if (failedRefresh) {
+        setMyClubCalendarError('Booking deleted, but one or more calendar views failed to refresh.');
+      }
+    } catch (err) {
+      setMyClubCalendarError(err.message || 'Unable to delete this booking.');
+      await Promise.allSettled([
+        loadMyClubCalendar(),
+        (user?.role === 'club_admin' || user?.role === 'admin') ? loadClubAdminData() : Promise.resolve(),
+      ]);
+    } finally {
+      setMyClubBookingBusy((state) => ({ ...state, [busyKey]: false }));
+    }
+  }, [apiRequest, loadClubAdminData, loadMyClubCalendar, stripDeletedBookingFromWindows, user?.role]);
   const selectedDayEvents = selectedDay ? eventsByDay[getLondonDateKey(selectedDay)] || [] : [];
   const selectedDayHasUkhoApi = selectedDayEvents.some(e => e.Source === 'UKHO');
   const selectedDayHasPredicted = selectedDayEvents.some(e => e.IsPredicted);
@@ -3746,12 +3809,18 @@ export default function TidalCalendarApp() {
                             {activeWindow.startsAt ? `${formatTime(activeWindow.startsAt)} - ${formatTime(activeWindow.endsAt || activeWindow.startsAt)}` : `Low water ${activeWindow.lowWater}`} • {activeWindow.duration}
                           </div>
                           <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>{activeWindow.booked}/{activeWindow.capacity} booked</div>
-                          {Array.isArray(activeWindow.bookedBoats) && activeWindow.bookedBoats.length > 0 && (
-                            <div style={{ fontSize: '11px', color: '#334155' }}>
-                              Boats: {activeWindow.bookedBoats.join(', ')}
+                          {activeWindow.myBooking && (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                              <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}</div>
+                              <button
+                                onClick={() => deleteMyClubBooking(activeWindow.myBooking.bookingId)}
+                                disabled={Boolean(myClubBookingBusy[`delete-${activeWindow.myBooking.bookingId}`])}
+                                style={{ padding: '5px 8px', borderRadius: '8px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}
+                              >
+                                {myClubBookingBusy[`delete-${activeWindow.myBooking.bookingId}`] ? 'Deleting…' : 'Delete booking'}
+                              </button>
                             </div>
                           )}
-                          {activeWindow.myBooking && <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}</div>}
                         </>
                       ) : (
                         <div style={{ fontSize: '12px', color: '#475569' }}>No slot published yet for this facility on this date. Booking will create one.</div>
@@ -3809,15 +3878,6 @@ export default function TidalCalendarApp() {
                           </button>
                         );
                       })()
-                    )}
-
-                    {(user?.role === 'club_admin' || user?.role === 'admin') && Array.isArray(activeWindow?.bookingDetails) && activeWindow.bookingDetails.length > 0 && (
-                      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px', display: 'grid', gap: '4px' }}>
-                        <div style={{ fontSize: '11px', color: '#334155', fontWeight: 700 }}>Current bookings</div>
-                        {activeWindow.bookingDetails.map((booking) => (
-                          <div key={booking.bookingId} style={{ fontSize: '11px', color: '#475569' }}>{booking.email} • {booking.boatName || 'No boat name'}</div>
-                        ))}
-                      </div>
                     )}
                   </div>
                 );
