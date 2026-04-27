@@ -464,6 +464,7 @@ const ensureSchema = async () => {
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         window_id UUID REFERENCES scrub_windows(id) ON DELETE CASCADE,
         user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        boat_name TEXT,
         created_at TIMESTAMPTZ DEFAULT now(),
         UNIQUE(window_id, user_id)
       );
@@ -561,6 +562,7 @@ const ensureSchema = async () => {
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS cover_image_url TEXT;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS slug TEXT;`);
+  await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS boat_name TEXT;`);
 
   const { rows: rowsNeedingSlug } = await pool.query(
     `SELECT id, title FROM blog_posts WHERE slug IS NULL OR btrim(slug) = '' ORDER BY created_at ASC`,
@@ -782,6 +784,8 @@ const formatClubWindow = (row) => ({
   notes: row.notes || '',
   facilityId: row.facilityId || null,
   facilityName: row.facilityName || 'Unassigned facility',
+  myBooking: row.myBooking || null,
+  bookingDetails: Array.isArray(row.bookingDetails) ? row.bookingDetails : [],
 });
 
 const hasPaidCalendarAccess = (user) => {
@@ -2103,17 +2107,50 @@ const refreshIntegrationAccessTokenIfNeeded = async (integration) => {
   return data.access_token;
 };
 
-const getScrubWindowsForClub = async (clubId) => {
+const getScrubWindowsForClub = async (clubId, options = {}) => {
+  const { viewerUserId = null, includeBookingDetails = false } = options;
   const { rows } = await pool.query(
     `SELECT w.id, w.date_label as date, w.low_water as "lowWater", w.duration, w.capacity,
             w.starts_at as "startsAt", w.ends_at as "endsAt", w.notes,
             w.facility_id as "facilityId", cf.name as "facilityName",
-            (SELECT COUNT(*) FROM bookings b WHERE b.window_id = w.id)::int AS booked
+            (SELECT COUNT(*) FROM bookings b WHERE b.window_id = w.id)::int AS booked,
+            (
+              SELECT json_build_object(
+                'bookingId', b.id,
+                'boatName', b.boat_name,
+                'bookedAt', b.created_at
+              )
+              FROM bookings b
+              WHERE b.window_id = w.id AND b.user_id = $2
+              ORDER BY b.created_at DESC
+              LIMIT 1
+            ) AS "myBooking",
+            CASE
+              WHEN $3::boolean THEN (
+                SELECT COALESCE(
+                  json_agg(
+                    json_build_object(
+                      'bookingId', b.id,
+                      'userId', u.id,
+                      'email', u.email,
+                      'boatName', b.boat_name,
+                      'bookedAt', b.created_at
+                    )
+                    ORDER BY b.created_at ASC
+                  ),
+                  '[]'::json
+                )
+                FROM bookings b
+                JOIN users u ON u.id = b.user_id
+                WHERE b.window_id = w.id
+              )
+              ELSE '[]'::json
+            END AS "bookingDetails"
      FROM scrub_windows w
      LEFT JOIN club_facilities cf ON cf.id = w.facility_id
      WHERE w.club_id = $1
      ORDER BY COALESCE(w.starts_at, w.created_at) ASC`,
-    [clubId],
+    [clubId, viewerUserId, includeBookingDetails],
   );
   return rows.map(formatClubWindow);
 };
@@ -2592,8 +2629,10 @@ app.post('/api/club-admin/windows', requireAuth, requireClubAdmin, async (req, r
 });
 
 app.post('/api/club-admin/windows/:windowId/book-on-behalf', requireAuth, requireClubAdmin, async (req, res) => {
-  const { userId } = req.body || {};
+  const { userId, boatName } = req.body || {};
   if (!userId) return res.status(400).json({ error: 'userId is required' });
+  const normalizedBoatName = String(boatName || '').trim();
+  if (!normalizedBoatName) return res.status(400).json({ error: 'Boat name is required' });
   const club = await resolveManagedClub(req.user.id);
   if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
 
@@ -2610,10 +2649,11 @@ app.post('/api/club-admin/windows/:windowId/book-on-behalf', requireAuth, requir
   if (windowRows.length === 0) return res.status(404).json({ error: 'Scrub window not found' });
 
   await pool.query(
-    `INSERT INTO bookings (window_id, user_id)
-     VALUES ($1, $2)
-     ON CONFLICT DO NOTHING`,
-    [req.params.windowId, userId],
+    `INSERT INTO bookings (window_id, user_id, boat_name)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (window_id, user_id)
+     DO UPDATE SET boat_name = EXCLUDED.boat_name`,
+    [req.params.windowId, userId, normalizedBoatName],
   );
   await syncWindowToExternalCalendars({ club, windowId: req.params.windowId });
   return res.json({ ok: true });
@@ -2653,11 +2693,22 @@ app.get('/api/my-club/calendar', requireAuth, async (req, res) => {
   const { rows } = await pool.query(`SELECT id, name, capacity FROM clubs WHERE id = $1 LIMIT 1`, [clubId]);
   if (rows.length === 0) return res.status(404).json({ error: 'Club not found' });
 
-  const windows = await getScrubWindowsForClub(clubId);
-  return res.json({ club: rows[0], windows });
+  const includeBookingDetails = req.user.role === 'club_admin' || req.user.role === 'admin';
+  const windows = await getScrubWindowsForClub(clubId, {
+    viewerUserId: req.user.id,
+    includeBookingDetails,
+  });
+  const { rows: facilityRows } = await pool.query(
+    `SELECT id, name FROM club_facilities WHERE club_id = $1 ORDER BY name ASC`,
+    [clubId],
+  );
+  return res.json({ club: rows[0], windows, facilities: facilityRows });
 });
 
 app.post('/api/my-club/windows/:windowId/book', requireAuth, async (req, res) => {
+  const { boatName } = req.body || {};
+  const normalizedBoatName = String(boatName || '').trim();
+  if (!normalizedBoatName) return res.status(400).json({ error: 'Boat name is required' });
   const managedClub = (req.user.role === 'club_admin' || req.user.role === 'admin')
     ? await resolveManagedClub(req.user.id)
     : null;
@@ -2678,17 +2729,109 @@ app.post('/api/my-club/windows/:windowId/book', requireAuth, async (req, res) =>
     `SELECT id FROM bookings WHERE window_id = $1 AND user_id = $2 LIMIT 1`,
     [req.params.windowId, req.user.id],
   );
-  if (existingRows.length > 0) return res.json({ ok: true, alreadyBooked: true });
+  if (existingRows.length > 0) {
+    await pool.query(
+      `UPDATE bookings SET boat_name = $3 WHERE window_id = $1 AND user_id = $2`,
+      [req.params.windowId, req.user.id, normalizedBoatName],
+    );
+    return res.json({ ok: true, alreadyBooked: true });
+  }
 
   const window = windowRows[0];
   if (Number(window.booked) >= Number(window.capacity)) {
     return res.status(400).json({ error: 'This facility slot is fully booked' });
   }
 
-  await pool.query(`INSERT INTO bookings (window_id, user_id) VALUES ($1, $2)`, [req.params.windowId, req.user.id]);
+  await pool.query(`INSERT INTO bookings (window_id, user_id, boat_name) VALUES ($1, $2, $3)`, [req.params.windowId, req.user.id, normalizedBoatName]);
   const { rows: clubRows } = await pool.query(`SELECT id, name, capacity FROM clubs WHERE id = $1 LIMIT 1`, [clubId]);
   await syncWindowToExternalCalendars({ club: clubRows[0] || null, windowId: req.params.windowId });
   return res.json({ ok: true, alreadyBooked: false });
+});
+
+app.post('/api/my-club/bookings', requireAuth, async (req, res) => {
+  const { date, facilityId, boatName } = req.body || {};
+  const normalizedDate = String(date || '').trim();
+  const normalizedFacilityId = String(facilityId || '').trim();
+  const normalizedBoatName = String(boatName || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) return res.status(400).json({ error: 'Date must be in YYYY-MM-DD format' });
+  if (!normalizedFacilityId) return res.status(400).json({ error: 'facilityId is required' });
+  if (!normalizedBoatName) return res.status(400).json({ error: 'Boat name is required' });
+
+  const managedClub = (req.user.role === 'club_admin' || req.user.role === 'admin')
+    ? await resolveManagedClub(req.user.id)
+    : null;
+  const clubId = managedClub?.id || req.user.home_club_id;
+  if (!clubId) return res.status(403).json({ error: 'Club membership required' });
+
+  const { rows: facilityRows } = await pool.query(
+    `SELECT id FROM club_facilities WHERE id = $1 AND club_id = $2 LIMIT 1`,
+    [normalizedFacilityId, clubId],
+  );
+  if (facilityRows.length === 0) return res.status(404).json({ error: 'Facility not found for your club' });
+
+  const { rows: clubRows } = await pool.query(`SELECT id, name, capacity FROM clubs WHERE id = $1 LIMIT 1`, [clubId]);
+  const club = clubRows[0];
+  if (!club) return res.status(404).json({ error: 'Club not found' });
+
+  const startIso = `${normalizedDate}T12:00:00.000Z`;
+  const endIso = `${normalizedDate}T13:00:00.000Z`;
+
+  const { rows: existingWindowRows } = await pool.query(
+    `SELECT id FROM scrub_windows
+     WHERE club_id = $1
+       AND facility_id = $2
+       AND (
+         date_label = $3
+         OR (starts_at IS NOT NULL AND (starts_at AT TIME ZONE 'UTC')::date = $3::date)
+       )
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [clubId, normalizedFacilityId, normalizedDate],
+  );
+
+  let windowId = existingWindowRows[0]?.id || null;
+  if (!windowId) {
+    const { rows: createdWindowRows } = await pool.query(
+      `INSERT INTO scrub_windows (club_id, date_label, low_water, duration, starts_at, ends_at, notes, facility_id, capacity)
+       VALUES ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7, $8, $9)
+       RETURNING id`,
+      [clubId, normalizedDate, '--:--', 'Booked slot', startIso, endIso, 'Member-created booking', normalizedFacilityId, 1],
+    );
+    windowId = createdWindowRows[0]?.id || null;
+  }
+  if (!windowId) return res.status(500).json({ error: 'Unable to create booking slot' });
+
+  const { rows: existingBookingRows } = await pool.query(
+    `SELECT id FROM bookings WHERE window_id = $1 AND user_id = $2 LIMIT 1`,
+    [windowId, req.user.id],
+  );
+  if (existingBookingRows.length > 0) {
+    await pool.query(
+      `UPDATE bookings SET boat_name = $3 WHERE window_id = $1 AND user_id = $2`,
+      [windowId, req.user.id, normalizedBoatName],
+    );
+  } else {
+    const { rows: capacityRows } = await pool.query(
+      `SELECT w.capacity,
+              (SELECT COUNT(*) FROM bookings b WHERE b.window_id = w.id)::int AS booked
+       FROM scrub_windows w
+       WHERE w.id = $1
+       LIMIT 1`,
+      [windowId],
+    );
+    const slot = capacityRows[0];
+    if (!slot) return res.status(404).json({ error: 'Scrub window not found' });
+    if (Number(slot.booked) >= 1) {
+      return res.status(400).json({ error: 'This facility is already booked for the selected date' });
+    }
+    if (Number(slot.booked) >= Number(slot.capacity)) {
+      return res.status(400).json({ error: 'This facility slot is fully booked' });
+    }
+    await pool.query(`INSERT INTO bookings (window_id, user_id, boat_name) VALUES ($1, $2, $3)`, [windowId, req.user.id, normalizedBoatName]);
+  }
+
+  await syncWindowToExternalCalendars({ club, windowId });
+  return res.json({ ok: true, windowId });
 });
 
 app.get('/api/facilities/search', async (req, res) => {
