@@ -3309,10 +3309,9 @@ export default function TidalCalendarApp() {
                     }
 
                     return monthlyBookedWindows.map((window) => {
-                        const isBookedByMe = Boolean(window.myBooking);
                         const available = Number(window.booked) < Number(window.capacity);
-                        const canBook = available && !isBookedByMe;
                         const busy = Boolean(myClubBookingBusy[window.id]);
+                        const deleteBusy = Boolean(myClubBookingBusy[`delete-${window?.myBooking?.bookingId}`]);
                         return (
                           <div key={window.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', background: '#f8fafc' }}>
                             <div style={{ display: 'grid', gap: '3px' }}>
@@ -3336,13 +3335,23 @@ export default function TidalCalendarApp() {
                                 </div>
                               )}
                             </div>
-                            <button
-                              onClick={() => bookMyClubWindow(window.id, myClubBoatNames[window.id] || window.myBooking?.boatName || '')}
-                              disabled={!available || busy}
-                              style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
-                            >
-                              {busy ? 'Booking…' : isBookedByMe ? 'Booked' : available ? 'Book facility' : 'Unavailable'}
-                            </button>
+                            {window.myBooking ? (
+                              <button
+                                onClick={() => deleteMyClubBooking(window.myBooking.bookingId)}
+                                disabled={deleteBusy}
+                                style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: deleteBusy ? 'wait' : 'pointer' }}
+                              >
+                                {deleteBusy ? 'Deleting…' : 'Delete booking'}
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => bookMyClubWindow(window.id, myClubBoatNames[window.id] || window.myBooking?.boatName || '')}
+                                disabled={!available || busy}
+                                style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
+                              >
+                                {busy ? 'Booking…' : available ? 'Book facility' : 'Unavailable'}
+                              </button>
+                            )}
                           </div>
                         );
                       });
@@ -3765,15 +3774,8 @@ export default function TidalCalendarApp() {
                           </div>
                           <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>{activeWindow.booked}/{activeWindow.capacity} booked</div>
                           {activeWindow.myBooking && (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                              <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}</div>
-                              <button
-                                onClick={() => deleteMyClubBooking(activeWindow.myBooking.bookingId)}
-                                disabled={Boolean(myClubBookingBusy[`delete-${activeWindow.myBooking.bookingId}`])}
-                                style={{ padding: '5px 8px', borderRadius: '8px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}
-                              >
-                                {myClubBookingBusy[`delete-${activeWindow.myBooking.bookingId}`] ? 'Deleting…' : 'Delete booking'}
-                              </button>
+                            <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>
+                              Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}
                             </div>
                           )}
                         </>
