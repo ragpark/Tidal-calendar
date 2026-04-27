@@ -2710,6 +2710,7 @@ export default function TidalCalendarApp() {
                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Duration</th>
                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Exact start (optional)</th>
                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Booked / Capacity</th>
+                        <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Current bookings</th>
                         <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #cbd5e1' }}>Book on behalf of member</th>
                       </tr>
                     </thead>
@@ -2722,6 +2723,27 @@ export default function TidalCalendarApp() {
                           <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.duration}</td>
                           <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.startsAt ? new Date(window.startsAt).toLocaleString('en-GB') : '—'}</td>
                           <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>{window.booked} / {window.capacity}</td>
+                          <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>
+                            {Array.isArray(window.bookingDetails) && window.bookingDetails.length > 0 ? (
+                              <div style={{ display: 'grid', gap: '6px' }}>
+                                {window.bookingDetails.map((booking) => (
+                                  <div key={booking.bookingId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                    <div style={{ color: '#475569' }}>{booking.email} • {booking.boatName || 'No boat name'}</div>
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteMyClubBooking(booking.bookingId)}
+                                      disabled={Boolean(myClubBookingBusy[`delete-${booking.bookingId}`])}
+                                      style={{ padding: '4px 7px', borderRadius: '7px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: 'pointer', fontSize: '10px', whiteSpace: 'nowrap' }}
+                                    >
+                                      {myClubBookingBusy[`delete-${booking.bookingId}`] ? 'Deleting…' : 'Delete'}
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span style={{ color: '#64748b' }}>No bookings</span>
+                            )}
+                          </td>
                           <td style={{ padding: '8px', borderBottom: '1px solid #e2e8f0' }}>
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                               <select
