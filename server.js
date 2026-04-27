@@ -2795,7 +2795,7 @@ app.post('/api/my-club/bookings', requireAuth, async (req, res) => {
       `INSERT INTO scrub_windows (club_id, date_label, low_water, duration, starts_at, ends_at, notes, facility_id, capacity)
        VALUES ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7, $8, $9)
        RETURNING id`,
-      [clubId, normalizedDate, '--:--', 'Booked slot', startIso, endIso, 'Member-created booking', normalizedFacilityId, Math.max(Number(club.capacity) || 1, 1)],
+      [clubId, normalizedDate, '--:--', 'Booked slot', startIso, endIso, 'Member-created booking', normalizedFacilityId, 1],
     );
     windowId = createdWindowRows[0]?.id || null;
   }
@@ -2812,7 +2812,8 @@ app.post('/api/my-club/bookings', requireAuth, async (req, res) => {
     );
   } else {
     const { rows: capacityRows } = await pool.query(
-      `SELECT w.capacity, (SELECT COUNT(*) FROM bookings b WHERE b.window_id = w.id)::int AS booked
+      `SELECT w.capacity,
+              (SELECT COUNT(*) FROM bookings b WHERE b.window_id = w.id)::int AS booked
        FROM scrub_windows w
        WHERE w.id = $1
        LIMIT 1`,
@@ -2820,6 +2821,9 @@ app.post('/api/my-club/bookings', requireAuth, async (req, res) => {
     );
     const slot = capacityRows[0];
     if (!slot) return res.status(404).json({ error: 'Scrub window not found' });
+    if (Number(slot.booked) >= 1) {
+      return res.status(400).json({ error: 'This facility is already booked for the selected date' });
+    }
     if (Number(slot.booked) >= Number(slot.capacity)) {
       return res.status(400).json({ error: 'This facility slot is fully booked' });
     }

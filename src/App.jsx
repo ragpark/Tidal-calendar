@@ -3687,72 +3687,108 @@ export default function TidalCalendarApp() {
               <button onClick={() => setMyClubBookingModalDateKey('')} style={{ padding: '6px 10px', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', cursor: 'pointer', fontWeight: 600 }}>Close</button>
             </div>
             <div style={{ padding: '16px', display: 'grid', gap: '10px' }}>
-              {myClubBookingModalWindows.length === 0 ? (
-                (() => {
-                  const selectedFacilityId = myClubSelectedFacilityByDate[myClubBookingModalDateKey] || myClubCalendar.facilities?.[0]?.id || '';
-                  const selectedFacility = (myClubCalendar.facilities || []).find((facility) => facility.id === selectedFacilityId);
-                  const busyKey = `${myClubBookingModalDateKey}:${selectedFacilityId}`;
-                  const busy = Boolean(myClubBookingBusy[busyKey]);
+              {(() => {
+                const facilities = Array.isArray(myClubCalendar.facilities) ? myClubCalendar.facilities : [];
+                const windowByFacilityId = Object.fromEntries(
+                  myClubBookingModalWindows
+                    .filter((window) => window?.facilityId)
+                    .map((window) => [window.facilityId, window]),
+                );
+                const selectedFacilityId = myClubSelectedFacilityByDate[myClubBookingModalDateKey]
+                  || facilities[0]?.id
+                  || myClubBookingModalWindows[0]?.facilityId
+                  || '';
+                const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || null;
+                const activeWindow = selectedFacilityId ? windowByFacilityId[selectedFacilityId] || null : null;
+                const createBusyKey = `${myClubBookingModalDateKey}:${selectedFacilityId}`;
+                const busy = Boolean(myClubBookingBusy[activeWindow?.id || createBusyKey]);
+                const available = activeWindow ? Number(activeWindow.booked) < Number(activeWindow.capacity) : true;
+
+                if (facilities.length === 0) {
                   return (
-                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px', background: '#f8fafc' }}>
-                      {(myClubCalendar.facilities || []).length === 0 ? (
-                        <div style={{ fontSize: '13px', color: '#475569', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px' }}>
-                          No facilities are configured for this club yet.
-                        </div>
-                      ) : (
-                        <>
-                          <div style={{ display: 'grid', gap: '6px' }}>
-                            <label style={{ fontSize: '12px', color: '#334155', fontWeight: 600 }}>Facility</label>
-                            <select
-                              value={selectedFacilityId}
-                              onChange={(event) => setMyClubSelectedFacilityByDate((state) => ({ ...state, [myClubBookingModalDateKey]: event.target.value }))}
-                              style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}
-                            >
-                              {(myClubCalendar.facilities || []).map((facility) => (
-                                <option key={facility.id} value={facility.id}>{facility.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                          {selectedFacility && (
-                            <div style={{ fontSize: '12px', color: '#475569' }}>
-                              Booking for: <strong style={{ color: '#0f172a' }}>{selectedFacility.name}</strong> on {myClubBookingModalDateLabel}
-                            </div>
-                          )}
-                          <div style={{ display: 'grid', gap: '6px' }}>
-                            <label style={{ fontSize: '12px', color: '#334155', fontWeight: 600 }}>Boat name</label>
-                            <input
-                              type="text"
-                              value={myClubBoatNames[busyKey] || ''}
-                              onChange={(event) => setMyClubBoatNames((state) => ({ ...state, [busyKey]: event.target.value }))}
-                              placeholder="e.g. Sea Mist"
-                              style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}
-                            />
-                          </div>
-                          <button
-                            onClick={() => bookMyClubFacilityByDate(myClubBookingModalDateKey, selectedFacilityId, myClubBoatNames[busyKey] || '')}
-                            disabled={busy || !selectedFacilityId}
-                            style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: busy || !selectedFacilityId ? 0.65 : 1 }}
-                          >
-                            {busy ? 'Booking…' : 'Book facility'}
-                          </button>
-                        </>
-                      )}
+                    <div style={{ fontSize: '13px', color: '#475569', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px' }}>
+                      No facilities are configured for this club yet.
                     </div>
                   );
-                })()
-              ) : (() => {
-                const selectedWindowId = myClubSelectedFacilityByDate[myClubBookingModalDateKey] || myClubBookingModalWindows[0]?.id || '';
-                const activeWindow = myClubBookingModalWindows.find((window) => window.id === selectedWindowId) || myClubBookingModalWindows[0];
-                const available = activeWindow ? Number(activeWindow.booked) < Number(activeWindow.capacity) : false;
-                const busy = activeWindow ? Boolean(myClubBookingBusy[activeWindow.id]) : false;
+                }
+
                 return (
                   <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px', background: '#f8fafc' }}>
                     <div style={{ display: 'grid', gap: '6px' }}>
                       <label style={{ fontSize: '12px', color: '#334155', fontWeight: 600 }}>Facility</label>
                       <select
-                        value={selectedWindowId}
+                        value={selectedFacilityId}
                         onChange={(event) => setMyClubSelectedFacilityByDate((state) => ({ ...state, [myClubBookingModalDateKey]: event.target.value }))}
                         style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}
+                      >
+                        {facilities.map((facility) => {
+                          const facilityWindow = windowByFacilityId[facility.id];
+                          const label = facilityWindow
+                            ? `${facility.name} (${facilityWindow.booked}/${facilityWindow.capacity} booked)`
+                            : `${facility.name} (available)`;
+                          return <option key={facility.id} value={facility.id}>{label}</option>;
+                        })}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'grid', gap: '3px' }}>
+                      <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 700 }}>{selectedFacility?.name || 'Scrub facility'}</div>
+                      {activeWindow ? (
+                        <>
+                          <div style={{ fontSize: '12px', color: '#475569' }}>
+                            {activeWindow.startsAt ? `${formatTime(activeWindow.startsAt)} - ${formatTime(activeWindow.endsAt || activeWindow.startsAt)}` : `Low water ${activeWindow.lowWater}`} • {activeWindow.duration}
+                          </div>
+                          <div style={{ fontSize: '11px', color: available ? '#166534' : '#b91c1c' }}>{activeWindow.booked}/{activeWindow.capacity} booked</div>
+                          {activeWindow.myBooking && <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>Status: Booked • Boat: {activeWindow.myBooking.boatName || 'Not provided'}</div>}
+                        </>
+                      ) : (
+                        <div style={{ fontSize: '12px', color: '#475569' }}>No slot published yet for this facility on this date. Booking will create one.</div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'grid', gap: '6px' }}>
+                      <label style={{ fontSize: '12px', color: '#334155', fontWeight: 600 }}>Boat name</label>
+                      <input
+                        type="text"
+                        value={myClubBoatNames[activeWindow?.id || createBusyKey] ?? activeWindow?.myBooking?.boatName ?? ''}
+                        onChange={(event) => setMyClubBoatNames((state) => ({ ...state, [activeWindow?.id || createBusyKey]: event.target.value }))}
+                        placeholder="e.g. Sea Mist"
+                        style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}
+                      />
+                    </div>
+
+                    {(user?.role === 'club_admin' || user?.role === 'admin') && activeWindow ? (
+                      <div style={{ display: 'grid', gap: '6px' }}>
+                        <select
+                          value={bookingAssignments[activeWindow.id] || ''}
+                          onChange={(event) => setBookingAssignments((state) => ({ ...state, [activeWindow.id]: event.target.value }))}
+                          style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', minWidth: '190px' }}
+                        >
+                          <option value="">Select member</option>
+                          {clubAdminData.members.map((member) => (
+                            <option key={member.id} value={member.id}>{member.email}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => bookMyClubWindowOnBehalf(activeWindow.id, bookingAssignments[activeWindow.id], myClubBoatNames[activeWindow.id] ?? activeWindow.myBooking?.boatName ?? '')}
+                          disabled={!available || busy || !bookingAssignments[activeWindow.id]}
+                          style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
+                        >
+                          {busy ? 'Booking…' : available ? 'Book for member' : 'Unavailable'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const boatName = myClubBoatNames[activeWindow?.id || createBusyKey] ?? activeWindow?.myBooking?.boatName ?? '';
+                          if (activeWindow) {
+                            bookMyClubWindow(activeWindow.id, boatName);
+                          } else {
+                            bookMyClubFacilityByDate(myClubBookingModalDateKey, selectedFacilityId, boatName);
+                          }
+                        }}
+                        disabled={!selectedFacilityId || !available || busy}
+                        style={{ padding: '9px 12px', borderRadius: '8px', border: `1px solid ${available ? '#0284c7' : '#cbd5e1'}`, background: available ? '#0ea5e9' : '#e2e8f0', color: available ? '#fff' : '#64748b', fontWeight: 700, cursor: available ? 'pointer' : 'not-allowed' }}
                       >
                         {myClubBookingModalWindows.map((window) => (
                           <option key={window.id} value={window.id}>
@@ -3819,6 +3855,15 @@ export default function TidalCalendarApp() {
                           </div>
                         )}
                       </>
+                    )}
+
+                    {(user?.role === 'club_admin' || user?.role === 'admin') && Array.isArray(activeWindow?.bookingDetails) && activeWindow.bookingDetails.length > 0 && (
+                      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px', display: 'grid', gap: '4px' }}>
+                        <div style={{ fontSize: '11px', color: '#334155', fontWeight: 700 }}>Current bookings</div>
+                        {activeWindow.bookingDetails.map((booking) => (
+                          <div key={booking.bookingId} style={{ fontSize: '11px', color: '#475569' }}>{booking.email} • {booking.boatName || 'No boat name'}</div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 );
