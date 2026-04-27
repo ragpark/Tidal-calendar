@@ -2853,33 +2853,21 @@ app.delete('/api/my-club/bookings/:bookingId', requireAuth, async (req, res) => 
   const clubId = managedClub?.id || req.user.home_club_id;
   if (!clubId) return res.status(403).json({ error: 'Club membership required' });
 
-  let deleted = null;
-  if (req.user.role === 'club_admin' || req.user.role === 'admin') {
-    const { rows } = await pool.query(
-      `DELETE FROM bookings b
-       USING scrub_windows w, users u
-       WHERE b.id = $1
-         AND b.window_id = w.id
-         AND w.club_id = $2
-         AND u.id = b.user_id
-         AND u.home_club_id = $2
-       RETURNING b.id, b.window_id`,
-      [bookingId, clubId],
-    );
-    deleted = rows[0] || null;
-  } else {
-    const { rows } = await pool.query(
-      `DELETE FROM bookings b
-       USING scrub_windows w
-       WHERE b.id = $1
-         AND b.window_id = w.id
-         AND w.club_id = $2
-         AND b.user_id = $3
-       RETURNING b.id, b.window_id`,
-      [bookingId, clubId, req.user.id],
-    );
-    deleted = rows[0] || null;
-  }
+  const { rows } = await pool.query(
+    `DELETE FROM bookings b
+     USING scrub_windows w, users u
+     WHERE b.id = $1
+       AND b.window_id = w.id
+       AND w.club_id = $2
+       AND u.id = b.user_id
+       AND (
+         b.user_id = $3
+         OR u.home_club_id = $2
+       )
+     RETURNING b.id, b.window_id`,
+    [bookingId, clubId, req.user.id],
+  );
+  const deleted = rows[0] || null;
 
   if (!deleted) return res.status(404).json({ error: 'Booking not found or you do not have permission to delete it' });
 
