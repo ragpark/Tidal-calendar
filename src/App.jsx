@@ -1752,15 +1752,21 @@ export default function TidalCalendarApp() {
   }, [apiRequest, loadMyClubCalendar]);
   const stripDeletedBookingFromWindows = useCallback((windows, bookingId) => {
     if (!Array.isArray(windows) || !bookingId) return Array.isArray(windows) ? windows : [];
+    const normalizedBookingId = String(bookingId);
     return windows.map((window) => {
       const bookingDetails = Array.isArray(window.bookingDetails) ? window.bookingDetails : [];
-      const nextBookingDetails = bookingDetails.filter((booking) => booking.bookingId !== bookingId);
+      const deletedBooking = bookingDetails.find((booking) => String(booking?.bookingId ?? booking?.id ?? '') === normalizedBookingId) || null;
+      const nextBookingDetails = bookingDetails.filter((booking) => String(booking?.bookingId ?? booking?.id ?? '') !== normalizedBookingId);
+      const myBookingId = String(window?.myBooking?.bookingId ?? window?.myBooking?.id ?? '');
+      const removedFromDetails = bookingDetails.length - nextBookingDetails.length;
+      const removedFromMyBooking = myBookingId === normalizedBookingId ? 1 : 0;
+      const removedCount = Math.max(removedFromDetails, removedFromMyBooking);
       const hadBooking = bookingDetails.length !== nextBookingDetails.length
-        || window?.myBooking?.bookingId === bookingId;
+        || myBookingId === normalizedBookingId;
       if (!hadBooking) return window;
 
       const bookedBoats = Array.isArray(window.bookedBoats) ? window.bookedBoats : [];
-      const deletedBoatName = bookingDetails.find((booking) => booking.bookingId === bookingId)?.boatName
+      const deletedBoatName = deletedBooking?.boatName
         || window?.myBooking?.boatName
         || null;
       let removedBoat = false;
@@ -1774,9 +1780,9 @@ export default function TidalCalendarApp() {
 
       return {
         ...window,
-        booked: Math.max(0, Number(window.booked || 0) - 1),
+        booked: Math.max(0, Number(window.booked || 0) - removedCount),
         bookingDetails: nextBookingDetails,
-        myBooking: window?.myBooking?.bookingId === bookingId ? null : window.myBooking,
+        myBooking: myBookingId === normalizedBookingId ? null : window.myBooking,
         bookedBoats: nextBookedBoats,
       };
     });
