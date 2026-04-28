@@ -1688,7 +1688,7 @@ export default function TidalCalendarApp() {
     if (!windowId) return;
     const normalizedBoatName = String(boatName || '').trim();
     if (!normalizedBoatName) {
-      setMyClubCalendarError('Boat name is required to book a facility slot.');
+      setMyClubCalendarError('Boat name is required to book a slot.');
       return;
     }
     setMyClubBookingBusy((state) => ({ ...state, [windowId]: true }));
@@ -1697,7 +1697,7 @@ export default function TidalCalendarApp() {
       await apiRequest(`/api/my-club/windows/${windowId}/book`, { method: 'POST', body: JSON.stringify({ boatName: normalizedBoatName }) });
       await loadMyClubCalendar();
     } catch (err) {
-      setMyClubCalendarError(err.message || 'Unable to book this facility slot.');
+      setMyClubCalendarError(err.message || 'Unable to book this slot.');
     } finally {
       setMyClubBookingBusy((state) => ({ ...state, [windowId]: false }));
     }
@@ -1706,7 +1706,7 @@ export default function TidalCalendarApp() {
     if (!windowId || !userId) return;
     const normalizedBoatName = String(boatName || '').trim();
     if (!normalizedBoatName) {
-      setMyClubCalendarError('Boat name is required to book a facility slot.');
+      setMyClubCalendarError('Boat name is required to book a slot.');
       return;
     }
     setMyClubBookingBusy((state) => ({ ...state, [windowId]: true }));
@@ -1718,7 +1718,7 @@ export default function TidalCalendarApp() {
       });
       await Promise.all([loadMyClubCalendar(), loadClubAdminData()]);
     } catch (err) {
-      setMyClubCalendarError(err.message || 'Unable to book this facility slot.');
+      setMyClubCalendarError(err.message || 'Unable to book this slot.');
     } finally {
       setMyClubBookingBusy((state) => ({ ...state, [windowId]: false }));
     }
@@ -1727,7 +1727,7 @@ export default function TidalCalendarApp() {
     if (!dateKey || !facilityId) return;
     const normalizedBoatName = String(boatName || '').trim();
     if (!normalizedBoatName) {
-      setMyClubCalendarError('Boat name is required to book a facility slot.');
+      setMyClubCalendarError('Boat name is required to book a slot.');
       return;
     }
     const busyKey = `${dateKey}:${facilityId}`;
@@ -2596,7 +2596,7 @@ export default function TidalCalendarApp() {
             <header style={{ display: 'grid', gap: '6px' }}>
               <p style={{ margin: 0, fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9' }}>Club Admin</p>
               <h2 style={{ margin: 0, color: '#0f172a' }}>Club setup, members, and scrubbing bookings</h2>
-              <p style={{ margin: 0, color: '#475569', fontSize: '13px' }}>Configure your club details, add calendar users to your group, and manage connected calendar sync. Facility booking is now handled in the My Club calendar view.</p>
+              <p style={{ margin: 0, color: '#475569', fontSize: '13px' }}>Configure your club details, add calendar users to your group, and manage connected calendar sync. Booking is now handled in the My Club calendar view.</p>
             </header>
 
             {clubAdminError && <div style={{ color: '#b91c1c', fontWeight: 600, fontSize: '13px' }}>{clubAdminError}</div>}
@@ -3247,7 +3247,7 @@ export default function TidalCalendarApp() {
                       const usedCount = windows.filter((window) => Number(window.booked) > 0).length;
                       const availableCount = windows.filter((window) => Number(window.booked) < Number(window.capacity)).length;
                       const dailyAvailabilityLabel = windows.length === 0
-                        ? 'No facilities scheduled'
+                        ? 'No boats scheduled'
                         : availableCount > 0
                           ? `Facilities available: ${availableCount}`
                           : 'No facilities available';
@@ -3805,7 +3805,7 @@ export default function TidalCalendarApp() {
                           )}
                         </>
                       ) : (
-                        <div style={{ fontSize: '12px', color: '#475569' }}>No slot published yet for this facility on this date. Booking will create one.</div>
+                        <div style={{ fontSize: '12px', color: '#475569' }}>No boat booking created for this facility on this date.</div>
                       )}
                     </div>
 
