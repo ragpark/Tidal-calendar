@@ -3249,13 +3249,6 @@ export default function TidalCalendarApp() {
                         const booked = Number(window?.booked || 0);
                         return !isMemberCreatedWindow || booked > 0;
                       });
-                      const usedCount = activeWindows.filter((window) => Number(window.booked) > 0).length;
-                      const availableCount = activeWindows.filter((window) => Number(window.booked) < Number(window.capacity)).length;
-                      const dailyAvailabilityLabel = activeWindows.length === 0
-                        ? 'No boats scheduled'
-                        : availableCount > 0
-                          ? `Facilities available: ${availableCount}`
-                          : 'No facilities available';
                       const myBookedCount = windows.filter((window) => Boolean(window.myBooking)).length;
                       return (
                         <div
@@ -3278,10 +3271,6 @@ export default function TidalCalendarApp() {
                           </div>
                           {isCurrentMonth && (
                             <div style={{ display: 'grid', gap: '4px' }}>
-                              <div style={{ fontSize: '10px', color: '#334155', fontFamily: "'Outfit', sans-serif" }}>Facilities in use: {usedCount}</div>
-                              <div style={{ fontSize: '10px', color: availableCount > 0 ? '#166534' : '#b91c1c', fontFamily: "'Outfit', sans-serif" }}>
-                                {dailyAvailabilityLabel}
-                              </div>
                               {myBookedCount > 0 && (
                                 <div style={{ fontSize: '10px', color: '#0369a1', fontFamily: "'Outfit', sans-serif", fontWeight: 700 }}>
                                   Booked: {myBookedCount}
