@@ -3,7 +3,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { Pool } from 'pg';
 import { createReadStream, existsSync } from 'fs';
@@ -447,6 +447,37 @@ const ensureSchema = async () => {
         created_at TIMESTAMPTZ DEFAULT now(),
         UNIQUE(club_id, user_id)
       );
+      CREATE TABLE IF NOT EXISTS club_invites (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL UNIQUE,
+        created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        max_uses INT NOT NULL DEFAULT 1,
+        used_count INT NOT NULL DEFAULT 0,
+        revoked_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS club_join_requests (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'pending',
+        note TEXT,
+        reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        reviewed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        UNIQUE(club_id, user_id, status)
+      );
+      CREATE TABLE IF NOT EXISTS membership_audit_log (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
+        actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        target_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        action TEXT NOT NULL,
+        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
       CREATE TABLE IF NOT EXISTS scrub_windows (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
@@ -563,6 +594,41 @@ const ensureSchema = async () => {
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS slug TEXT;`);
   await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS boat_name TEXT;`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS club_invites (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    max_uses INT NOT NULL DEFAULT 1,
+    used_count INT NOT NULL DEFAULT 0,
+    revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now()
+  );`);
+  await pool.query(`ALTER TABLE club_invites ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE club_invites ADD COLUMN IF NOT EXISTS used_count INT NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE club_invites ADD COLUMN IF NOT EXISTS max_uses INT NOT NULL DEFAULT 1;`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS club_join_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending',
+    note TEXT,
+    reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(club_id, user_id, status)
+  );`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS membership_audit_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    club_id UUID REFERENCES clubs(id) ON DELETE CASCADE,
+    actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    target_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT now()
+  );`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS club_join_requests_pending_unique_idx ON club_join_requests(club_id, user_id) WHERE status = 'pending';`);
 
   const { rows: rowsNeedingSlug } = await pool.query(
     `SELECT id, title FROM blog_posts WHERE slug IS NULL OR btrim(slug) = '' ORDER BY created_at ASC`,
@@ -682,6 +748,7 @@ const requireClubAdmin = (req, res, next) => {
 };
 
 const OAUTH_STATE_SECRET = process.env.CALENDAR_OAUTH_STATE_SECRET || process.env.SESSION_SECRET || 'tidal-calendar-oauth-state';
+const CLUB_INVITE_SECRET = process.env.CLUB_INVITE_SECRET || OAUTH_STATE_SECRET;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CALENDAR_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '';
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_CALENDAR_REDIRECT_URI || '';
@@ -737,6 +804,19 @@ const verifyOAuthState = (state) => {
   } catch {
     return null;
   }
+};
+
+const createClubInviteToken = () => randomBytes(32).toString('base64url');
+
+const hashInviteToken = (token) => createHmac('sha256', CLUB_INVITE_SECRET).update(String(token || '')).digest('hex');
+
+const appendMembershipAuditLog = async ({ clubId, actorUserId, targetUserId, action, metadata = {} }) => {
+  if (!clubId || !action) return;
+  await pool.query(
+    `INSERT INTO membership_audit_log (club_id, actor_user_id, target_user_id, action, metadata)
+     VALUES ($1, $2, $3, $4, $5::jsonb)`,
+    [clubId, actorUserId || null, targetUserId || null, action, JSON.stringify(metadata || {})],
+  );
 };
 
 const parseDurationToMinutes = (value) => {
@@ -2384,10 +2464,10 @@ app.post('/api/club-admin/facilities', requireAuth, requireClubAdmin, async (req
 app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, res) => {
   const club = await resolveManagedClub(req.user.id);
   if (!club?.id) {
-    return res.json({ club: null, members: [], windows: [], availableUsers: [], integrations: [], facilities: [] });
+    return res.json({ club: null, members: [], windows: [], invites: [], joinRequests: [], integrations: [], facilities: [] });
   }
 
-  const [membersResult, windows, availableResult, integrations, facilities] = await Promise.all([
+  const [membersResult, windows, invitesResult, joinRequestsResult, integrations, facilities] = await Promise.all([
     pool.query(
       `SELECT u.id, u.email, u.role, u.home_port_name, u.home_club_name
        FROM users u
@@ -2397,10 +2477,20 @@ app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, r
     ),
     getScrubWindowsForClub(club.id, { viewerUserId: req.user.id }),
     pool.query(
-      `SELECT id, email FROM users
-       WHERE (home_club_id IS NULL OR home_club_id <> $1)
-       ORDER BY email ASC
-       LIMIT 200`,
+      `SELECT id, expires_at as "expiresAt", max_uses as "maxUses", used_count as "usedCount", revoked_at as "revokedAt", created_at as "createdAt"
+       FROM club_invites
+       WHERE club_id = $1
+       ORDER BY created_at DESC
+       LIMIT 100`,
+      [club.id],
+    ),
+    pool.query(
+      `SELECT r.id, r.note, r.status, r.created_at as "createdAt",
+              u.id as "userId", u.email as "userEmail", u.role as "userRole"
+       FROM club_join_requests r
+       JOIN users u ON u.id = r.user_id
+       WHERE r.club_id = $1 AND r.status = 'pending'
+       ORDER BY r.created_at ASC`,
       [club.id],
     ),
     fetchClubIntegrations(club.id),
@@ -2411,7 +2501,8 @@ app.get('/api/club-admin/overview', requireAuth, requireClubAdmin, async (req, r
     club,
     members: membersResult.rows,
     windows,
-    availableUsers: availableResult.rows,
+    invites: invitesResult.rows,
+    joinRequests: joinRequestsResult.rows,
     integrations,
     facilities,
   });
@@ -2612,6 +2703,228 @@ app.post('/api/club-admin/members', requireAuth, requireClubAdmin, async (req, r
   return res.status(201).json(targetRows[0]);
 });
 
+app.post('/api/club-admin/invites', requireAuth, requireClubAdmin, async (req, res) => {
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
+
+  const expiresInHours = Math.min(Math.max(Number(req.body?.expiresInHours) || 168, 1), 24 * 30);
+  const maxUses = Math.min(Math.max(Number(req.body?.maxUses) || 1, 1), 200);
+  const expiresAt = new Date(Date.now() + (expiresInHours * 60 * 60 * 1000));
+  const token = createClubInviteToken();
+  const tokenHash = hashInviteToken(token);
+  const { rows } = await pool.query(
+    `INSERT INTO club_invites (club_id, token_hash, created_by, expires_at, max_uses)
+     VALUES ($1, $2, $3, $4::timestamptz, $5)
+     RETURNING id, expires_at as "expiresAt", max_uses as "maxUses", used_count as "usedCount", created_at as "createdAt"`,
+    [club.id, tokenHash, req.user.id, expiresAt.toISOString(), maxUses],
+  );
+  await appendMembershipAuditLog({
+    clubId: club.id,
+    actorUserId: req.user.id,
+    targetUserId: null,
+    action: 'invite_created',
+    metadata: { inviteId: rows[0]?.id || null, maxUses, expiresInHours },
+  });
+  return res.status(201).json({ ...rows[0], token });
+});
+
+app.get('/api/club-admin/invites', requireAuth, requireClubAdmin, async (req, res) => {
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
+  const { rows } = await pool.query(
+    `SELECT id, expires_at as "expiresAt", max_uses as "maxUses", used_count as "usedCount", revoked_at as "revokedAt", created_at as "createdAt"
+     FROM club_invites
+     WHERE club_id = $1
+     ORDER BY created_at DESC
+     LIMIT 100`,
+    [club.id],
+  );
+  return res.json(rows);
+});
+
+app.post('/api/club-admin/invites/:id/revoke', requireAuth, requireClubAdmin, async (req, res) => {
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
+  const { rows } = await pool.query(
+    `UPDATE club_invites
+     SET revoked_at = now()
+     WHERE id = $1 AND club_id = $2 AND revoked_at IS NULL
+     RETURNING id`,
+    [req.params.id, club.id],
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'Invite not found' });
+  await appendMembershipAuditLog({
+    clubId: club.id,
+    actorUserId: req.user.id,
+    targetUserId: null,
+    action: 'invite_revoked',
+    metadata: { inviteId: req.params.id },
+  });
+  return res.json({ ok: true });
+});
+
+app.post('/api/club/invites/:token/accept', requireAuth, async (req, res) => {
+  const token = String(req.params.token || '').trim();
+  if (!token) return res.status(400).json({ error: 'Invite token is required' });
+  const tokenHash = hashInviteToken(token);
+
+  const { rows: inviteRows } = await pool.query(
+    `SELECT i.id, i.club_id as "clubId", i.expires_at as "expiresAt", i.max_uses as "maxUses", i.used_count as "usedCount", i.revoked_at as "revokedAt",
+            c.name as "clubName"
+     FROM club_invites i
+     JOIN clubs c ON c.id = i.club_id
+     WHERE i.token_hash = $1
+     LIMIT 1`,
+    [tokenHash],
+  );
+  if (inviteRows.length === 0) return res.status(404).json({ error: 'Invite not found' });
+  const invite = inviteRows[0];
+  if (invite.revokedAt) return res.status(400).json({ error: 'Invite has been revoked' });
+  if (new Date(invite.expiresAt).getTime() < Date.now()) return res.status(400).json({ error: 'Invite has expired' });
+  if (Number(invite.usedCount) >= Number(invite.maxUses)) return res.status(400).json({ error: 'Invite usage limit reached' });
+
+  await pool.query('BEGIN');
+  try {
+    const { rows: lockedInviteRows } = await pool.query(
+      `SELECT id, used_count as "usedCount", max_uses as "maxUses"
+       FROM club_invites
+       WHERE id = $1
+       FOR UPDATE`,
+      [invite.id],
+    );
+    if (lockedInviteRows.length === 0) throw new Error('Invite unavailable');
+    const lockedInvite = lockedInviteRows[0];
+    if (Number(lockedInvite.usedCount) >= Number(lockedInvite.maxUses)) throw new Error('Invite usage limit reached');
+
+    await pool.query(
+      `UPDATE users
+       SET home_club_id = $1, home_club_name = $2
+       WHERE id = $3`,
+      [invite.clubId, invite.clubName, req.user.id],
+    );
+    await pool.query(
+      `INSERT INTO club_memberships (club_id, user_id, added_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (club_id, user_id) DO NOTHING`,
+      [invite.clubId, req.user.id, req.user.id],
+    );
+    await pool.query(`UPDATE club_invites SET used_count = used_count + 1 WHERE id = $1`, [invite.id]);
+    await pool.query(
+      `UPDATE club_join_requests
+       SET status = 'approved', reviewed_by = $1, reviewed_at = now()
+       WHERE club_id = $2 AND user_id = $3 AND status = 'pending'`,
+      [req.user.id, invite.clubId, req.user.id],
+    );
+    await pool.query('COMMIT');
+  } catch (err) {
+    await pool.query('ROLLBACK');
+    if (err?.message === 'Invite usage limit reached') return res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: err?.message || 'Unable to accept invite' });
+  }
+
+  await appendMembershipAuditLog({
+    clubId: invite.clubId,
+    actorUserId: req.user.id,
+    targetUserId: req.user.id,
+    action: 'invite_used',
+    metadata: { inviteId: invite.id },
+  });
+  const refreshed = await getUserFromSession(req);
+  return res.json({ ok: true, user: refreshed || req.user, club: { id: invite.clubId, name: invite.clubName } });
+});
+
+app.post('/api/clubs/:clubId/join-requests', requireAuth, async (req, res) => {
+  const clubId = String(req.params.clubId || '').trim();
+  const note = String(req.body?.note || '').trim().slice(0, 400);
+  if (!clubId) return res.status(400).json({ error: 'clubId is required' });
+  const { rows: clubRows } = await pool.query(`SELECT id, name FROM clubs WHERE id = $1 LIMIT 1`, [clubId]);
+  if (clubRows.length === 0) return res.status(404).json({ error: 'Club not found' });
+
+  const existingPending = await pool.query(
+    `SELECT id FROM club_join_requests WHERE club_id = $1 AND user_id = $2 AND status = 'pending' LIMIT 1`,
+    [clubId, req.user.id],
+  );
+  if (existingPending.rows.length > 0) return res.status(409).json({ error: 'A join request is already pending' });
+
+  const { rows } = await pool.query(
+    `INSERT INTO club_join_requests (club_id, user_id, status, note)
+     VALUES ($1, $2, 'pending', $3)
+     RETURNING id, club_id as "clubId", user_id as "userId", status, note, created_at as "createdAt"`,
+    [clubId, req.user.id, note || null],
+  );
+  await appendMembershipAuditLog({
+    clubId,
+    actorUserId: req.user.id,
+    targetUserId: req.user.id,
+    action: 'request_submitted',
+    metadata: { requestId: rows[0]?.id || null },
+  });
+  return res.status(201).json(rows[0]);
+});
+
+app.post('/api/club-admin/join-requests/:id/approve', requireAuth, requireClubAdmin, async (req, res) => {
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
+  const { rows: requestRows } = await pool.query(
+    `SELECT id, user_id as "userId"
+     FROM club_join_requests
+     WHERE id = $1 AND club_id = $2 AND status = 'pending'
+     LIMIT 1`,
+    [req.params.id, club.id],
+  );
+  if (requestRows.length === 0) return res.status(404).json({ error: 'Join request not found' });
+  const requestRow = requestRows[0];
+
+  await pool.query('BEGIN');
+  try {
+    await pool.query(
+      `UPDATE club_join_requests
+       SET status = 'approved', reviewed_by = $1, reviewed_at = now()
+       WHERE id = $2`,
+      [req.user.id, req.params.id],
+    );
+    await pool.query(
+      `UPDATE users
+       SET home_club_id = $1, home_club_name = $2
+       WHERE id = $3`,
+      [club.id, club.name, requestRow.userId],
+    );
+    await pool.query(
+      `INSERT INTO club_memberships (club_id, user_id, added_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (club_id, user_id) DO NOTHING`,
+      [club.id, requestRow.userId, req.user.id],
+    );
+    await pool.query('COMMIT');
+  } catch (err) {
+    await pool.query('ROLLBACK');
+    return res.status(400).json({ error: err?.message || 'Unable to approve request' });
+  }
+
+  await appendMembershipAuditLog({
+    clubId: club.id,
+    actorUserId: req.user.id,
+    targetUserId: requestRow.userId,
+    action: 'request_approved',
+    metadata: { requestId: req.params.id },
+  });
+  return res.json({ ok: true });
+});
+
+app.post('/api/club-admin/join-requests/:id/reject', requireAuth, requireClubAdmin, async (req, res) => {
+  const club = await resolveManagedClub(req.user.id);
+  if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
+  const { rows } = await pool.query(
+    `UPDATE club_join_requests
+     SET status = 'rejected', reviewed_by = $1, reviewed_at = now()
+     WHERE id = $2 AND club_id = $3 AND status = 'pending'
+     RETURNING user_id as "userId"`,
+    [req.user.id, req.params.id, club.id],
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'Join request not found' });
+  return res.json({ ok: true });
+});
+
 app.post('/api/club-admin/windows', requireAuth, requireClubAdmin, async (req, res) => {
   const club = await resolveManagedClub(req.user.id);
   if (!club?.id) return res.status(400).json({ error: 'Set up your club first' });
@@ -2690,6 +3003,29 @@ const hydrateClubs = async () => {
 app.get('/api/clubs', async (_req, res) => {
   const clubs = await hydrateClubs();
   res.json(clubs);
+});
+
+app.get('/api/clubs/directory', requireAuth, async (_req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, name, capacity
+     FROM clubs
+     ORDER BY name ASC
+     LIMIT 500`,
+  );
+  return res.json(rows);
+});
+
+app.get('/api/my-club/join-requests', requireAuth, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT r.id, r.club_id as "clubId", c.name as "clubName", r.status, r.note, r.created_at as "createdAt"
+     FROM club_join_requests r
+     JOIN clubs c ON c.id = r.club_id
+     WHERE r.user_id = $1
+     ORDER BY r.created_at DESC
+     LIMIT 50`,
+    [req.user.id],
+  );
+  return res.json(rows);
 });
 
 app.get('/api/my-club/calendar', requireAuth, async (req, res) => {
