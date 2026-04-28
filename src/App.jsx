@@ -2270,6 +2270,8 @@ export default function TidalCalendarApp() {
                     'See official UKHO tidal events for next 7 days.',
                     'Free use of the Scrubbing Day finder.',
                   ],
+                  ctaLabel: 'Try Now',
+                  ctaAction: () => setPageWithHistory('calendar'),
                 },
                 {
                   title: 'Signed-in (free) users',
@@ -2279,6 +2281,8 @@ export default function TidalCalendarApp() {
                     'Synced home-port preferences across devices.',
                     'Same UKHO + prediction blending as guest users.',
                   ],
+                  ctaLabel: 'Login',
+                  ctaAction: () => setPageWithHistory('profile'),
                 },
                 {
                   title: 'Subscribers',
@@ -2287,15 +2291,21 @@ export default function TidalCalendarApp() {
                     'A full year (365 days from purchase) of Tidal data for UK ports in Calendar and identification of best scrubbing days for 365 days.',
                     'A downloadable PDF of Home Port tide times.',
                   ],
+                  ctaLabel: 'Subscribe',
+                  ctaAction: () => setPageWithHistory('profile'),
                 },
                 {
-                  title: 'Partners - get in touch',
-                  emoji: '🤝',
+                  title: 'Clubs',
+                  emoji: '⚓',
                   points: [
-                    'Embed our app services inside partner sites as a streamlined widget.',
-                    'Launch agent icon flows that hand off context and scheduling to Tidal.',
-                    'Use MCP to connect data and actions between partner tools and our calendar.',
+                    'Provide members with club-ready monthly tide planning for your local waters.',
+                    'Share scrubbing-day opportunities to help coordinate maintenance windows.',
+                    'Get support for branded onboarding and member guidance.',
                   ],
+                  ctaLabel: 'Contact us',
+                  ctaAction: () => {
+                    window.location.href = 'mailto:hello@boatscrub.com?subject=Club%20enquiry';
+                  },
                 },
               ].map((card, idx) => (
                 <div key={idx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxShadow: '0 4px 12px rgba(15,23,42,0.06)', display: 'grid', gap: '8px' }}>
@@ -2306,6 +2316,23 @@ export default function TidalCalendarApp() {
                   <ul style={{ margin: 0, paddingLeft: '18px', display: 'grid', gap: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#334155' }}>
                     {card.points.map((point, i) => <li key={i}>{point}</li>)}
                   </ul>
+                  <button
+                    onClick={card.ctaAction}
+                    style={{
+                      marginTop: '4px',
+                      justifySelf: 'start',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #0ea5e9',
+                      background: '#e0f2fe',
+                      color: '#0c4a6e',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontFamily: "'Outfit', sans-serif",
+                    }}
+                  >
+                    {card.ctaLabel}
+                  </button>
                 </div>
               ))}
             </div>
