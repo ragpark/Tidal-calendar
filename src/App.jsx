@@ -259,7 +259,7 @@ export default function TidalCalendarApp() {
   const [adminForm, setAdminForm] = useState({ id: null, email: '', password: '', role: 'user', subscriptionStatus: 'inactive', subscriptionPeriodEnd: '' });
   const [adminError, setAdminError] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
-  const [clubAdminData, setClubAdminData] = useState({ club: null, members: [], windows: [], availableUsers: [], integrations: [], facilities: [] });
+  const [clubAdminData, setClubAdminData] = useState({ club: null, members: [], windows: [], invites: [], joinRequests: [], integrations: [], facilities: [] });
   const [clubAdminLoading, setClubAdminLoading] = useState(false);
   const [clubAdminError, setClubAdminError] = useState('');
   const [clubSetupForm, setClubSetupForm] = useState({ clubName: '', scrubPostCount: 8, homePortId: '', homePortName: '' });
@@ -271,7 +271,12 @@ export default function TidalCalendarApp() {
   const [myClubBookingModalDateKey, setMyClubBookingModalDateKey] = useState('');
   const [myClubSelectedFacilityByDate, setMyClubSelectedFacilityByDate] = useState({});
   const [myClubBoatNames, setMyClubBoatNames] = useState({});
-  const [selectedMemberToAdd, setSelectedMemberToAdd] = useState('');
+  const [inviteConfig, setInviteConfig] = useState({ expiresInHours: 168, maxUses: 1 });
+  const [newInviteLink, setNewInviteLink] = useState('');
+  const [joinClubs, setJoinClubs] = useState([]);
+  const [joinRequestList, setJoinRequestList] = useState([]);
+  const [joinRequestForm, setJoinRequestForm] = useState({ clubId: '', note: '' });
+  const [acceptInviteToken, setAcceptInviteToken] = useState('');
   const [facilityFormName, setFacilityFormName] = useState('');
   const [bookingAssignments, setBookingAssignments] = useState({});
   const [blogPosts, setBlogPosts] = useState([]);
@@ -537,10 +542,15 @@ export default function TidalCalendarApp() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
+    const invite = params.get('invite');
     if (window.location.pathname === '/reset-password' && token) {
       setCurrentPage('profile');
       setAuthMode('reset');
       setResetPasswordForm((form) => ({ ...form, token }));
+    }
+    if (invite) {
+      setCurrentPage('profile');
+      setAcceptInviteToken(invite);
     }
   }, []);
   useEffect(() => {
@@ -809,7 +819,8 @@ export default function TidalCalendarApp() {
         club: data?.club || null,
         members: Array.isArray(data?.members) ? data.members : [],
         windows: Array.isArray(data?.windows) ? data.windows : [],
-        availableUsers: Array.isArray(data?.availableUsers) ? data.availableUsers : [],
+        invites: Array.isArray(data?.invites) ? data.invites : [],
+        joinRequests: Array.isArray(data?.joinRequests) ? data.joinRequests : [],
         integrations: Array.isArray(data?.integrations) ? data.integrations : [],
         facilities: Array.isArray(data?.facilities) ? data.facilities : [],
       };
@@ -846,6 +857,20 @@ export default function TidalCalendarApp() {
       setMyClubCalendarLoading(false);
     }
   }, [apiRequest, canAccessMyClubCalendar]);
+
+  const loadJoinClubData = useCallback(async () => {
+    if (!user) return;
+    try {
+      const [clubs, requests] = await Promise.all([
+        apiRequest('/api/clubs/directory'),
+        apiRequest('/api/my-club/join-requests'),
+      ]);
+      setJoinClubs(Array.isArray(clubs) ? clubs : []);
+      setJoinRequestList(Array.isArray(requests) ? requests : []);
+    } catch (err) {
+      setAuthError(err.message || 'Unable to load club join options.');
+    }
+  }, [apiRequest, user]);
 
   useEffect(() => {
     if (!(user?.role === 'club_admin' || user?.role === 'admin')) return;
@@ -933,6 +958,12 @@ export default function TidalCalendarApp() {
   }, [currentPage, loadClubAdminData]);
 
   useEffect(() => {
+    if (currentPage === 'profile' && user) {
+      loadJoinClubData();
+    }
+  }, [currentPage, loadJoinClubData, user]);
+
+  useEffect(() => {
     if (currentPage === 'calendar' && (user?.role === 'club_admin' || user?.role === 'admin')) {
       loadClubAdminData();
     }
@@ -984,22 +1015,99 @@ export default function TidalCalendarApp() {
     }
   };
 
-  const handleAddClubMember = async (event) => {
+  const handleCreateClubInvite = async (event) => {
     event.preventDefault();
-    if (!selectedMemberToAdd) {
-      setClubAdminError('Select a calendar user first.');
-      return;
-    }
     setClubAdminError('');
     try {
-      await apiRequest('/api/club-admin/members', {
+      const data = await apiRequest('/api/club-admin/invites', {
         method: 'POST',
-        body: JSON.stringify({ userId: selectedMemberToAdd }),
+        body: JSON.stringify({
+          expiresInHours: Number(inviteConfig.expiresInHours) || 168,
+          maxUses: Number(inviteConfig.maxUses) || 1,
+        }),
       });
-      setSelectedMemberToAdd('');
+      if (data?.token) {
+        const inviteUrl = `${window.location.origin}/?invite=${encodeURIComponent(data.token)}`;
+        setNewInviteLink(inviteUrl);
+      }
       await loadClubAdminData();
     } catch (err) {
-      setClubAdminError(err.message || 'Unable to add member to club group.');
+      setClubAdminError(err.message || 'Unable to create invite.');
+    }
+  };
+
+  const handleRevokeInvite = async (inviteId) => {
+    if (!inviteId) return;
+    setClubAdminError('');
+    try {
+      await apiRequest(`/api/club-admin/invites/${inviteId}/revoke`, { method: 'POST' });
+      await loadClubAdminData();
+    } catch (err) {
+      setClubAdminError(err.message || 'Unable to revoke invite.');
+    }
+  };
+
+  const handleApproveJoinRequest = async (requestId) => {
+    if (!requestId) return;
+    setClubAdminError('');
+    try {
+      await apiRequest(`/api/club-admin/join-requests/${requestId}/approve`, { method: 'POST' });
+      await Promise.all([loadClubAdminData(), loadMyClubCalendar()]);
+    } catch (err) {
+      setClubAdminError(err.message || 'Unable to approve request.');
+    }
+  };
+
+  const handleRejectJoinRequest = async (requestId) => {
+    if (!requestId) return;
+    setClubAdminError('');
+    try {
+      await apiRequest(`/api/club-admin/join-requests/${requestId}/reject`, { method: 'POST' });
+      await loadClubAdminData();
+    } catch (err) {
+      setClubAdminError(err.message || 'Unable to reject request.');
+    }
+  };
+
+  const handleAcceptInvite = async (event) => {
+    event.preventDefault();
+    const token = String(acceptInviteToken || '').trim();
+    if (!token) {
+      setAuthError('Enter an invite token first.');
+      return;
+    }
+    setAuthError('');
+    try {
+      const data = await apiRequest(`/api/club/invites/${encodeURIComponent(token)}/accept`, { method: 'POST' });
+      if (data?.user) {
+        setUser(data.user);
+      } else {
+        await loadSession();
+      }
+      setAcceptInviteToken('');
+      await Promise.all([loadJoinClubData(), loadMyClubCalendar()]);
+    } catch (err) {
+      setAuthError(err.message || 'Unable to accept invite.');
+    }
+  };
+
+  const handleSubmitJoinRequest = async (event) => {
+    event.preventDefault();
+    const clubId = String(joinRequestForm.clubId || '').trim();
+    if (!clubId) {
+      setAuthError('Select a club first.');
+      return;
+    }
+    setAuthError('');
+    try {
+      await apiRequest(`/api/clubs/${encodeURIComponent(clubId)}/join-requests`, {
+        method: 'POST',
+        body: JSON.stringify({ note: joinRequestForm.note || '' }),
+      });
+      setJoinRequestForm((state) => ({ ...state, note: '' }));
+      await loadJoinClubData();
+    } catch (err) {
+      setAuthError(err.message || 'Unable to submit join request.');
     }
   };
 
@@ -2407,6 +2515,34 @@ export default function TidalCalendarApp() {
                   </div>
 
                   <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                    <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Join a club</div>
+                    <form onSubmit={handleAcceptInvite} style={{ display: 'grid', gap: '8px' }}>
+                      <div style={{ fontSize: '12px', color: '#475569' }}>Option A: Accept an invite token</div>
+                      <input value={acceptInviteToken} onChange={(event) => setAcceptInviteToken(event.target.value)} placeholder="Paste invite token" style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }} />
+                      <button type="submit" style={{ padding: '9px 10px', borderRadius: '8px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#fff', cursor: 'pointer', fontWeight: 700 }}>Accept invite</button>
+                    </form>
+                    <form onSubmit={handleSubmitJoinRequest} style={{ display: 'grid', gap: '8px' }}>
+                      <div style={{ fontSize: '12px', color: '#475569' }}>Option B: Request to join a club</div>
+                      <select value={joinRequestForm.clubId} onChange={(event) => setJoinRequestForm((state) => ({ ...state, clubId: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}>
+                        <option value="">Select a club</option>
+                        {joinClubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}
+                      </select>
+                      <textarea value={joinRequestForm.note} onChange={(event) => setJoinRequestForm((state) => ({ ...state, note: event.target.value }))} placeholder="Optional note for club admin" rows={2} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', resize: 'vertical' }} />
+                      <button type="submit" style={{ padding: '9px 10px', borderRadius: '8px', border: '1px solid #334155', background: '#0f172a', color: '#fff', cursor: 'pointer', fontWeight: 700 }}>Send join request</button>
+                    </form>
+                    {joinRequestList.length > 0 && (
+                      <div style={{ display: 'grid', gap: '6px' }}>
+                        <div style={{ fontSize: '12px', color: '#334155', fontWeight: 600 }}>Your recent requests</div>
+                        {joinRequestList.slice(0, 5).map((item) => (
+                          <div key={item.id} style={{ fontSize: '11px', color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 8px' }}>
+                            {item.clubName} · {item.status} · {formatAdminDate(item.createdAt)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                     <div className="profile-maintenance-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <div>
                         <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Maintenance Logs</div>
@@ -2596,7 +2732,7 @@ export default function TidalCalendarApp() {
             <header style={{ display: 'grid', gap: '6px' }}>
               <p style={{ margin: 0, fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9' }}>Club Admin</p>
               <h2 style={{ margin: 0, color: '#0f172a' }}>Club setup, members, and scrubbing bookings</h2>
-              <p style={{ margin: 0, color: '#475569', fontSize: '13px' }}>Configure your club details, add calendar users to your group, and manage connected calendar sync. Booking is now handled in the My Club calendar view.</p>
+              <p style={{ margin: 0, color: '#475569', fontSize: '13px' }}>Configure your club details, invite members securely, review join requests, and manage connected calendar sync. Booking is handled in the My Club calendar view.</p>
             </header>
 
             {clubAdminError && <div style={{ color: '#b91c1c', fontWeight: 600, fontSize: '13px' }}>{clubAdminError}</div>}
@@ -2639,24 +2775,61 @@ export default function TidalCalendarApp() {
                 <button type="submit" style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>Save club setup</button>
               </form>
 
-              <form onSubmit={handleAddClubMember} style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
-                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>2) Add users to your group</h3>
-                <select
-                  value={selectedMemberToAdd}
-                  onChange={(event) => setSelectedMemberToAdd(event.target.value)}
-                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }}
-                >
-                  <option value="">Select calendar user</option>
-                  {clubAdminData.availableUsers.map((record) => (
-                    <option key={record.id} value={record.id}>{record.email}</option>
+              <form onSubmit={handleCreateClubInvite} style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>2) Invite members (Option A)</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
+                  <label style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#334155' }}>
+                    Expires in (hours)
+                    <input type="number" min="1" max="720" value={inviteConfig.expiresInHours} onChange={(event) => setInviteConfig((state) => ({ ...state, expiresInHours: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }} />
+                  </label>
+                  <label style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#334155' }}>
+                    Max uses
+                    <input type="number" min="1" max="200" value={inviteConfig.maxUses} onChange={(event) => setInviteConfig((state) => ({ ...state, maxUses: event.target.value }))} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }} />
+                  </label>
+                </div>
+                <button type="submit" style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>Create invite link</button>
+                {newInviteLink && (
+                  <div style={{ display: 'grid', gap: '8px', fontSize: '12px', color: '#334155' }}>
+                    <div>Latest invite link:</div>
+                    <input readOnly value={newInviteLink} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff' }} />
+                  </div>
+                )}
+                <div style={{ display: 'grid', gap: '6px' }}>
+                  <div style={{ fontSize: '12px', color: '#475569' }}>Current members: {clubAdminData.members.length}</div>
+                  <div style={{ fontSize: '12px', color: '#475569' }}>Active/past invites: {clubAdminData.invites.length}</div>
+                  {clubAdminData.invites.slice(0, 5).map((invite) => (
+                    <div key={invite.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px' }}>
+                      <div style={{ fontSize: '12px', color: '#334155' }}>
+                        Uses: {invite.usedCount}/{invite.maxUses} · Expires {formatAdminDate(invite.expiresAt)} {invite.revokedAt ? '· Revoked' : ''}
+                      </div>
+                      {!invite.revokedAt && (
+                        <button type="button" onClick={() => handleRevokeInvite(invite.id)} style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #fca5a5', background: '#fee2e2', color: '#b91c1c', cursor: 'pointer', fontWeight: 600, fontSize: '11px' }}>Revoke</button>
+                      )}
+                    </div>
                   ))}
-                </select>
-                <button type="submit" style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #0284c7', background: '#0ea5e9', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}>Add to club group</button>
-                <div style={{ fontSize: '12px', color: '#475569' }}>Current members: {clubAdminData.members.length}</div>
+                </div>
               </form>
 
+              <div style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>3) Join requests (Option B)</h3>
+                {clubAdminData.joinRequests.length === 0 ? (
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>No pending join requests.</div>
+                ) : (
+                  clubAdminData.joinRequests.map((request) => (
+                    <div key={request.id} style={{ display: 'grid', gap: '8px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px' }}>
+                      <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>{request.userEmail}</div>
+                      {request.note && <div style={{ fontSize: '12px', color: '#334155' }}>{request.note}</div>}
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button type="button" onClick={() => handleApproveJoinRequest(request.id)} style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid #16a34a', background: '#22c55e', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>Approve</button>
+                        <button type="button" onClick={() => handleRejectJoinRequest(request.id)} style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid #fca5a5', background: '#fee2e2', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}>Reject</button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
               <form onSubmit={handleCreateFacility} style={{ display: 'grid', gap: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
-                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>3) Label your facilities</h3>
+                <h3 style={{ margin: 0, color: '#0f172a', fontSize: '15px' }}>4) Label your facilities</h3>
                 <input
                   type="text"
                   placeholder="Facility name e.g. Scrub Pad A"
