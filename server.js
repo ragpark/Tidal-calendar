@@ -2702,10 +2702,9 @@ app.get('/api/my-club/calendar', requireAuth, async (req, res) => {
   const { rows } = await pool.query(`SELECT id, name, capacity FROM clubs WHERE id = $1 LIMIT 1`, [clubId]);
   if (rows.length === 0) return res.status(404).json({ error: 'Club not found' });
 
-  const includeBookingDetails = req.user.role === 'club_admin' || req.user.role === 'admin';
   const windows = await getScrubWindowsForClub(clubId, {
     viewerUserId: req.user.id,
-    includeBookingDetails,
+    includeBookingDetails: true,
   });
   const { rows: facilityRows } = await pool.query(
     `SELECT id, name FROM club_facilities WHERE club_id = $1 ORDER BY name ASC`,

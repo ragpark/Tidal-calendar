@@ -3311,7 +3311,10 @@ export default function TidalCalendarApp() {
 
                     return monthlyBookedWindows.map((window) => {
                         const available = Number(window.booked) < Number(window.capacity);
-                        const deleteBusy = Boolean(myClubBookingBusy[`delete-${window?.myBooking?.bookingId}`]);
+                        const bookingDetails = Array.isArray(window.bookingDetails) ? window.bookingDetails : [];
+                        const visibleBookings = bookingDetails.length > 0
+                          ? bookingDetails
+                          : (window.myBooking ? [window.myBooking] : []);
                         return (
                           <div key={window.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', background: '#f8fafc' }}>
                             <div style={{ display: 'grid', gap: '3px' }}>
@@ -3329,21 +3332,33 @@ export default function TidalCalendarApp() {
                                   Boats: {window.bookedBoats.join(', ')}
                                 </div>
                               )}
-                              {window.myBooking && (
-                                <div style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>
-                                  Status: Booked • Boat: {window.myBooking.boatName || 'Not provided'}
-                                </div>
-                              )}
+                              {visibleBookings.map((booking) => {
+                                const bookingId = booking?.bookingId || booking?.id;
+                                if (!bookingId) return null;
+                                return (
+                                  <div key={bookingId} style={{ fontSize: '11px', color: '#075985', fontWeight: 700 }}>
+                                    Status: Booked • Boat: {booking.boatName || 'Not provided'}
+                                  </div>
+                                );
+                              })}
                             </div>
-                            {window.myBooking ? (
-                              <button
-                                onClick={() => deleteMyClubBooking(window.myBooking.bookingId)}
-                                disabled={deleteBusy}
-                                style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: deleteBusy ? 'wait' : 'pointer' }}
-                              >
-                                {deleteBusy ? 'Deleting…' : 'Delete booking'}
-                              </button>
-                            ) : null}
+                            <div style={{ display: 'grid', gap: '6px' }}>
+                              {visibleBookings.map((booking) => {
+                                const bookingId = booking?.bookingId || booking?.id;
+                                if (!bookingId) return null;
+                                const deleteBusy = Boolean(myClubBookingBusy[`delete-${bookingId}`]);
+                                return (
+                                  <button
+                                    key={`delete-${bookingId}`}
+                                    onClick={() => deleteMyClubBooking(bookingId)}
+                                    disabled={deleteBusy}
+                                    style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: deleteBusy ? 'wait' : 'pointer' }}
+                                  >
+                                    {deleteBusy ? 'Deleting…' : 'Delete booking'}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         );
                       });
