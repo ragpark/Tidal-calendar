@@ -3244,9 +3244,14 @@ export default function TidalCalendarApp() {
                       const dateStr = getLondonDateKey(date);
                       const windows = clubWindowsByDay[dateStr] || [];
                       const isToday = getLondonDateKey(new Date()) === dateStr;
-                      const usedCount = windows.filter((window) => Number(window.booked) > 0).length;
-                      const availableCount = windows.filter((window) => Number(window.booked) < Number(window.capacity)).length;
-                      const dailyAvailabilityLabel = windows.length === 0
+                      const activeWindows = windows.filter((window) => {
+                        const isMemberCreatedWindow = String(window?.notes || '').trim().toLowerCase() === 'member-created booking';
+                        const booked = Number(window?.booked || 0);
+                        return !isMemberCreatedWindow || booked > 0;
+                      });
+                      const usedCount = activeWindows.filter((window) => Number(window.booked) > 0).length;
+                      const availableCount = activeWindows.filter((window) => Number(window.booked) < Number(window.capacity)).length;
+                      const dailyAvailabilityLabel = activeWindows.length === 0
                         ? 'No boats scheduled'
                         : availableCount > 0
                           ? `Facilities available: ${availableCount}`
@@ -3269,7 +3274,7 @@ export default function TidalCalendarApp() {
                             <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', fontWeight: isToday ? 700 : 500, color: isToday ? '#0ea5e9' : '#0f172a' }}>
                               {formatLondonDate(date, { day: 'numeric' })}
                             </span>
-                            {windows.length > 0 && <span style={{ fontSize: '10px', color: '#334155' }}>{windows.length} slot{windows.length > 1 ? 's' : ''}</span>}
+                            {activeWindows.length > 0 && <span style={{ fontSize: '10px', color: '#334155' }}>{activeWindows.length} slot{activeWindows.length > 1 ? 's' : ''}</span>}
                           </div>
                           {isCurrentMonth && (
                             <div style={{ display: 'grid', gap: '4px' }}>
