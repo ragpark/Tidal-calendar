@@ -43,3 +43,15 @@ B-->>V: spoken result
 - Google Assistant App Actions intent schema mapping.
 - Platform-specific session persistence bridge.
 - SSML tuning per assistant voice.
+
+## Alexa adapter
+- Endpoint: `POST /alexa/webhook`
+- Signature verification is enabled by default using `Signature` and `SignatureCertChainUrl` headers.
+- For local testing only, set `ALEXA_SKIP_SIGNATURE_VERIFY=true`.
+
+### Local Alexa webhook test
+```bash
+curl -X POST http://localhost:4010/alexa/webhook \
+ -H 'content-type: application/json' \
+ -d '{"version":"1.0","session":{"sessionId":"amzn1.echo-api.session.1"},"request":{"type":"LaunchRequest","requestId":"req-1","timestamp":"2026-05-10T00:00:00Z"}}'
+```
