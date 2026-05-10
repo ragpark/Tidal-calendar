@@ -1,9 +1,9 @@
 # Smart Speaker MVP Backend
 
 ## Setup
-1. `npm install`
-2. Copy `.env.example` to `.env` and fill values.
-3. Run `npm run voice:dev`.
+1. `cd voice && npm install`
+2. `cd ..` then copy `.env.example` to `.env` and fill values.
+3. Run `cd voice && npm run dev`.
 
 ## Webhook API
 ### POST /voice/intent
@@ -55,3 +55,8 @@ curl -X POST http://localhost:4010/alexa/webhook \
  -H 'content-type: application/json' \
  -d '{"version":"1.0","session":{"sessionId":"amzn1.echo-api.session.1"},"request":{"type":"LaunchRequest","requestId":"req-1","timestamp":"2026-05-10T00:00:00Z"}}'
 ```
+
+
+## Railway stability note
+- Voice tooling dependencies are isolated in `voice/package.json` so the root lockfile used by Railway `npm ci` remains stable.
+- Deployments continue to use the root app build; voice backend can be built/tested independently from `voice/`.
