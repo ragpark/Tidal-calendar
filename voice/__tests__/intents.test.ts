@@ -4,7 +4,17 @@ import { IntentHandlers } from '../intents/handlers.js';
 const mockMcp: any = {
   listStations: async () => [{ id: 's1', name: 'Seattle' }],
   getTideSummary: async () => ({ summary: 'High tide at 3 PM.' }),
-  listClubs: async () => [{ id: 'c1', name: 'Harbor', windows: [{ id: 'w1', clubId: 'c1', start: new Date().toISOString(), end: new Date().toISOString(), available: true }] }],
+  listClubs: async () => [{
+    id: 'c1',
+    name: 'Harbor',
+    windows: [{
+      id: 'w1',
+      clubId: 'c1',
+      start: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      end: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(),
+      available: true
+    }]
+  }],
   login: async () => 'sess=1',
   bookScrubWindow: async () => ({ ok: true, message: 'ok' })
 };
@@ -22,15 +32,23 @@ describe('IntentHandlers', () => {
   });
   it('booking confirmation required', async () => {
     const h = new IntentHandlers(mockMcp);
-    await h.handleIntent({ sessionId: 'b', intentName: 'GetScrubSlotsIntent', slots: {} });
+    await h.handleIntent({ sessionId: 'b', intentName: 'GetScrubSlotsIntent', slots: { club_name: 'Harbor' } });
     const r = await h.handleIntent({ sessionId: 'b', intentName: 'BookScrubSlotIntent', slots: { slot_reference: '1' } });
     expect(r.speechText).toContain('Confirm booking');
   });
   it('auth failure', async () => {
     const h = new IntentHandlers({ ...mockMcp, login: async () => { throw new Error('x'); } });
-    await h.handleIntent({ sessionId: 'c', intentName: 'GetScrubSlotsIntent', slots: {} });
+    await h.handleIntent({ sessionId: 'c', intentName: 'GetScrubSlotsIntent', slots: { club_name: 'Harbor' } });
     await h.handleIntent({ sessionId: 'c', intentName: 'BookScrubSlotIntent', slots: { slot_reference: '1' } });
     const r = await h.handleConfirm({ sessionId: 'c', confirmation: 'yes' });
     expect(r.speechText).toContain('could not authenticate');
+  });
+  it('scrub off days by month', async () => {
+    const h = new IntentHandlers({
+      ...mockMcp,
+      listClubs: async () => [{ id: 'c1', name: 'Harbor', windows: [{ id: 'w2', clubId: 'c1', start: '2026-07-12T10:00:00.000Z', end: '2026-07-12T12:00:00.000Z', available: true }] }]
+    } as any);
+    const r = await h.handleIntent({ sessionId: 'd', intentName: 'GetScrubOffDaysIntent', slots: { club_name: 'Harbor', month: 'july', year: '2026' } as any });
+    expect(r.speechText).toContain('12');
   });
 });

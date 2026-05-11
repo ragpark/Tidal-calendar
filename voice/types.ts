@@ -1,6 +1,7 @@
 export type IntentName =
   | 'GetTideSummaryIntent'
   | 'GetScrubSlotsIntent'
+  | 'GetScrubOffDaysIntent'
   | 'BookScrubSlotIntent'
   | 'HelpIntent'
   | 'FallbackIntent';
