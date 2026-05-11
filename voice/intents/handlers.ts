@@ -30,6 +30,25 @@ export class IntentHandlers {
       if (!candidates.length) return { speechText: 'No scrub slots found in that range. Want me to check more dates?' };
       return { speechText: candidates.map((c, i) => `Option ${i + 1}, ${speakDateTime(c.window.start)}.`).join(' '), repromptText: 'Say book option 1, 2, or 3.' };
     }
+    if (req.intentName === 'GetScrubOffDaysIntent') {
+      const clubs = await this.mcp.listClubs();
+      const club = resolveClub(slots.club_id ?? slots.club_name, clubs.map((c) => ({ id: c.id, name: c.name })));
+      if (!club) return { speechText: 'I could not find that club. Please say a club name.' };
+      const selected = clubs.find((c) => c.id === club.id)!;
+      const month = parseMonthNumber(slots.month ?? slots.month_name);
+      const year = Number(slots.year) || new Date().getUTCFullYear();
+      if (!month || year < 2000 || year > 2100) {
+        return { speechText: 'Please provide a valid month and year, like July 2026.' };
+      }
+      const days = [...new Set(selected.windows
+        .filter((w) => w.available)
+        .map((w) => new Date(w.start))
+        .filter((d) => d.getUTCFullYear() === year && d.getUTCMonth() + 1 === month)
+        .map((d) => d.getUTCDate()))].sort((a, b) => a - b);
+      const monthLabel = new Date(Date.UTC(year, month - 1, 1)).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+      if (!days.length) return { speechText: `No scrub off days meet requirements for ${club.name} in ${monthLabel} ${year}.` };
+      return { speechText: `For ${club.name}, scrub off day options in ${monthLabel} ${year} are: ${days.join(', ')}.` };
+    }
     if (req.intentName === 'BookScrubSlotIntent') {
       const state = getSessionState(req.sessionId);
       const picked = resolveSlotIndex(slots.slot_reference, state.candidate_slots);
@@ -61,4 +80,14 @@ export class IntentHandlers {
       return { speechText: 'I could not authenticate booking right now. Please check your account and try again.' };
     }
   }
+}
+
+function parseMonthNumber(raw?: string) {
+  if (!raw) return undefined;
+  const normalized = raw.trim().toLowerCase();
+  const numeric = Number(normalized);
+  if (Number.isInteger(numeric) && numeric >= 1 && numeric <= 12) return numeric;
+  const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  const idx = months.findIndex((m) => m === normalized || m.startsWith(normalized));
+  return idx >= 0 ? idx + 1 : undefined;
 }
