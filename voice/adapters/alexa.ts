@@ -22,7 +22,7 @@ export async function verifyAlexaSignature(headers: Record<string, string | stri
 
   const certPem = await fetch(certUrl).then((r) => r.text());
   const cert = new X509Certificate(certPem);
-  const san = cert.subjectAltName;
+  const san = cert.subjectAltName ?? '';
   if (!san.includes('echo-api.amazon.com')) return false;
 
   const verifier = createVerify('RSA-SHA1');

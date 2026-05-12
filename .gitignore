@@ -3,3 +3,7 @@ dist
 .env
 .DS_Store
 *.local
+
+artifacts/
+.build/
+dist-voice/
