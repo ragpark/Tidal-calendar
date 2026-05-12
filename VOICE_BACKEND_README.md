@@ -60,3 +60,17 @@ curl -X POST http://localhost:4010/alexa/webhook \
 ## Railway stability note
 - Voice tooling dependencies are isolated in `voice/package.json` so the root lockfile used by Railway `npm ci` remains stable.
 - Deployments continue to use the root app build; voice backend can be built/tested independently from `voice/`.
+
+## AWS-hosted Alexa packaging
+Use this when uploading backend code directly in the AWS Lambda console used by your Alexa skill endpoint:
+
+1. Install voice dependencies once: `cd voice && npm install`
+2. Build and package zip: `npm run package:alexa-lambda`
+3. Upload generated file: `artifacts/alexa-voice-backend.zip`
+4. In Lambda, set handler to: `dist-voice/alexaLambda.handler`
+
+Required environment variable in Lambda:
+- `MCP_BASE_URL` (your deployed app/API base URL)
+
+Optional for non-production testing only:
+- `ALEXA_SKIP_SIGNATURE_VERIFY=true`
