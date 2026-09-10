@@ -9,6 +9,7 @@
     "dev": "node scripts/build.mjs && node server.js",
     "build": "node scripts/build.mjs",
     "start": "node scripts/build.mjs && node server.js",
+    "test": "node --test tests/*.test.js",
     "mcp": "node mcp/server.js",
     "voice:dev": "tsx voice/index.ts",
     "voice:build": "tsc -p tsconfig.voice.json",

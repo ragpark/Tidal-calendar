@@ -6,4 +6,5 @@ dist
 
 artifacts/
 .build/
+public/assets/
 dist-voice/

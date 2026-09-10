@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ScrubAdvisorChatbot from './chatbot/ScrubAdvisorChatbot';
+import { parseRoute, pathForPage, stationPath, SITE_NAME } from './seo/routes';
+import { SEED_STATIONS, normalizeStationList } from './seo/stations';
 
 // UK Admiralty Tidal API Configuration
 const API_BASE_URL = '/api';
@@ -62,29 +64,26 @@ const parseEmbedConfig = () => {
   return { enabled, stationId, view, theme, accent, compact };
 };
 
+// Map a URL to app state. Public URL structure lives in src/seo/routes.js and is
+// shared with the server, which pre-renders the same pages for crawlers.
 const getInitialAppRoute = () => {
-  if (typeof window === 'undefined') return { page: 'calendar', blogSlug: null };
-  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
-  if (pathname === '/blog') return { page: 'blog', blogSlug: null };
-  if (pathname.startsWith('/blog/')) {
-    return { page: 'blog', blogSlug: decodeURIComponent(pathname.slice('/blog/'.length)).toLowerCase() || null };
-  }
-  return { page: 'calendar', blogSlug: null };
+  if (typeof window === 'undefined') return { page: 'calendar', blogSlug: null, stationId: null };
+  const route = parseRoute(window.location.pathname);
+  const page = route.page === 'tides' || route.notFound ? 'calendar' : route.page;
+  return { page, blogSlug: route.blogSlug, stationId: route.stationId };
 };
 
-// Sample stations with tidal characteristics for prediction
-const DEMO_STATIONS = [
-  { id: '0001', name: 'Aberdeen', country: 'Scotland', lat: 57.143, lon: -2.079, mhws: 4.3, mhwn: 3.4, mlwn: 1.3, mlws: 0.5 },
-  { id: '0113', name: 'London Bridge', country: 'England', lat: 51.507, lon: -0.087, mhws: 7.1, mhwn: 6.0, mlwn: 1.5, mlws: 0.5 },
-  { id: '0162', name: 'Liverpool (Alfred Dock)', country: 'England', lat: 53.405, lon: -2.994, mhws: 9.4, mhwn: 7.5, mlwn: 2.9, mlws: 1.0 },
-  { id: '0240', name: 'Southampton', country: 'England', lat: 50.899, lon: -1.391, mhws: 4.5, mhwn: 3.7, mlwn: 1.8, mlws: 0.5 },
-  { id: '0316', name: 'Dover', country: 'England', lat: 51.114, lon: 1.318, mhws: 6.8, mhwn: 5.3, mlwn: 1.9, mlws: 0.8 },
-  { id: '0402', name: 'Bristol (Avonmouth)', country: 'England', lat: 51.509, lon: -2.711, mhws: 13.2, mhwn: 9.8, mlwn: 3.8, mlws: 0.9 },
-  { id: '0452', name: 'Plymouth (Devonport)', country: 'England', lat: 50.368, lon: -4.186, mhws: 5.5, mhwn: 4.4, mlwn: 2.2, mlws: 0.8 },
-  { id: '0503', name: 'Cardiff', country: 'Wales', lat: 51.461, lon: -3.165, mhws: 12.4, mhwn: 9.2, mlwn: 3.6, mlws: 0.8 },
-  { id: '0590', name: 'Holyhead', country: 'Wales', lat: 53.314, lon: -4.633, mhws: 5.6, mhwn: 4.4, mlwn: 2.0, mlws: 0.7 },
-  { id: '0621', name: 'Belfast', country: 'Northern Ireland', lat: 54.607, lon: -5.909, mhws: 3.5, mhwn: 3.0, mlwn: 1.1, mlws: 0.4 },
-];
+const PAGE_TITLES = {
+  calendar: `Boat Scrubbing Tide Calendar UK | ${SITE_NAME}`,
+  blog: `Boat Maintenance & Tide Planning Blog | ${SITE_NAME}`,
+  about: `Plans & Pricing | ${SITE_NAME}`,
+  profile: `Account | ${SITE_NAME}`,
+  club: `Club dashboard | ${SITE_NAME}`,
+  admin: `Admin | ${SITE_NAME}`,
+};
+
+// Sample stations with tidal characteristics for prediction (shared with the server).
+const DEMO_STATIONS = SEED_STATIONS;
 
 // ===========================================
 // TIDAL PREDICTION ALGORITHMS
@@ -389,7 +388,7 @@ export default function TidalCalendarApp() {
   const setPageWithHistory = useCallback((page) => {
     setCurrentPage(page);
     if (typeof window === 'undefined') return;
-    const targetPath = page === 'blog' ? '/blog' : '/';
+    const targetPath = pathForPage(page);
     if (window.location.pathname !== targetPath) {
       window.history.pushState({}, '', targetPath);
     }
@@ -397,6 +396,23 @@ export default function TidalCalendarApp() {
       setPendingBlogSlug(null);
     }
   }, []);
+
+  // Navigation links are real anchors (crawlable) that upgrade to client-side routing.
+  const handleNavClick = useCallback((page) => (event) => {
+    if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.button === 1)) return;
+    if (event) event.preventDefault();
+    setPageWithHistory(page);
+  }, [setPageWithHistory]);
+
+  // Give each selected station its own shareable, indexable URL (/tides/<name>-<id>).
+  const routeStationRef = useRef(initialRoute.stationId);
+  const pushStationUrl = useCallback((station, { replace = false } = {}) => {
+    if (typeof window === 'undefined' || isEmbed || !station) return;
+    const nextPath = stationPath(station);
+    if (window.location.pathname === nextPath) return;
+    const method = replace ? 'replaceState' : 'pushState';
+    window.history[method]({}, '', `${nextPath}${window.location.search}`);
+  }, [isEmbed]);
 
   const selectBlogPost = useCallback((post, options = {}) => {
     if (!post) return;
@@ -427,23 +443,18 @@ export default function TidalCalendarApp() {
     if (!apiKey) { setStations(DEMO_STATIONS); setIsDemo(true); return; }
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/Stations`, { method: 'GET', cache: 'no-store' });
-      if (!response.ok) throw new Error('Failed to fetch stations.');
-      const data = await response.json();
-      const formatted = Array.isArray(data)
-        ? data.map(s => ({
-            id: s.Id || s.id,
-            name: s.Name || s.name,
-            country: s.Country || s.country || 'Unknown',
-            lat: s.Latitude || s.lat || s.geometry?.coordinates?.[1],
-            lon: s.Longitude || s.lon || s.geometry?.coordinates?.[0],
-            mhws: 4.5, mhwn: 3.5, mlwn: 1.5, mlws: 0.5,
-          }))
-        : data.features?.map(f => ({
-            id: f.properties.Id, name: f.properties.Name, country: f.properties.Country,
-            lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
-            mhws: 4.5, mhwn: 3.5, mlwn: 1.5, mlws: 0.5,
-          })) || [];
+      // Server-cached catalogue first (fast, survives upstream outages), then the live proxy.
+      let data = null;
+      try {
+        const cached = await fetch(`${API_BASE_URL}/stations.json`, { method: 'GET' });
+        if (cached.ok) data = await cached.json();
+      } catch { /* fall through to live proxy */ }
+      if (!Array.isArray(data) || data.length <= DEMO_STATIONS.length) {
+        const response = await fetch(`${API_BASE_URL}/Stations`, { method: 'GET', cache: 'no-store' });
+        if (!response.ok) throw new Error('Failed to fetch stations.');
+        data = await response.json();
+      }
+      const formatted = normalizeStationList(data);
       if (formatted.length === 0) throw new Error('No stations returned from API.');
       setStations(formatted); setIsDemo(false); setError(null);
     } catch (err) { setError(err.message); setStations(DEMO_STATIONS); setIsDemo(true); }
@@ -581,6 +592,16 @@ export default function TidalCalendarApp() {
   }, []);
   useEffect(() => {
     if (isEmbed || typeof window === 'undefined' || stations.length === 0) return;
+    if (routeStationRef.current) {
+      const wanted = String(routeStationRef.current).toUpperCase();
+      const match = stations.find(s => String(s.id).toUpperCase() === wanted);
+      if (match) {
+        routeStationRef.current = null;
+        setSelectedStation(match);
+        setHomePort(match.id);
+        return;
+      }
+    }
     if (user?.home_port_id) {
       setHomePort(user.home_port_id);
       const match = stations.find(s => s.id === user.home_port_id);
@@ -940,10 +961,24 @@ export default function TidalCalendarApp() {
       const route = getInitialAppRoute();
       setCurrentPage(route.page);
       setPendingBlogSlug(route.blogSlug);
+      if (route.stationId) {
+        routeStationRef.current = route.stationId;
+        setStations((current) => [...current]);
+      }
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || isEmbed) return;
+    if (currentPage === 'calendar' && selectedStation && window.location.pathname.startsWith('/tides/')) {
+      document.title = `${selectedStation.name} Tide Times & Boat Scrubbing Days | ${SITE_NAME}`;
+      return;
+    }
+    if (currentPage === 'blog' && selectedBlogPostId) return; // the blog post effect sets its own title
+    document.title = PAGE_TITLES[currentPage] || PAGE_TITLES.calendar;
+  }, [currentPage, selectedStation, selectedBlogPostId, isEmbed]);
 
   useEffect(() => {
     if (currentPage === 'admin') {
@@ -1585,6 +1620,7 @@ export default function TidalCalendarApp() {
     const match = stations.find(s => s.id === homePort);
     if (!match) return;
     setSelectedStation(match);
+    pushStationUrl(match);
     persistHomePortSelection(match.id);
     if (!user) return;
     try {
@@ -1635,6 +1671,7 @@ export default function TidalCalendarApp() {
     const match = stations.find(s => s.id === stationId);
     if (match) {
       setSelectedStation(match);
+      pushStationUrl(match);
       persistHomePortSelection(match.id);
     }
   };
@@ -2164,6 +2201,9 @@ export default function TidalCalendarApp() {
   useEffect(() => {
     if (currentPage !== 'blog' || !selectedBlogPost) return;
     selectBlogPost(selectedBlogPost, { replace: true });
+    if (typeof document !== 'undefined' && selectedBlogPost.title) {
+      document.title = `${selectedBlogPost.title} | ${SITE_NAME}`;
+    }
   }, [currentPage, selectedBlogPost, selectBlogPost]);
 
   return (
@@ -2238,17 +2278,19 @@ export default function TidalCalendarApp() {
       <main style={{ position: 'relative', zIndex: 10, padding: '0 24px 60px', maxWidth: '1400px', margin: '0 auto' }}>
         {error && <div style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '12px', padding: '16px 20px', marginBottom: '24px', fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#fca5a5' }}>⚠ {error}</div>}
 
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        <nav aria-label="Primary" style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
           {pages.map(page => (
-            <button
+            <a
               key={page}
-              onClick={() => setPageWithHistory(page)}
-              style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(14,165,233,0.25)', background: currentPage === page ? '#e0f2fe' : '#ffffff', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)' }}
+              href={pathForPage(page)}
+              onClick={handleNavClick(page)}
+              aria-current={currentPage === page ? 'page' : undefined}
+              style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(14,165,233,0.25)', background: currentPage === page ? '#e0f2fe' : '#ffffff', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)', textDecoration: 'none', fontSize: '13.333px' }}
             >
               {page === 'calendar' ? 'Calendar' : page === 'profile' ? 'Account' : page === 'about' ? 'Subscribe' : page === 'blog' ? 'Blog' : page === 'club' ? 'Club' : 'Admin'}
-            </button>
+            </a>
           ))}
-        </div>
+        </nav>
 
         {currentPage === 'about' && (
           <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
@@ -2737,7 +2779,7 @@ export default function TidalCalendarApp() {
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px', maxHeight: '220px', overflowY: 'auto' }}>
                       {filteredStations.slice(0, 16).map(station => (
-                        <button key={station.id} className="station-card" onClick={() => setSelectedStation(station)} style={{ background: selectedStation?.id === station.id ? '#e0f2fe' : '#ffffff', border: `1px solid ${selectedStation?.id === station.id ? '#0ea5e9' : '#cbd5e1'}`, borderRadius: '10px', padding: '12px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}>
+                        <button key={station.id} className="station-card" onClick={() => { setSelectedStation(station); pushStationUrl(station); }} style={{ background: selectedStation?.id === station.id ? '#e0f2fe' : '#ffffff', border: `1px solid ${selectedStation?.id === station.id ? '#0ea5e9' : '#cbd5e1'}`, borderRadius: '10px', padding: '12px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.3s ease', boxShadow: '0 2px 10px rgba(15,23,42,0.06)' }}>
                           <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a', marginBottom: '2px' }}>{station.name}</div>
                           <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: '10px', color: '#475569', letterSpacing: '1px', textTransform: 'uppercase' }}>{station.country}</div>
                         </button>
@@ -4109,6 +4151,13 @@ export default function TidalCalendarApp() {
             Terms of Use (UK)
           </button>
         </p>
+        <nav aria-label="Site" style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#334155', margin: '0 0 8px', display: 'flex', justifyContent: 'center', gap: '14px', flexWrap: 'wrap' }}>
+          <a href="/tides" style={{ color: '#0ea5e9' }}>All UK tide stations</a>
+          <a href="/blog" onClick={handleNavClick('blog')} style={{ color: '#0ea5e9' }}>Blog</a>
+          <a href="/about" onClick={handleNavClick('about')} style={{ color: '#0ea5e9' }}>Plans and pricing</a>
+          <a href="/datasets/" style={{ color: '#0ea5e9' }}>Open datasets</a>
+          <a href="/llms.txt" style={{ color: '#0ea5e9' }}>llms.txt</a>
+        </nav>
         <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '11px', color: '#334155', margin: 0 }}>© Crown Copyright. All times GMT/UTC. Heights in metres above Chart Datum. Predictions beyond 7 days are estimates.</p>
       </footer>
 

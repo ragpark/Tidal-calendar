@@ -149,6 +149,36 @@ To use real Admiralty API data for the first 7 days:
 2. Subscribe to "UK Tidal API - Discovery" (free tier)
 3. Add your key in the app interface
 
+## URL structure, SEO and AI discoverability
+
+Every public page is served by the Node server as a complete HTML document with
+route-specific metadata, JSON-LD structured data and pre-rendered content, so
+search engines and AI crawlers that do not execute JavaScript still see real
+text and links. The React app then mounts over the pre-rendered markup.
+
+| URL | Page | Indexed |
+| --- | --- | --- |
+| `/` | Calendar and scrubbing planner (home) | ✅ |
+| `/tides` | A–Z index of every UK tide station, grouped by country | ✅ |
+| `/tides/<name>-<id>` | Station page, e.g. `/tides/southampton-0240`: next 7 days of tides, scrubbing mornings, geo structured data | ✅ |
+| `/blog`, `/blog/<slug>` | Blog index and articles (`BlogPosting` structured data) | ✅ |
+| `/about` | Plans and pricing | ✅ |
+| `/account`, `/club`, `/admin` | Private dashboards | ❌ noindex |
+| `/sitemap.xml` | Generated from the live station catalogue and blog posts | – |
+| `/llms.txt` | Generated summary for AI crawlers, with station and article links | – |
+| `/api/stations.json` | Cached, normalised station catalogue (no auth, no database required) | – |
+
+Non-canonical URLs redirect (301) to the canonical form: trailing slashes are
+stripped, `/index.html` → `/`, and mis-cased or mis-spelt station and blog
+slugs redirect to the correct slug. Unknown paths return a `noindex` 404 page.
+
+The routing table is shared between server and client in `src/seo/routes.js`;
+the server renderer lives in `src/seo/render.js`. Run the tests with:
+
+```bash
+npm test
+```
+
 ## Model Context Protocol (MCP)
 
 This repo includes a standalone MCP server that proxies the existing HTTP API so other agents can use Tidal Calendar tools without modifying the main app.
