@@ -3704,7 +3704,7 @@ const serveStatic = (filePath, res) => {
 app.get('/', (req, res, next) => sendAppShell(req, res).catch(next));
 app.get('/index.html', (_req, res) => res.redirect(301, '/'));
 
-app.use(express.static(publicPath, { index: false }));
+app.use(express.static(publicPath));
 
 app.get('*', async (req, res) => {
   // skip API routes
