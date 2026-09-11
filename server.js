@@ -12,6 +12,8 @@ import { Readable } from 'stream';
 import PDFDocument from 'pdfkit';
 import { sendMaintenanceReminderEmail, sendPasswordResetEmail, sendWelcomeEmail } from './src/email/send.js';
 import { createPasswordResetStore } from './src/auth/passwordResetStore.js';
+import { createSeoRenderer } from './src/seo/render.js';
+import { normalizePathname, parseRoute } from './src/seo/routes.js';
 import {
   InMemoryPasswordResetStore,
   buildPasswordResetUrl,
@@ -1040,6 +1042,18 @@ app.use('/api/Stations', async (req, res) => {
   } catch (err) {
     console.error('Proxy error', { err, targetPath, apiTargetPath, source: apiConfig.source });
     res.status(502).json({ error: 'Proxy request failed' });
+  }
+});
+
+// Lightweight JSON station catalogue for the app and for agents (cached server-side).
+app.get('/api/stations.json', async (_req, res) => {
+  try {
+    const renderer = await getSeoRenderer();
+    res.set('Cache-Control', PUBLIC_HTML_CACHE);
+    res.json(await renderer.getStations());
+  } catch (err) {
+    console.error('Station catalogue failed:', err);
+    res.status(502).json({ error: 'Station catalogue unavailable' });
   }
 });
 
@@ -3587,6 +3601,96 @@ app.get('/api/generate-tide-booklet', requireAuth, async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Search-engine / AI-crawler rendering
+// ---------------------------------------------------------------------------
+// Every public app URL is served as a full HTML document with route-specific
+// metadata, structured data and pre-rendered content (see src/seo/render.js).
+// The React bundle mounts over the pre-rendered markup for interactive use.
+
+let indexTemplate = null;
+const getIndexTemplate = async () => {
+  if (indexTemplate) return indexTemplate;
+  const { readFile } = await import('fs/promises');
+  indexTemplate = await readFile(path.join(publicPath, 'index.html'), 'utf8');
+  return indexTemplate;
+};
+
+const fetchStationCatalogue = async () => {
+  const response = await fetch(`${API_BASE_URL}/Stations`, { headers: getAdmiraltyHeaders(API_KEY) });
+  if (!response.ok) throw new Error(`Stations fetch failed (${response.status})`);
+  return response.json();
+};
+
+const fetchPublicBlogPosts = async () => {
+  if (!dbReady) {
+    return initialBlogPosts.map((post) => ({ ...post, slug: toSlugBase(post.title), publishedAt: null, updatedAt: null }));
+  }
+  const { rows } = await pool.query(
+    `SELECT slug, title, excerpt, cover_image_url, content_html, published_at, updated_at
+     FROM blog_posts
+     ORDER BY published_at DESC, created_at DESC`,
+  );
+  return rows.map((row) => ({
+    slug: row.slug,
+    title: row.title,
+    excerpt: row.excerpt || stripHtml(row.content_html).slice(0, 220),
+    coverImageUrl: row.cover_image_url || '',
+    contentHtml: row.content_html,
+    publishedAt: row.published_at,
+    updatedAt: row.updated_at,
+  }));
+};
+
+let seoRenderer = null;
+const getSeoRenderer = async () => {
+  if (seoRenderer) return seoRenderer;
+  seoRenderer = createSeoRenderer({
+    template: await getIndexTemplate(),
+    fetchStations: fetchStationCatalogue,
+    fetchTidalEvents: (stationId) => fetchAdmiraltyEvents({ stationId, duration: 7 }),
+    fetchBlogPosts: fetchPublicBlogPosts,
+  });
+  return seoRenderer;
+};
+
+const PUBLIC_HTML_CACHE = 'public, max-age=300, stale-while-revalidate=3600';
+
+app.get('/sitemap.xml', async (_req, res) => {
+  try {
+    const renderer = await getSeoRenderer();
+    res.set('Content-Type', 'application/xml; charset=utf-8');
+    res.set('Cache-Control', PUBLIC_HTML_CACHE);
+    res.send(await renderer.sitemap());
+  } catch (err) {
+    console.error('Sitemap generation failed:', err);
+    res.status(500).send('Sitemap unavailable');
+  }
+});
+
+app.get('/llms.txt', async (_req, res) => {
+  try {
+    const renderer = await getSeoRenderer();
+    res.set('Content-Type', 'text/plain; charset=utf-8');
+    res.set('Cache-Control', PUBLIC_HTML_CACHE);
+    res.send(await renderer.llmsTxt());
+  } catch (err) {
+    console.error('llms.txt generation failed:', err);
+    res.status(500).send('llms.txt unavailable');
+  }
+});
+
+const sendAppShell = async (req, res) => {
+  const renderer = await getSeoRenderer();
+  const { html, status, redirectTo } = await renderer.render(req.path);
+  if (redirectTo) return res.redirect(301, redirectTo);
+  res.status(status);
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.set('Cache-Control', status === 200 ? PUBLIC_HTML_CACHE : 'no-store');
+  res.set('Vary', 'Cookie');
+  return res.send(html);
+};
+
 // Static assets (build output)
 const serveStatic = (filePath, res) => {
   const ext = path.extname(filePath);
@@ -3595,36 +3699,41 @@ const serveStatic = (filePath, res) => {
   createReadStream(filePath).pipe(res);
 };
 
-app.use(express.static(publicPath));
+// The home page and its alias must be rendered per-request (not served as the raw
+// template), so register them ahead of the static middleware.
+app.get('/', (req, res, next) => sendAppShell(req, res).catch(next));
+app.get('/index.html', (_req, res) => res.redirect(301, '/'));
+
+app.use(express.static(publicPath, { index: false }));
 
 app.get('*', async (req, res) => {
   // skip API routes
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
   const hasFileExtension = Boolean(path.extname(req.path));
-  let filePath = path.resolve(publicPath, `.${req.path}`);
-  if (req.path === '/' || !path.extname(filePath)) {
-    filePath = path.join(publicPath, 'index.html');
-  }
-
-  try {
-    const stats = await stat(filePath);
-    if (stats.isFile()) {
-      serveStatic(filePath, res);
-      return;
-    }
-  } catch {
-    // fallthrough to index.html for SPA routes
-  }
-
   if (hasFileExtension) {
+    // express.static already had its chance; any remaining file-like path is missing.
     return res.status(404).send('Not Found');
   }
 
-  const indexPath = path.join(publicPath, 'index.html');
-  if (existsSync(indexPath)) {
-    serveStatic(indexPath, res);
-  } else {
-    res.status(404).send('Not Found');
+  // Canonicalise app URLs: strip trailing slashes and repeated slashes so each
+  // page has exactly one indexable address. Directory-style static pages
+  // (e.g. /datasets/) are served by express.static before reaching here.
+  const normalized = normalizePathname(req.path);
+  if (normalized !== req.path && !parseRoute(normalized).notFound) {
+    const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+    return res.redirect(301, `${normalized}${query}`);
+  }
+
+  try {
+    await sendAppShell(req, res);
+  } catch (err) {
+    console.error('App shell render failed:', err);
+    const indexPath = path.join(publicPath, 'index.html');
+    if (existsSync(indexPath)) {
+      serveStatic(indexPath, res);
+    } else {
+      res.status(500).send('Server Error');
+    }
   }
 });
 
@@ -3681,6 +3790,9 @@ const startServer = async () => {
 
     // Initialize database connection and schema in the background
     initializeDatabase();
+
+    // Warm the station catalogue used for crawlable station pages and the sitemap.
+    getSeoRenderer().then((renderer) => renderer.warm()).catch((err) => console.warn('SEO warm-up skipped:', err.message));
   } catch (err) {
     console.error('FATAL: Failed to start server');
     console.error('Error details:', err);

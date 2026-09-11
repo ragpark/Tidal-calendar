@@ -1,18 +1,21 @@
 User-agent: *
 Allow: /
 
-# Block private or non-index utility paths
-Disallow: /admin/
-Disallow: /login/
-Disallow: /account/
-Disallow: /api/private/
-Disallow: /search?
+# Private, per-user surfaces (served with noindex as well)
+Disallow: /account
+Disallow: /club
+Disallow: /admin
+Disallow: /reset-password
+Disallow: /api/
 
-# Explicitly allow key discoverability surfaces
-Allow: /blog/
+# Public, crawlable surfaces
+Allow: /tides
+Allow: /blog
+Allow: /about
 Allow: /datasets/
 Allow: /data/
 Allow: /llms.txt
+Allow: /api/stations.json
 
 # AI crawler policy
 User-agent: GPTBot

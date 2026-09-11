@@ -1,25 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Boat Scrubbing Tide Calendar UK | BoatScrubCalendar</title>
-    <meta name="description" content="UK tidal predictions with boat scrubbing day planner. Monthly calendar view with harmonic tide predictions and UK Admiralty tide tables.">
-    <meta name="application-name" content="Tidal Calendar" />
-    <meta name="theme-color" content="#0f172a" />
-    <meta name="robots" content="index, follow" />
-    <meta name="keywords" content="UK tides, tidal predictions, boat scrubbing calendar, Admiralty API, tide planner" />
-    <link rel="canonical" href="https://boatscrubcalendar.com/" />
+    <!--SEO_HEAD-->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="Tidal Calendar | Boat Scrubbing Planner" />
-    <meta property="og:description" content="Plan boat scrubbing days with reliable UK tidal predictions, monthly calendar insights, and subscriber-only Admiralty API data." />
-    <meta property="og:url" content="https://boatscrubcalendar.com/" />
-    <meta property="og:image" content="/social-card.svg" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Tidal Calendar | Boat Scrubbing Planner" />
-    <meta name="twitter:description" content="Stay on top of UK tides with monthly planning, scrubbing windows, and Admiralty-backed predictions." />
-    <meta name="twitter:image" content="/social-card.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Outfit:wght@300;400;500&display=swap" rel="stylesheet">
@@ -88,7 +73,7 @@
         ],
         text: {
           banner: {
-            description: "<p>We use cookies on our site to enhance your user experience, provide personalised content, and analyse our traffic. <a href=\"https://your-website.com/cookie-policy\" target=\"_blank\">Cookie Policy.</a></p>",
+            description: "<p>We use cookies on our site to enhance your user experience, provide personalised content, and analyse our traffic. <a href=\"/about\" target=\"_blank\">Cookie Policy.</a></p>",
             acceptAllButtonText: "Accept all",
             acceptAllButtonAccessibleLabel: "Accept all cookies",
             rejectNonEssentialButtonText: "Reject non-essential",
@@ -105,65 +90,6 @@
         }
       });
     </script>
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "Tidal Calendar",
-        "applicationCategory": "UtilityApplication",
-        "operatingSystem": "Web",
-        "description": "UK tidal predictions with a boat scrubbing calendar, harmonic forecasts, and subscriber-only Admiralty API data.",
-        "url": "https://boatscrubcalendar.com/",
-        "offers": {
-          "@type": "Offer",
-          "price": "5",
-          "priceCurrency": "GBP",
-          "description": "Subscriber access to Admiralty-backed tidal predictions and scrubbing schedules"
-        },
-        "publisher": {
-          "@type": "Organization",
-          "name": "Tidal Calendar"
-        }
-      }
-    </script>
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "WebSite",
-        "name": "BoatScrubCalendar",
-        "url": "https://boatscrubcalendar.com/",
-        "inLanguage": "en-GB",
-        "potentialAction": {
-          "@type": "SearchAction",
-          "target": "https://boatscrubcalendar.com/?q={search_term_string}",
-          "query-input": "required name=search_term_string"
-        }
-      }
-    </script>
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "FAQPage",
-        "mainEntity": [
-          {
-            "@type": "Question",
-            "name": "What does BoatScrubCalendar do?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "BoatScrubCalendar helps UK boat owners identify practical tide windows for hull scrubbing and maintenance planning."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Where can I find machine-readable planning data?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Use the dataset hub at /datasets/ and download JSON or CSV files from /data/ for AI and analytics workflows."
-            }
-          }
-        ]
-      }
-    </script>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body { 
@@ -174,7 +100,7 @@
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><!--SEO_BODY--></div>
     <script type="module" src="/assets/bundle.js"></script>
   </body>
 </html>
