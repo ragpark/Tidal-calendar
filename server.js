@@ -3704,7 +3704,27 @@ const serveStatic = (filePath, res) => {
 app.get('/', (req, res, next) => sendAppShell(req, res).catch(next));
 app.get('/index.html', (_req, res) => res.redirect(301, '/'));
 
-app.use(express.static(publicPath, { index: false }));
+// Canonicalise path spelling before static serving: collapse repeated slashes
+// and dot segments (raw or percent-encoded) so root-equivalent paths such as
+// "//", "/%2e/" or "/datasets/%2e%2e/" redirect to "/" rather than letting the
+// static middleware resolve them to the unrendered index.html template.
+app.use((req, res, next) => {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(req.path);
+  } catch {
+    return res.status(400).send('Bad Request');
+  }
+  let normalized = path.posix.normalize(decoded.replace(/\\/g, '/'));
+  if (!normalized.startsWith('/')) normalized = `/${normalized}`;
+  if (normalized !== req.path) {
+    const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+    return res.redirect(301, `${encodeURI(normalized)}${query}`);
+  }
+  return next();
+});
+
+app.use(express.static(publicPath));
 
 app.get('*', async (req, res) => {
   // skip API routes
