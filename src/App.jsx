@@ -2,6 +2,28 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import ScrubAdvisorChatbot from './chatbot/ScrubAdvisorChatbot';
 import { parseRoute, pathForPage, stationPath, SITE_NAME } from './seo/routes';
 import { SEED_STATIONS, normalizeStationList } from './seo/stations';
+import { CLUB_PITCH, CLUB_PROOF, CONTACT_EMAIL, OPERATOR, PRICING, PRODUCT_SHOT, TESTIMONIALS } from './seo/content';
+
+// Product screenshot shown in the hero/empty state and on the plans page (shared with the server renderer).
+const ProductShot = ({ caption, eager = false }) => (
+  <figure style={{ margin: '20px auto 0', maxWidth: '720px' }}>
+    <picture>
+      <source type="image/webp" srcSet={PRODUCT_SHOT.webpSrcset} sizes={PRODUCT_SHOT.sizes} />
+      <img
+        src={PRODUCT_SHOT.src}
+        srcSet={PRODUCT_SHOT.srcset}
+        sizes={PRODUCT_SHOT.sizes}
+        width={PRODUCT_SHOT.width}
+        height={PRODUCT_SHOT.height}
+        alt={PRODUCT_SHOT.alt}
+        loading={eager ? 'eager' : 'lazy'}
+        decoding="async"
+        style={{ display: 'block', width: '100%', height: 'auto', border: '1px solid #cbd5e1', borderRadius: '12px', boxShadow: '0 10px 30px rgba(15,23,42,0.10)', background: '#fff' }}
+      />
+    </picture>
+    {caption && <figcaption style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', color: '#64748b', textAlign: 'center', marginTop: '8px' }}>{caption}</figcaption>}
+  </figure>
+);
 
 // UK Admiralty Tidal API Configuration
 const API_BASE_URL = '/api';
@@ -284,7 +306,7 @@ export default function TidalCalendarApp() {
   const [blogAdminError, setBlogAdminError] = useState('');
   const [selectedBlogPostId, setSelectedBlogPostId] = useState(null);
   const [pendingBlogSlug, setPendingBlogSlug] = useState(initialRoute.blogSlug);
-  const [blogEditor, setBlogEditor] = useState({ id: null, title: '', excerpt: '', coverImageUrl: '', contentHtml: '' });
+  const [blogEditor, setBlogEditor] = useState({ id: null, title: '', excerpt: '', coverImageUrl: '', coverImageAlt: '', contentHtml: '' });
   const blogCarouselRef = useRef(null);
   const [currentPage, setCurrentPage] = useState(initialRoute.page);
   const [authMode, setAuthMode] = useState('signin');
@@ -394,6 +416,14 @@ export default function TidalCalendarApp() {
     }
     if (page !== 'blog') {
       setPendingBlogSlug(null);
+    }
+  }, []);
+
+  const goToSubscribe = useCallback(() => {
+    setCurrentPage('profile');
+    setPendingBlogSlug(null);
+    if (typeof window !== 'undefined' && `${window.location.pathname}${window.location.hash}` !== '/account#subscribe') {
+      window.history.pushState({}, '', '/account#subscribe');
     }
   }, []);
 
@@ -941,7 +971,7 @@ export default function TidalCalendarApp() {
   }, [apiRequest, pendingBlogSlug]);
 
   const resetBlogEditor = useCallback(() => {
-    setBlogEditor({ id: null, title: '', excerpt: '', coverImageUrl: '', contentHtml: '' });
+    setBlogEditor({ id: null, title: '', excerpt: '', coverImageUrl: '', coverImageAlt: '', contentHtml: '' });
     setBlogAdminError('');
   }, []);
 
@@ -979,6 +1009,14 @@ export default function TidalCalendarApp() {
     if (currentPage === 'blog' && selectedBlogPostId) return; // the blog post effect sets its own title
     document.title = PAGE_TITLES[currentPage] || PAGE_TITLES.calendar;
   }, [currentPage, selectedStation, selectedBlogPostId, isEmbed]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || currentPage !== 'profile' || window.location.hash !== '#subscribe') return;
+    const timer = window.setTimeout(() => {
+      document.getElementById('subscribe')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [currentPage, user]);
 
   useEffect(() => {
     if (currentPage === 'admin') {
@@ -1268,6 +1306,7 @@ export default function TidalCalendarApp() {
       title: post.title || '',
       excerpt: post.excerpt || '',
       coverImageUrl: post.coverImageUrl || '',
+      coverImageAlt: post.coverImageAlt || '',
       contentHtml: post.contentHtml || '',
     });
     setBlogAdminError('');
@@ -1281,6 +1320,7 @@ export default function TidalCalendarApp() {
         title: blogEditor.title,
         excerpt: blogEditor.excerpt,
         coverImageUrl: blogEditor.coverImageUrl,
+        coverImageAlt: blogEditor.coverImageAlt,
         contentHtml: blogEditor.contentHtml,
       };
       if (blogEditor.id) {
@@ -2285,7 +2325,7 @@ export default function TidalCalendarApp() {
               href={pathForPage(page)}
               onClick={handleNavClick(page)}
               aria-current={currentPage === page ? 'page' : undefined}
-              style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(14,165,233,0.25)', background: currentPage === page ? '#e0f2fe' : '#ffffff', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)', textDecoration: 'none', fontSize: '13.333px' }}
+              style={{ display: 'inline-flex', alignItems: 'center', minHeight: '44px', padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(14,165,233,0.25)', background: currentPage === page ? '#e0f2fe' : '#ffffff', color: '#0f172a', cursor: 'pointer', fontFamily: "'Outfit', sans-serif", letterSpacing: '1px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)', textDecoration: 'none', fontSize: '13.333px' }}
             >
               {page === 'calendar' ? 'Calendar' : page === 'profile' ? 'Account' : page === 'about' ? 'Subscribe' : page === 'blog' ? 'Blog' : page === 'club' ? 'Club' : 'Admin'}
             </a>
@@ -2296,10 +2336,14 @@ export default function TidalCalendarApp() {
           <section style={{ animation: 'fadeInUp 0.8s ease-out 0.1s both', background: '#ffffff', border: '1px solid rgba(15, 23, 42, 0.06)', borderRadius: '16px', padding: '24px', display: 'grid', gap: '20px', boxShadow: '0 10px 30px rgba(15,23,42,0.08)' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '2px', textTransform: 'uppercase', color: '#0ea5e9', margin: 0 }}>Subscribe</p>
-              <h2 style={{ fontSize: '22px', margin: 0, color: '#0f172a', fontWeight: 600 }}>Why we built the Scrubbing off Calendar</h2>
+              <h2 style={{ fontSize: '22px', margin: 0, color: '#0f172a', fontWeight: 600 }}>Plans and pricing</h2>
               <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155', margin: 0 }}>
                 This Calendar keeps boaters informed with a monthly tide view, scrubbing guidance, and maintenance reminders for your chosen home port. We blend UKHO data where available with harmonic predictions so you can plan confidently—even when connectivity is limited.
               </p>
+              <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#0f172a', margin: 0 }}>
+                <strong>In short:</strong> the planner is free. {PRICING.priceLabel} buys the full year of official data and the PDF booklet. Clubs are set up by email.
+              </p>
+              <ProductShot caption="What subscribers see: a whole year of official Admiralty tides with the scrubbing mornings flagged, here for Southampton." />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
@@ -2327,30 +2371,33 @@ export default function TidalCalendarApp() {
                   ctaAction: () => setPageWithHistory('profile'),
                 },
                 {
-                  title: 'Subscribers',
+                  title: `Subscribers – ${PRICING.priceLabel}`,
                   emoji: '🌊',
+                  highlight: true,
                   points: [
-                    'A full year (365 days from purchase) of Tidal data for UK ports in Calendar and identification of best scrubbing days for 365 days.',
-                    'A downloadable PDF of Home Port tide times.',
+                    PRICING.periodLine,
+                    'Official Admiralty tide predictions for the whole year at your home port, not just the next 7 days.',
+                    'The scrubbing day finder across all 365 days, so you can book the grid months ahead.',
+                    'A downloadable PDF tide booklet for your home port.',
                   ],
-                  ctaLabel: 'Subscribe',
-                  ctaAction: () => setPageWithHistory('profile'),
+                  ctaLabel: `Subscribe – ${PRICING.priceLabel}`,
+                  ctaAction: goToSubscribe,
                 },
                 {
-                  title: 'Clubs',
+                  title: 'Sailing clubs',
                   emoji: '⚓',
                   points: [
-                    'Provide members with club-ready monthly tide planning for your local waters.',
-                    'Share scrubbing-day opportunities to help coordinate maintenance windows.',
-                    'Get support for branded onboarding and member guidance.',
+                    'Publish your scrub windows against the real tide; members see which mornings are free and book them.',
+                    'Define your scrubbing posts or grid, manage bookings and invites, and stop being the diary.',
+                    'No fixed club price yet: tell us how many posts and members you have.',
                   ],
-                  ctaLabel: 'Contact us',
+                  ctaLabel: 'Email us about your club',
                   ctaAction: () => {
-                    window.location.href = 'mailto:hello@boatscrub.com?subject=Club%20enquiry';
+                    window.location.href = `mailto:${CONTACT_EMAIL}?subject=Club%20enquiry`;
                   },
                 },
               ].map((card, idx) => (
-                <div key={idx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxShadow: '0 4px 12px rgba(15,23,42,0.06)', display: 'grid', gap: '8px' }}>
+                <div key={idx} id={card.highlight ? 'subscriber-plan' : undefined} style={{ background: card.highlight ? '#ffffff' : '#f8fafc', border: card.highlight ? '2px solid #0ea5e9' : '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', boxShadow: '0 4px 12px rgba(15,23,42,0.06)', display: 'grid', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '18px' }}>{card.emoji}</span>
                     <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: 600 }}>{card.title}</h3>
@@ -2379,8 +2426,58 @@ export default function TidalCalendarApp() {
               ))}
             </div>
 
+            <div style={{ display: 'grid', gap: '6px', fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#334155' }}>
+              <p style={{ margin: 0 }}>{PRICING.guaranteeLine} Payments by {PRICING.paymentProcessor}; no card needed for the free tiers.</p>
+              <p style={{ margin: 0, fontStyle: 'italic' }}>{PRICING.anchorLine}</p>
+            </div>
+
             <div style={{ background: '#ecfdf3', border: '1px solid #bbf7d0', borderRadius: '12px', padding: '14px', fontFamily: "'Outfit', sans-serif", fontSize: '13px', color: '#166534' }}>
               <strong style={{ color: '#15803d' }}>Data transparency:</strong> UKHO actual data is shown for all users wherever returned by the API. Predicted tide times/heights appear only when UKHO events are unavailable for a date.
+            </div>
+
+            <div id="clubs" style={{ display: 'grid', gap: '8px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: 600 }}>For sailing clubs</h3>
+              <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155', margin: 0 }}>{CLUB_PITCH}</p>
+              {CLUB_PROOF.clubs?.length > 0 && (
+                <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#0f172a', margin: 0 }}>
+                  <strong>Clubs publishing their scrub windows here:</strong> {CLUB_PROOF.clubs.map((c) => c.name).join(', ')}.
+                </p>
+              )}
+              {!CLUB_PROOF.clubs?.length && CLUB_PROOF.count > 0 && (
+                <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#0f172a', margin: 0 }}>
+                  <strong>{CLUB_PROOF.count === 1 ? 'One club now publishes its' : `${CLUB_PROOF.count} clubs now publish their`} scrub windows here.</strong>
+                </p>
+              )}
+            </div>
+
+            {TESTIMONIALS.length > 0 && (
+              <div style={{ display: 'grid', gap: '8px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: 600 }}>What owners say</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                  {TESTIMONIALS.map((t, i) => (
+                    <blockquote key={i} style={{ margin: 0, background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '14px 16px', fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155' }}>
+                      <p style={{ margin: '0 0 8px' }}>“{t.quote}”</p>
+                      <footer style={{ fontSize: '13px', color: '#475569', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {t.photoUrl && <img src={t.photoUrl} alt={t.name} width={40} height={40} loading="lazy" style={{ borderRadius: '50%' }} />}
+                        <span><strong>{t.name}</strong>{t.boatOrClub ? `, ${t.boatOrClub}` : ''}</span>
+                      </footer>
+                    </blockquote>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div id="who-runs-this" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', display: 'grid', gap: '8px', scrollMarginTop: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: 600 }}>Who runs this</h3>
+              {OPERATOR.photoUrl && <img src={OPERATOR.photoUrl} alt={OPERATOR.name || 'The person who runs BoatScrubCalendar'} width={96} height={96} loading="lazy" style={{ borderRadius: '50%' }} />}
+              {OPERATOR.name && <p style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#0f172a' }}><strong>{OPERATOR.name}</strong></p>}
+              {OPERATOR.story && <p style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155' }}>{OPERATOR.story}</p>}
+              <p style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155' }}>
+                BoatScrubCalendar is an independent UK site, not part of the UK Hydrographic Office. Tide data is licensed from the Admiralty Tidal API and shown with Crown Copyright. Payments are handled by {PRICING.paymentProcessor}; we never see your card details.
+              </p>
+              <p style={{ margin: 0, fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#334155' }}>
+                Questions, data corrections or a club enquiry: <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: '#0284c7' }}>{CONTACT_EMAIL}</a>. Emails are read by the person who builds and runs the site.
+              </p>
             </div>
           </section>
         )}
@@ -2469,7 +2566,7 @@ export default function TidalCalendarApp() {
                       </div>
                     </header>
                     {selectedBlogPost.coverImageUrl && (
-                      <img src={selectedBlogPost.coverImageUrl} alt={selectedBlogPost.title} style={{ width: '100%', borderRadius: '12px', maxHeight: '340px', objectFit: 'cover', border: '1px solid #e2e8f0' }} />
+                      <img src={selectedBlogPost.coverImageUrl} alt={selectedBlogPost.coverImageAlt || `Cover photo for the article “${selectedBlogPost.title}”`} style={{ width: '100%', borderRadius: '12px', maxHeight: '340px', objectFit: 'cover', border: '1px solid #e2e8f0' }} />
                     )}
                     <div
                       style={{ color: '#1e293b', fontSize: '15px', lineHeight: 1.7, display: 'grid', gap: '10px' }}
@@ -2704,14 +2801,14 @@ export default function TidalCalendarApp() {
                       ))}
                     </div>
                   </div>
-                  <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
+                  <div id="subscribe" className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)', scrollMarginTop: '16px' }}>
                     <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Store</div>
                     <div style={{ fontSize: '11px', color: '#475569' }}>Manage your Tide plan and downloads in one place.</div>
                     <div style={{ display: 'grid', gap: '10px' }}>
                       <div className="profile-card-nested" style={{ display: 'grid', gap: '10px', padding: '12px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(15,23,42,0.05)' }}>
                         <div style={{ fontSize: '13px', color: '#0f172a', fontWeight: 600 }}>Subscription plan</div>
-                        <div style={{ fontSize: '12px', color: '#334155' }}>£{SUBSCRIPTION_PRICE_GBP} / year • extended Admiralty API access</div>
-                        <div style={{ fontSize: '11px', color: '#475569' }}>Live Stripe checkout activates your subscriber role automatically after successful payment confirmation.</div>
+                        <div style={{ fontSize: '12px', color: '#334155' }}>{PRICING.priceLabel}, billed once • a full year of official Admiralty tides and the PDF booklet</div>
+                        <div style={{ fontSize: '11px', color: '#475569' }}>{PRICING.guaranteeLine} Payments by {PRICING.paymentProcessor}; your subscriber access switches on automatically after payment.</div>
                         <div style={{ background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '10px', padding: '12px', display: 'grid', gap: '10px' }}>
                           {stripePricingConfigured ? (
                             stripePricingReady ? (
@@ -3162,6 +3259,10 @@ export default function TidalCalendarApp() {
                   <label style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#475569' }}>
                     Cover image URL (optional)
                     <input value={blogEditor.coverImageUrl} onChange={(event) => setBlogEditor((form) => ({ ...form, coverImageUrl: event.target.value }))} style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+                  </label>
+                  <label style={{ display: 'grid', gap: '6px', fontSize: '12px', color: '#475569' }}>
+                    Cover image alt text (describe what the photo shows, e.g. “A hauled-out yacht being scrubbed on a UK drying grid in autumn”)
+                    <input value={blogEditor.coverImageAlt} onChange={(event) => setBlogEditor((form) => ({ ...form, coverImageAlt: event.target.value }))} maxLength={250} style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
                   </label>
                   <div style={{ display: 'grid', gap: '6px' }}>
                     <div style={{ fontSize: '12px', color: '#475569' }}>Content</div>
@@ -4126,6 +4227,7 @@ export default function TidalCalendarApp() {
             <div style={{ fontSize: '64px', marginBottom: '24px' }}>🌊</div>
             <h3 style={{ fontSize: '24px', fontWeight: 400, marginBottom: '12px' }}>Select a Tidal Station</h3>
             <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '15px', color: '#64748b', maxWidth: '400px', margin: '0 auto' }}>Choose a station to view monthly tide times and find the best days for scrubbing your boat.</p>
+            <ProductShot eager caption="What you get: the monthly calendar for your port with the 06:30-09:00 scrubbing mornings marked in green." />
           </div>
         )}
       </main>
@@ -4155,6 +4257,9 @@ export default function TidalCalendarApp() {
           <a href="/tides" style={{ color: '#0ea5e9' }}>All UK tide stations</a>
           <a href="/blog" onClick={handleNavClick('blog')} style={{ color: '#0ea5e9' }}>Blog</a>
           <a href="/about" onClick={handleNavClick('about')} style={{ color: '#0ea5e9' }}>Plans and pricing</a>
+          <a href="/about#who-runs-this" style={{ color: '#0ea5e9' }}>Who runs this</a>
+          <a href="/vs/easytide" style={{ color: '#0ea5e9' }}>vs EasyTide</a>
+          <a href="/vs/neaps" style={{ color: '#0ea5e9' }}>vs Neaps</a>
           <a href="/datasets/" style={{ color: '#0ea5e9' }}>Open datasets</a>
           <a href="/llms.txt" style={{ color: '#0ea5e9' }}>llms.txt</a>
         </nav>

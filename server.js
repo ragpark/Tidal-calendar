@@ -143,6 +143,7 @@ const parseMetricValue = (value) => {
 const stripHtml = (value = '') => String(value).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 const sanitizeBlogHtml = (value = '') => String(value)
   .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+  .replace(/file:\/\/\/[A-Za-z]:\//g, '/')
   .replace(/\son\w+="[^"]*"/gi, '')
   .replace(/\son\w+='[^']*'/gi, '')
   .trim();
@@ -358,6 +359,7 @@ const mimeTypes = {
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
+  '.webp': 'image/webp',
 };
 
 let dbReady = false;
@@ -593,6 +595,13 @@ const ensureSchema = async () => {
   await pool.query(`ALTER TABLE scrub_windows ADD COLUMN IF NOT EXISTS facility_id UUID REFERENCES club_facilities(id) ON DELETE SET NULL;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS excerpt TEXT;`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS cover_image_url TEXT;`);
+  await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS cover_image_alt TEXT;`);
+  // Repair in-content links pasted from a locally opened draft (file:///C:/blog/... -> /blog/...).
+  await pool.query(
+    `UPDATE blog_posts
+     SET content_html = regexp_replace(content_html, 'file:///[A-Za-z]:/', '/', 'g'), updated_at = now()
+     WHERE content_html LIKE '%file:///%'`,
+  );
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();`);
   await pool.query(`ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS slug TEXT;`);
   await pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS boat_name TEXT;`);
@@ -1410,7 +1419,7 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) =
 
 app.get('/api/blog-posts', async (_req, res) => {
   const { rows } = await pool.query(
-    `SELECT p.id, p.slug, p.title, p.excerpt, p.cover_image_url, p.content_html, p.published_at, p.created_at, p.updated_at,
+    `SELECT p.id, p.slug, p.title, p.excerpt, p.cover_image_url, p.cover_image_alt, p.content_html, p.published_at, p.created_at, p.updated_at,
             u.email AS author_email
      FROM blog_posts p
      LEFT JOIN users u ON u.id = p.author_id
@@ -1422,6 +1431,7 @@ app.get('/api/blog-posts', async (_req, res) => {
     title: row.title,
     excerpt: row.excerpt || stripHtml(row.content_html).slice(0, 220),
     coverImageUrl: row.cover_image_url || '',
+    coverImageAlt: row.cover_image_alt || '',
     contentHtml: row.content_html,
     publishedAt: row.published_at,
     createdAt: row.created_at,
@@ -1433,7 +1443,7 @@ app.get('/api/blog-posts', async (_req, res) => {
 
 app.get('/api/blog-posts/by-slug/:slug', async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT p.id, p.slug, p.title, p.excerpt, p.cover_image_url, p.content_html, p.published_at, p.created_at, p.updated_at,
+    `SELECT p.id, p.slug, p.title, p.excerpt, p.cover_image_url, p.cover_image_alt, p.content_html, p.published_at, p.created_at, p.updated_at,
             u.email AS author_email
      FROM blog_posts p
      LEFT JOIN users u ON u.id = p.author_id
@@ -1449,6 +1459,7 @@ app.get('/api/blog-posts/by-slug/:slug', async (req, res) => {
     title: row.title,
     excerpt: row.excerpt || stripHtml(row.content_html).slice(0, 220),
     coverImageUrl: row.cover_image_url || '',
+    coverImageAlt: row.cover_image_alt || '',
     contentHtml: row.content_html,
     publishedAt: row.published_at,
     createdAt: row.created_at,
@@ -1458,23 +1469,23 @@ app.get('/api/blog-posts/by-slug/:slug', async (req, res) => {
 });
 
 app.post('/api/admin/blog-posts', requireAuth, requireAdmin, async (req, res) => {
-  const { title, excerpt, coverImageUrl, contentHtml, slug } = req.body || {};
+  const { title, excerpt, coverImageUrl, coverImageAlt, contentHtml, slug } = req.body || {};
   if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title is required' });
   if (!contentHtml || !String(contentHtml).trim()) return res.status(400).json({ error: 'Post content is required' });
   const cleanContent = sanitizeBlogHtml(contentHtml);
   const cleanExcerpt = excerpt ? stripHtml(excerpt).slice(0, 400) : stripHtml(cleanContent).slice(0, 220);
   const slugToSave = await buildUniqueBlogSlug(slug || title);
   const { rows } = await pool.query(
-    `INSERT INTO blog_posts (title, excerpt, cover_image_url, content_html, slug, author_id, published_at, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, now(), now(), now())
-     RETURNING id, slug, title, excerpt, cover_image_url, content_html, published_at, created_at, updated_at`,
-    [String(title).trim(), cleanExcerpt, coverImageUrl ? String(coverImageUrl).trim() : null, cleanContent, slugToSave, req.user.id],
+    `INSERT INTO blog_posts (title, excerpt, cover_image_url, cover_image_alt, content_html, slug, author_id, published_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now(), now())
+     RETURNING id, slug, title, excerpt, cover_image_url, cover_image_alt, content_html, published_at, created_at, updated_at`,
+    [String(title).trim(), cleanExcerpt, coverImageUrl ? String(coverImageUrl).trim() : null, coverImageAlt ? stripHtml(coverImageAlt).slice(0, 250) : null, cleanContent, slugToSave, req.user.id],
   );
   res.status(201).json(rows[0]);
 });
 
 app.put('/api/admin/blog-posts/:id', requireAuth, requireAdmin, async (req, res) => {
-  const { title, excerpt, coverImageUrl, contentHtml, slug } = req.body || {};
+  const { title, excerpt, coverImageUrl, coverImageAlt, contentHtml, slug } = req.body || {};
   if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title is required' });
   if (!contentHtml || !String(contentHtml).trim()) return res.status(400).json({ error: 'Post content is required' });
   const cleanContent = sanitizeBlogHtml(contentHtml);
@@ -1489,13 +1500,14 @@ app.put('/api/admin/blog-posts/:id', requireAuth, requireAdmin, async (req, res)
      SET title = $1,
          excerpt = $2,
          cover_image_url = $3,
-         content_html = $4,
-         slug = $5,
-         author_id = $6,
+         cover_image_alt = $4,
+         content_html = $5,
+         slug = $6,
+         author_id = $7,
          updated_at = now()
-     WHERE id = $7
-     RETURNING id, slug, title, excerpt, cover_image_url, content_html, published_at, created_at, updated_at`,
-    [String(title).trim(), cleanExcerpt, coverImageUrl ? String(coverImageUrl).trim() : null, cleanContent, slugToSave, req.user.id, req.params.id],
+     WHERE id = $8
+     RETURNING id, slug, title, excerpt, cover_image_url, cover_image_alt, content_html, published_at, created_at, updated_at`,
+    [String(title).trim(), cleanExcerpt, coverImageUrl ? String(coverImageUrl).trim() : null, coverImageAlt ? stripHtml(coverImageAlt).slice(0, 250) : null, cleanContent, slugToSave, req.user.id, req.params.id],
   );
   res.json(rows[0]);
 });
@@ -3627,7 +3639,7 @@ const fetchPublicBlogPosts = async () => {
     return initialBlogPosts.map((post) => ({ ...post, slug: toSlugBase(post.title), publishedAt: null, updatedAt: null }));
   }
   const { rows } = await pool.query(
-    `SELECT slug, title, excerpt, cover_image_url, content_html, published_at, updated_at
+    `SELECT slug, title, excerpt, cover_image_url, cover_image_alt, content_html, published_at, updated_at
      FROM blog_posts
      ORDER BY published_at DESC, created_at DESC`,
   );
@@ -3636,6 +3648,7 @@ const fetchPublicBlogPosts = async () => {
     title: row.title,
     excerpt: row.excerpt || stripHtml(row.content_html).slice(0, 220),
     coverImageUrl: row.cover_image_url || '',
+    coverImageAlt: row.cover_image_alt || '',
     contentHtml: row.content_html,
     publishedAt: row.published_at,
     updatedAt: row.updated_at,

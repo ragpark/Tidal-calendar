@@ -4,7 +4,7 @@ import { parseRoute, stationSlug, stationPath, stationIdFromSlug, normalizePathn
 import { normalizeStationList } from '../src/seo/stations.js';
 import { createSeoRenderer, groupEventsByDay } from '../src/seo/render.js';
 
-const TEMPLATE = '<html><head><!--SEO_HEAD--></head><body><div id="root"><!--SEO_BODY--></div></body></html>';
+const TEMPLATE = '<html><head><!--SEO_HEAD--></head><body><div id="root"><!--SEO_BODY--></div>\n    <script type="module" src="/assets/bundle.js"></script></body></html>';
 
 const stations = [
   { id: '0240', name: 'Southampton', country: 'England', lat: 50.899, lon: -1.391 },
@@ -33,7 +33,8 @@ const makeRenderer = (overrides = {}) => createSeoRenderer({
 });
 
 test('route parsing maps public URLs to app pages', () => {
-  assert.deepEqual(parseRoute('/'), { page: 'calendar', blogSlug: null, stationId: null, stationSlug: null });
+  assert.deepEqual(parseRoute('/'), { page: 'calendar', blogSlug: null, stationId: null, stationSlug: null, vsSlug: null });
+  assert.equal(parseRoute('/vs/easytide').vsSlug, 'easytide');
   assert.equal(parseRoute('/tides').page, 'tides');
   assert.equal(parseRoute('/tides/').page, 'tides');
   const station = parseRoute('/tides/Southampton-0240');
@@ -130,7 +131,8 @@ test('sitemap lists core pages, blog posts and every station', async () => {
   assert.match(xml, /<loc>https:\/\/boatscrubcalendar\.com\/tides<\/loc>/);
   assert.match(xml, /<loc>https:\/\/boatscrubcalendar\.com\/blog\/spring-maintenance<\/loc><lastmod>2026-03-02<\/lastmod>/);
   assert.match(xml, /<loc>https:\/\/boatscrubcalendar\.com\/tides\/calshot-castle-0240a<\/loc>/);
-  assert.equal((xml.match(/<url>/g) || []).length, 7 + posts.length + stations.length);
+  assert.match(xml, /<loc>https:\/\/boatscrubcalendar\.com\/vs\/easytide<\/loc>/);
+  assert.equal((xml.match(/<url>/g) || []).length, 9 + posts.length + stations.length);
 });
 
 test('llms.txt describes the site and links station pages', async () => {
@@ -146,6 +148,56 @@ test('falls back to the bundled seed stations when the catalogue is unavailable'
   assert.ok(list.length >= 10);
   const { status } = await renderer.render('/tides/southampton-0240');
   assert.equal(status, 200);
+});
+
+test('plans page prints the price, billing period, subscribe path and guarantees', async () => {
+  const { html } = await makeRenderer().render('/about');
+  assert.match(html, /Subscribers - £5 a year/);
+  assert.match(html, /covers 365 days from the day you subscribe/);
+  assert.match(html, /href="\/account#subscribe">Subscribe - £5 a year<\/a>/);
+  assert.match(html, /Cancel any time\. The free 7-day official tide view stays free for everyone/);
+  assert.match(html, /fraction of a club pressure scrub/);
+  assert.match(html, /Payments by Stripe/);
+  assert.match(html, /id="who-runs-this"/);
+  assert.match(html, /hello@boatscrub\.com/);
+  assert.match(html, /"@type":"Product"/);
+  assert.match(html, /"billingDuration":"P1Y"/);
+});
+
+test('home page carries the product screenshot with descriptive alt text and responsive sources', async () => {
+  const { html } = await makeRenderer().render('/');
+  assert.match(html, /<img src="\/images\/scrubbing-calendar-southampton-800\.png" srcset="[^"]+2496w" sizes="[^"]+" width="1248" height="1189" alt="The monthly tide calendar for Southampton with the 06:30-09:00 scrubbing mornings highlighted/);
+  assert.match(html, /<source type="image\/webp"/);
+  assert.match(html, /What does it cost\?/);
+  assert.match(html, /href="\/vs\/easytide"/);
+});
+
+test('comparison pages are static, indexable and carry FAQ schema', async () => {
+  const renderer = makeRenderer();
+  const { html, status } = await renderer.render('/vs/neaps');
+  assert.equal(status, 200);
+  assert.match(html, /<title>BoatScrubCalendar vs Neaps/);
+  assert.match(html, /<link rel="canonical" href="https:\/\/boatscrubcalendar\.com\/vs\/neaps" \/>/);
+  assert.match(html, /<table class="pr-table pr-compare">/);
+  assert.match(html, /"@type":"FAQPage"/);
+  assert.doesNotMatch(html, /assets\/bundle\.js/);
+  assert.equal((await renderer.render('/vs/unknown')).status, 404);
+  assert.match((await renderer.render('/')).html, /assets\/bundle\.js/);
+});
+
+test('blog cover images get descriptive alt text', async () => {
+  const withAlt = makeRenderer({ fetchBlogPosts: async () => [{ ...posts[0], coverImageUrl: 'https://img.example/x.jpg', coverImageAlt: 'A yacht on a drying grid' }] });
+  assert.match((await withAlt.render('/blog/spring-maintenance')).html, /alt="A yacht on a drying grid"/);
+  const noAlt = makeRenderer({ fetchBlogPosts: async () => [{ ...posts[0], coverImageUrl: 'https://img.example/x.jpg' }] });
+  assert.match((await noAlt.render('/blog/spring-maintenance')).html, /alt="Cover photo for the article “Spring &lt;Maintenance&gt;”"/);
+});
+
+test('rendered pages are cached briefly and refreshed after expiry', async () => {
+  let calls = 0;
+  const renderer = makeRenderer({ fetchBlogPosts: async () => { calls += 1; return posts; } });
+  await renderer.render('/blog');
+  await renderer.render('/blog');
+  assert.equal(calls, 1);
 });
 
 test('station page degrades gracefully when tidal events are unavailable', async () => {

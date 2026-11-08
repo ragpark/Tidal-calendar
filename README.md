@@ -173,7 +173,10 @@ stripped, `/index.html` → `/`, and mis-cased or mis-spelt station and blog
 slugs redirect to the correct slug. Unknown paths return a `noindex` 404 page.
 
 The routing table is shared between server and client in `src/seo/routes.js`;
-the server renderer lives in `src/seo/render.js`. Run the tests with:
+the server renderer lives in `src/seo/render.js`. Pricing copy, the product
+screenshot, testimonials, the operator block and the `/vs/` comparison pages
+are all driven from `src/seo/content.js`, so a copy change is made once for
+both the pre-rendered pages and the React app. Run the tests with:
 
 ```bash
 npm test

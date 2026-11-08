@@ -9,6 +9,7 @@
 
 import { SEED_STATIONS, normalizeStationList } from './stations.js';
 import { SITE_NAME, SITE_ORIGIN, normalizePathname, parseRoute, pathForPage, stationPath } from './routes.js';
+import { CLUB_PITCH, CLUB_PROOF, COMPARISONS, CONTACT_EMAIL, OPERATOR, PRICING, PRODUCT_SHOT, TESTIMONIALS } from './content.js';
 
 const DEFAULT_DESCRIPTION = 'Find the best tide windows to scrub your boat. UK tide times for every Admiralty station, a monthly tide calendar and a boat scrubbing day planner built for UK boat owners.';
 const SOCIAL_IMAGE = `${SITE_ORIGIN}/social-card.svg`;
@@ -173,7 +174,8 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
   <main class="pr-main">${inner}</main>
   <footer class="pr-footer">
     <p>Tide data from the <a href="https://admiraltyapi.portal.azure-api.net" rel="noopener noreferrer">UK Hydrographic Office</a>. Extended predictions use harmonic algorithms (M2/S2 constituents).</p>
-    <p><a href="/tides">All UK tide stations</a> · <a href="/blog">Blog</a> · <a href="/about">Plans and pricing</a> · <a href="/datasets/">Open datasets</a> · <a href="/llms.txt">llms.txt</a></p>
+    <p><a href="/tides">All UK tide stations</a> · <a href="/blog">Blog</a> · <a href="/about">Plans and pricing</a> · <a href="/about#who-runs-this">Who runs this</a> · <a href="/datasets/">Open datasets</a> · <a href="/llms.txt">llms.txt</a></p>
+    <p>Compare: <a href="/vs/easytide">BoatScrubCalendar vs EasyTide</a> · <a href="/vs/neaps">BoatScrubCalendar vs Neaps</a></p>
     <p>© Crown Copyright. Times shown in UK local time. Heights in metres above Chart Datum. Predictions beyond 7 days are estimates and are not a substitute for official navigational publications.</p>
   </footer>
 </div>`;
@@ -192,6 +194,60 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
   };
 
   // -------------------------------------------------------------------------
+  // Shared content blocks
+  // -------------------------------------------------------------------------
+
+  const productFigure = ({ caption = 'The monthly calendar for Southampton. Green markers are the mornings with a high water in the 06:30-09:00 scrubbing window.', eager = false } = {}) => `
+<figure class="pr-shot">
+  <picture>
+    <source type="image/webp" srcset="${PRODUCT_SHOT.webpSrcset}" sizes="${PRODUCT_SHOT.sizes}">
+    <img src="${PRODUCT_SHOT.src}" srcset="${PRODUCT_SHOT.srcset}" sizes="${PRODUCT_SHOT.sizes}" width="${PRODUCT_SHOT.width}" height="${PRODUCT_SHOT.height}" alt="${escapeHtml(PRODUCT_SHOT.alt)}" loading="${eager ? 'eager' : 'lazy'}" decoding="async">
+  </picture>
+  <figcaption>${escapeHtml(caption)}</figcaption>
+</figure>`;
+
+  const testimonialsSection = () => {
+    if (!TESTIMONIALS.length) return '';
+    return `<section class="pr-quotes"><h2>What owners say</h2><ul>${TESTIMONIALS.map((t) => `<li><blockquote><p>“${escapeHtml(t.quote)}”</p><footer>${t.photoUrl ? `<img src="${escapeHtml(t.photoUrl)}" alt="${escapeHtml(t.name)}" width="40" height="40" loading="lazy">` : ''}<strong>${escapeHtml(t.name)}</strong>${t.boatOrClub ? `, ${escapeHtml(t.boatOrClub)}` : ''}</footer></blockquote></li>`).join('')}</ul></section>`;
+  };
+
+  const whoRunsThis = () => `
+<section class="pr-who" id="who-runs-this">
+  <h2>Who runs this</h2>
+  ${OPERATOR.photoUrl ? `<img src="${escapeHtml(OPERATOR.photoUrl)}" alt="${escapeHtml(OPERATOR.name || 'The person who runs BoatScrubCalendar')}" width="96" height="96" loading="lazy">` : ''}
+  ${OPERATOR.name ? `<p><strong>${escapeHtml(OPERATOR.name)}</strong></p>` : ''}
+  ${OPERATOR.story ? `<p>${escapeHtml(OPERATOR.story)}</p>` : ''}
+  <p>BoatScrubCalendar is an independent UK site, not part of the UK Hydrographic Office. Tide data is licensed from the Admiralty Tidal API and shown with Crown Copyright. Payments are handled by ${escapeHtml(PRICING.paymentProcessor)}; we never see your card details.</p>
+  <p>Questions, data corrections or a club enquiry: <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a>. Emails are read by the person who builds and runs the site.</p>
+</section>`;
+
+  const clubProofLine = () => {
+    const named = (CLUB_PROOF.clubs || []).filter((c) => c && c.name);
+    if (named.length) {
+      return `<p><strong>Clubs publishing their scrub windows here:</strong> ${named.map((c) => (c.url ? `<a href="${escapeHtml(c.url)}">${escapeHtml(c.name)}</a>` : escapeHtml(c.name))).join(', ')}.</p>`;
+    }
+    if (CLUB_PROOF.count > 0) {
+      return `<p><strong>${CLUB_PROOF.count === 1 ? 'One club now publishes its' : `${CLUB_PROOF.count} clubs now publish their`} scrub windows here.</strong></p>`;
+    }
+    return '';
+  };
+
+  const subscriberOfferBlock = () => `
+<section class="pr-price" id="subscribe">
+  <h3>Subscribers - ${escapeHtml(PRICING.priceLabel)}</h3>
+  <p class="pr-period">${escapeHtml(PRICING.periodLine)}</p>
+  <ul>
+    <li>Official Admiralty tide predictions for the whole year at your home port, not just the next 7 days.</li>
+    <li>The scrubbing day finder across all 365 days, so you can book the grid months ahead.</li>
+    <li>A downloadable PDF tide booklet for your home port.</li>
+    <li>Priority support for club administrators.</li>
+  </ul>
+  <p><a class="pr-cta" href="/account#subscribe">Subscribe - ${escapeHtml(PRICING.priceLabel)}</a></p>
+  <p class="pr-note">${escapeHtml(PRICING.guaranteeLine)} Payments by ${escapeHtml(PRICING.paymentProcessor)}; no card needed for the free tiers.</p>
+  <p class="pr-anchor">${escapeHtml(PRICING.anchorLine)}</p>
+</section>`;
+
+  // -------------------------------------------------------------------------
   // Page builders. Each returns { title, description, canonicalPath, ogType, jsonLd: [], body, status, noindex }
   // -------------------------------------------------------------------------
 
@@ -206,6 +262,7 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
         <h2>Boat scrubbing tide calendar for the UK</h2>
         <p>Find the best tide windows to scrub your boat in minutes. BoatScrubCalendar combines UK Admiralty tide predictions with a simple monthly planner that highlights mornings when high water falls between 06:30 and 09:00, the classic window for drying out on a scrubbing grid or posts.</p>
         <p><a class="pr-cta" href="/tides">Choose your tide station</a></p>
+        ${productFigure({ eager: true })}
       </section>
       <section>
         <h2>How the scrubbing day planner works</h2>
@@ -213,8 +270,9 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
           <li><strong>Monthly tide calendar.</strong> High and low water times and heights for every day of the month at your home port.</li>
           <li><strong>Scrubbing day finder.</strong> Days with a morning high water inside your preferred window are flagged, so you can float on, dry out and scrub before the afternoon flood.</li>
           <li><strong>Official data plus harmonic predictions.</strong> The next 7 days use official UK Hydrographic Office tidal events; later dates use M2/S2 harmonic estimates, with year-long Admiralty data for subscribers.</li>
-          <li><strong>Club booking and reminders.</strong> Sailing clubs can publish scrub windows and manage bookings; members get maintenance reminders by email.</li>
+          <li><strong>Club booking and reminders.</strong> Sailing clubs publish their scrub windows against the real tide and members book them online, instead of asking by email and waiting on the clubhouse diary. Members also get maintenance reminders by email.</li>
         </ul>
+        <p>Free for the next 7 days of official tides and the planner. ${escapeHtml(PRICING.priceLabel)} for the full year of official data. <a href="/about">See plans and pricing</a>.</p>
       </section>
       <section>
         <h2>Popular tide stations</h2>
@@ -222,6 +280,7 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
         <p><a href="/tides">Browse all ${stations.length} UK tide stations →</a></p>
       </section>
       ${posts.length ? `<section><h2>From the blog</h2><ul>${posts.map((p) => `<li><a href="/blog/${escapeHtml(p.slug)}">${escapeHtml(p.title)}</a> – ${escapeHtml(truncate(p.excerpt, 140))}</li>`).join('')}</ul></section>` : ''}
+      ${testimonialsSection()}
       <section>
         <h2>Frequently asked questions</h2>
         <h3>What is the best tide for scrubbing a boat?</h3>
@@ -230,6 +289,10 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
         <p>The first 7 days come directly from the UK Hydrographic Office Admiralty Tidal API. Beyond that the calendar shows harmonic estimates, clearly marked as approximate. Subscribers get official Admiralty predictions for the whole year.</p>
         <h3>Which ports are covered?</h3>
         <p>Every standard and secondary port in the Admiralty UK station list, from Aberdeen to Plymouth. See the <a href="/tides">full station index</a>.</p>
+        <h3>What does it cost?</h3>
+        <p>The 7-day official tide view, the monthly harmonic calendar and the scrubbing day finder are free, with no card and no sign-in. A subscription is ${escapeHtml(PRICING.priceLabel)}, billed once, for official Admiralty predictions across the whole year and a PDF tide booklet. Cancel any time. <a href="/about">Plans and pricing</a>.</p>
+        <h3>How is this different from EasyTide or Neaps?</h3>
+        <p>EasyTide is a 7-day tide lookup; Neaps is a per-port day planner billed monthly. BoatScrubCalendar is a scrubbing planner with a monthly calendar, flagged scrubbing mornings and club booking, on one yearly subscription. Read <a href="/vs/easytide">BoatScrubCalendar vs EasyTide</a> and <a href="/vs/neaps">BoatScrubCalendar vs Neaps</a>.</p>
       </section>`, { active: '/' });
 
     return {
@@ -257,7 +320,7 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
           description: DEFAULT_DESCRIPTION,
           offers: [
             { '@type': 'Offer', price: '0', priceCurrency: 'GBP', description: 'Free: 7-day official tide times, monthly harmonic calendar and scrubbing day finder' },
-            { '@type': 'Offer', price: '5', priceCurrency: 'GBP', description: 'Subscriber: year-long Admiralty tide predictions, PDF tide booklet and maintenance reminders' },
+            { '@type': 'Offer', price: '5', priceCurrency: 'GBP', description: 'Subscriber: year-long Admiralty tide predictions, PDF tide booklet and maintenance reminders. £5 a year, billed once.', priceSpecification: { '@type': 'UnitPriceSpecification', price: '5', priceCurrency: 'GBP', billingDuration: 'P1Y' } },
           ],
           publisher: organization,
         }),
@@ -268,6 +331,8 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
             { '@type': 'Question', name: 'What is the best tide for scrubbing a boat?', acceptedAnswer: { '@type': 'Answer', text: 'A high water between about 06:30 and 09:00 lets you put the boat on the grid at the top of the tide, dry out through the morning ebb and finish scrubbing before the afternoon flood. Spring tides give a longer working window.' } },
             { '@type': 'Question', name: 'Is the tide data official?', acceptedAnswer: { '@type': 'Answer', text: 'The next 7 days use official UK Hydrographic Office Admiralty tidal predictions. Later dates use harmonic estimates marked as approximate; subscribers receive official predictions for the whole year.' } },
             { '@type': 'Question', name: 'Which UK ports are covered?', acceptedAnswer: { '@type': 'Answer', text: 'Every standard and secondary port in the Admiralty UK tide station list. Each station has its own page under /tides/.' } },
+            { '@type': 'Question', name: 'What does it cost?', acceptedAnswer: { '@type': 'Answer', text: `The 7-day official tide view, monthly harmonic calendar and scrubbing day finder are free with no card or sign-in. A subscription is ${PRICING.priceLabel}, billed once, for official Admiralty predictions across the whole year and a PDF tide booklet. Cancel any time.` } },
+            { '@type': 'Question', name: 'How is this different from EasyTide or Neaps?', acceptedAnswer: { '@type': 'Answer', text: 'EasyTide is a 7-day tide lookup and Neaps is a per-port day planner billed monthly. BoatScrubCalendar is a scrubbing planner: a monthly calendar with the 06:30-09:00 scrubbing mornings flagged, club scrub-window booking and reminders, on one £5-a-year subscription.' } },
           ],
         }),
       ],
@@ -415,7 +480,7 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
       <article class="pr-article">
         <h2>${escapeHtml(post.title)}</h2>
         ${published ? `<p><time datetime="${published.toISOString()}">${escapeHtml(londonDate.format(published))} ${published.getFullYear()}</time></p>` : ''}
-        ${post.coverImageUrl ? `<img src="${escapeHtml(post.coverImageUrl)}" alt="" loading="lazy" />` : ''}
+        ${post.coverImageUrl ? `<img src="${escapeHtml(post.coverImageUrl)}" alt="${escapeHtml(post.coverImageAlt || `Cover photo for the article “${post.title}”`)}" loading="lazy" />` : ''}
         ${post.contentHtml || ''}
       </article>`, { active: '/blog' });
     return {
@@ -449,17 +514,73 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
     const body = chrome(`
       <h2>Plans and pricing</h2>
       <p>BoatScrubCalendar keeps UK boat owners informed with a monthly tide view, scrubbing guidance and maintenance reminders for a chosen home port. It blends official UK Hydrographic Office data with harmonic predictions so you can plan confidently.</p>
-      <section><h3>Guest users (free)</h3><ul><li>Browse every UK tide station and set a home port without signing in.</li><li>Official UKHO tidal events for the next 7 days.</li><li>Free use of the scrubbing day finder and monthly harmonic calendar.</li></ul></section>
-      <section><h3>Signed-in users (free)</h3><ul><li>Maintenance log with email reminders before important dates.</li><li>Home-port preferences synced across devices.</li><li>Request to join a sailing club and book club scrub windows.</li></ul></section>
-      <section><h3>Subscribers</h3><ul><li>Official Admiralty tide predictions for the whole year, not just 7 days.</li><li>Downloadable PDF tide booklet for your home port.</li><li>Priority support for club administrators.</li></ul></section>
-      <section><h3>Sailing clubs</h3><p>Club administrators can register a club, define scrubbing posts or grids, publish scrub windows aligned with the tides and manage member bookings and invites. <a href="mailto:hello@boatscrub.com?subject=Club%20enquiry">Get in touch</a> to set up your club.</p></section>
+      <p><strong>In short:</strong> the planner is free. ${escapeHtml(PRICING.priceLabel)} buys the full year of official data and the PDF booklet. Clubs are set up by email.</p>
+      ${productFigure({ caption: 'What subscribers see: a whole year of official Admiralty tides with the scrubbing mornings flagged, here for Southampton.' })}
+      <section><h3>Guest users (free)</h3><ul><li>Browse every UK tide station and set a home port without signing in.</li><li>Official UKHO tidal events for the next 7 days.</li><li>Free use of the scrubbing day finder and monthly harmonic calendar.</li></ul><p><a href="/tides">Try it now</a>, no card and no sign-in.</p></section>
+      <section><h3>Signed-in users (free)</h3><ul><li>Maintenance log with email reminders before important dates.</li><li>Home-port preferences synced across devices.</li><li>Request to join a sailing club and book club scrub windows.</li></ul><p><a href="/account">Create a free account</a>, no card needed.</p></section>
+      ${subscriberOfferBlock()}
+      <section id="clubs"><h3>Sailing clubs</h3><p>${escapeHtml(CLUB_PITCH)}</p><p>Club administrators register the club, define the scrubbing posts or grid, publish scrub windows aligned with the tides and manage member bookings and invites.</p>${clubProofLine()}<p><a href="mailto:${CONTACT_EMAIL}?subject=Club%20enquiry">Email ${CONTACT_EMAIL}</a> to set up your club; there is no fixed club price yet, so tell us how many posts and members you have.</p></section>
+      ${testimonialsSection()}
+      ${whoRunsThis()}
       <p><a class="pr-cta" href="/account">Create a free account</a></p>`, { active: '/about' });
     return {
-      title: `Plans & Pricing: Free Tide Calendar and Subscriber Features | ${SITE_NAME}`,
-      description: 'Compare free and subscriber plans: 7-day official tide times for everyone, year-long Admiralty predictions, PDF tide booklets and club scrub-window booking for subscribers.',
+      title: `Plans & Pricing: Free Tide Calendar, ${PRICING.priceLabel} for the Full Year | ${SITE_NAME}`,
+      description: `Free 7-day official tide times and scrubbing day finder for everyone; ${PRICING.priceLabel} for year-long Admiralty predictions and a PDF tide booklet. Cancel any time. Club scrub-window booking available.`,
       canonicalPath: '/about',
       body,
-      jsonLd: [breadcrumbs([['Home', '/'], ['Plans', '/about']])],
+      jsonLd: [
+        breadcrumbs([['Home', '/'], ['Plans', '/about']]),
+        jsonLd({
+          '@context': 'https://schema.org',
+          '@type': 'Product',
+          name: `${SITE_NAME} subscription`,
+          description: 'A full year of official Admiralty tide predictions for your home port, the scrubbing day finder across 365 days and a downloadable PDF tide booklet.',
+          brand: { '@type': 'Brand', name: SITE_NAME },
+          offers: {
+            '@type': 'Offer',
+            url: `${SITE_ORIGIN}/about#subscribe`,
+            price: String(PRICING.subscriberPriceGbp),
+            priceCurrency: 'GBP',
+            availability: 'https://schema.org/InStock',
+            priceSpecification: { '@type': 'UnitPriceSpecification', price: String(PRICING.subscriberPriceGbp), priceCurrency: 'GBP', billingDuration: 'P1Y' },
+          },
+        }),
+      ],
+    };
+  };
+
+  const comparisonPage = (cmp) => {
+    const path = `/vs/${cmp.slug}`;
+    const body = chrome(`
+      <nav class="pr-crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/about">Plans</a> › <span>${escapeHtml(cmp.title)}</span></nav>
+      <h2>${escapeHtml(cmp.title)}</h2>
+      <p>${escapeHtml(cmp.summary)}</p>
+      <div class="pr-scroll"><table class="pr-table pr-compare">
+        <caption>Side by side: ${escapeHtml(cmp.competitorFull)} and ${SITE_NAME}</caption>
+        <thead><tr><th scope="col"></th><th scope="col">${escapeHtml(cmp.competitor)}</th><th scope="col">${SITE_NAME}</th></tr></thead>
+        <tbody>${cmp.rows.map(([k, a, b]) => `<tr><th scope="row">${escapeHtml(k)}</th><td>${escapeHtml(a)}</td><td>${escapeHtml(b)}</td></tr>`).join('')}</tbody>
+      </table></div>
+      ${productFigure()}
+      <section>
+        <h2>Questions owners ask</h2>
+        ${cmp.faqs.map(([q, a]) => `<h3>${escapeHtml(q)}</h3><p>${escapeHtml(a)}</p>`).join('')}
+      </section>
+      <p><a class="pr-cta" href="/tides">Try the planner free: choose your tide station</a></p>
+      <p class="pr-note">Competitor details are taken from ${escapeHtml(cmp.competitor)}'s public pages and may change; tell us at <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a> if something is out of date. ${escapeHtml(cmp.competitor)} is not affiliated with ${SITE_NAME}.</p>`, { active: '/about' });
+    return {
+      title: `${cmp.title}: Which Tide Tool for Scrubbing Off? | ${SITE_NAME}`,
+      description: truncate(cmp.summary, 158),
+      canonicalPath: path,
+      static: true,
+      body,
+      jsonLd: [
+        breadcrumbs([['Home', '/'], ['Plans', '/about'], [cmp.title, path]]),
+        jsonLd({
+          '@context': 'https://schema.org',
+          '@type': 'FAQPage',
+          mainEntity: cmp.faqs.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+        }),
+      ],
     };
   };
 
@@ -495,7 +616,7 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
 .pr-brand a{color:#0f172a;text-decoration:none}
 .pr-tagline{color:#475569;font-size:14px;margin:0 0 20px}
 .pr-nav{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
-.pr-nav a{padding:10px 16px;border-radius:10px;border:1px solid rgba(14,165,233,.25);background:#fff;color:#0f172a;text-decoration:none;font-size:14px;letter-spacing:1px}
+.pr-nav a{display:inline-flex;align-items:center;min-height:44px;padding:10px 16px;border-radius:10px;border:1px solid rgba(14,165,233,.25);background:#fff;color:#0f172a;text-decoration:none;font-size:14px;letter-spacing:1px}
 .pr-nav a[aria-current]{background:#e0f2fe}
 .pr-main h2{font-family:'Cormorant Garamond',Georgia,serif;font-weight:600;font-size:30px;margin:28px 0 10px}
 .pr-main h3{font-size:18px;margin:20px 0 6px}
@@ -516,6 +637,24 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
 .pr-posts time{font-size:12px;color:#64748b}
 .pr-article img{max-width:100%;border-radius:12px}
 .pr-footer{border-top:1px solid rgba(56,189,248,.2);margin-top:40px;padding-top:24px;text-align:center;font-size:12px;color:#475569}
+.pr-shot{margin:24px 0 0}
+.pr-shot img{display:block;width:100%;max-width:720px;height:auto;margin:0 auto;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 10px 30px rgba(15,23,42,.10)}
+.pr-shot figcaption{font-size:12px;color:#64748b;text-align:center;margin-top:8px}
+.pr-price{background:#fff;border:2px solid #0ea5e9;border-radius:16px;padding:20px 24px;margin:24px 0}
+.pr-price h3{margin-top:0;font-size:22px}
+.pr-period{font-weight:500;color:#0f172a}
+.pr-note{font-size:13px;color:#475569}
+.pr-anchor{font-style:italic;color:#334155}
+.pr-who{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;margin:24px 0}
+.pr-who img{border-radius:50%;float:left;margin:0 14px 8px 0}
+.pr-quotes ul{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.pr-quotes blockquote{margin:0;background:#fff;border:1px solid #cbd5e1;border-radius:12px;padding:14px 16px}
+.pr-quotes footer{font-size:13px;color:#475569;margin-top:8px;display:flex;align-items:center;gap:8px}
+.pr-quotes footer img{border-radius:50%}
+.pr-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.pr-compare{min-width:560px}
+.pr-compare th[scope=col]{background:#f1f5f9}
+@media (max-width:600px){.prerender{padding:20px 16px 48px}.pr-nav a{padding:10px 12px;font-size:13px}.pr-main h2{font-size:24px}.pr-price{padding:16px}.pr-cta{display:block;text-align:center}}
 </style>`;
 
   const buildHead = (page) => {
@@ -567,12 +706,22 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
         return page;
       }
       case 'about': return aboutPage();
+      case 'vs': {
+        const cmp = COMPARISONS[route.vsSlug];
+        return cmp ? comparisonPage(cmp) : notFoundPage(pathname);
+      }
       default: return privatePage(route.page);
     }
   };
 
+  const BUNDLE_TAG = /\s*<script type="module" src="\/assets\/bundle\.js"><\/script>/;
+  const RENDER_TTL = 60 * 1000;
+
   /** Render a full HTML document for a pathname. Returns { html, status, redirectTo }. */
   const render = async (pathname) => {
+    const cacheKey = `html:${normalizePathname(pathname)}`;
+    const cached = cache.get(cacheKey);
+    if (cached) return cached;
     let page;
     try {
       page = await resolvePage(pathname);
@@ -581,10 +730,14 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
       page = { title: 'Boat Scrubbing Tide Calendar UK | BoatScrubCalendar', description: DEFAULT_DESCRIPTION, canonicalPath: '/', body: '', jsonLd: [] };
     }
     if (page.redirectTo) return { status: 301, redirectTo: page.redirectTo, html: '' };
-    const html = template
+    let html = template
       .replace('<!--SEO_HEAD-->', buildHead(page))
       .replace('<!--SEO_BODY-->', page.body || '');
-    return { html, status: page.status || 200 };
+    // Content-only pages (comparisons) are complete as served; do not mount the app over them.
+    if (page.static) html = html.replace(BUNDLE_TAG, '');
+    const result = { html, status: page.status || 200 };
+    if (result.status === 200) cache.set(cacheKey, result, RENDER_TTL);
+    return result;
   };
 
   const sitemap = async () => {
@@ -597,6 +750,7 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
       url('/tides', { changefreq: 'weekly', priority: '0.9' }),
       url('/blog', { changefreq: 'weekly', priority: '0.8' }),
       url('/about', { changefreq: 'monthly', priority: '0.6' }),
+      ...Object.values(COMPARISONS).map((cmp) => url(`/vs/${cmp.slug}`, { changefreq: 'monthly', priority: '0.6' })),
       url('/datasets/', { changefreq: 'weekly', priority: '0.6' }),
       url('/datasets/boat-scrub-windows-v1/', { changefreq: 'weekly', priority: '0.6' }),
       url('/llms.txt', { changefreq: 'weekly', priority: '0.5' }),
@@ -620,13 +774,15 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
       '- Data source: UK Hydrographic Office Admiralty Tidal API (official, next 7 days) plus M2/S2 harmonic estimates beyond that',
       '- Units: metres above Chart Datum for heights; UK local time (Europe/London) for tide times',
       '- Scrubbing rule of thumb used by the planner: a morning high water between 06:30 and 09:00',
-      '- Pricing: free tier (7-day official tides, monthly calendar, scrubbing day finder); paid subscription (year-long Admiralty data, PDF tide booklet, reminders)',
+      `- Pricing: free tier (7-day official tides, monthly calendar, scrubbing day finder, no card or sign-in); subscription ${PRICING.priceLabel}, billed once, for year-long Admiralty data and a PDF tide booklet; cancel any time; payments by ${PRICING.paymentProcessor}`,
+      `- Operator contact: ${CONTACT_EMAIL} (independent UK site; not part of the UK Hydrographic Office)`,
       '',
       '## Pages',
       `- [Home and calendar](${SITE_ORIGIN}/): interactive monthly tide calendar and scrubbing day planner`,
       `- [Tide station index](${SITE_ORIGIN}/tides): all ${stations.length} UK tide stations, grouped by country`,
       `- [Blog](${SITE_ORIGIN}/blog): guides on scrubbing, antifouling and seasonal maintenance`,
       `- [Plans and pricing](${SITE_ORIGIN}/about)`,
+      ...Object.values(COMPARISONS).map((cmp) => `- [${cmp.title}](${SITE_ORIGIN}/vs/${cmp.slug}): ${truncate(cmp.summary, 140)}`),
       `- [Datasets](${SITE_ORIGIN}/datasets/): machine-readable scrub window data (JSON, CSV)`,
       `- [Sitemap](${SITE_ORIGIN}/sitemap.xml)`,
       '',

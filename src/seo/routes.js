@@ -7,6 +7,7 @@
 //   /blog                  Blog index
 //   /blog/:slug            Blog article
 //   /about                 Product overview, plans and pricing
+//   /vs/:competitor        Comparison pages (server-rendered, static)
 //   /account               Sign-in / profile (noindex)
 //   /club, /admin          Private dashboards (noindex)
 
@@ -61,7 +62,7 @@ export const pathForPage = (page) => PAGE_PATHS[page] || '/';
  */
 export const parseRoute = (pathname = '/') => {
   const path = normalizePathname(pathname).toLowerCase();
-  const base = { page: 'calendar', blogSlug: null, stationId: null, stationSlug: null };
+  const base = { page: 'calendar', blogSlug: null, stationId: null, stationSlug: null, vsSlug: null };
 
   if (path === '/' || path === '/calendar' || path === '/index.html') return base;
   if (path === '/tides' || path === '/stations') return { ...base, page: 'tides' };
@@ -75,11 +76,15 @@ export const parseRoute = (pathname = '/') => {
     const slug = path.slice('/blog/'.length).split('/')[0];
     return { ...base, page: 'blog', blogSlug: slug || null };
   }
-  if (path === '/about' || path === '/pricing' || path === '/subscribe') return { ...base, page: 'about' };
+  if (path === '/about' || path === '/pricing' || path === '/subscribe' || path === '/plans') return { ...base, page: 'about' };
+  if (path.startsWith('/vs/')) {
+    const slug = path.slice('/vs/'.length).split('/')[0];
+    return { ...base, page: 'vs', vsSlug: slug || null, notFound: !slug };
+  }
   if (path === '/account' || path === '/profile' || path === '/login' || path === '/reset-password') return { ...base, page: 'profile' };
   if (path === '/club') return { ...base, page: 'club' };
   if (path === '/admin') return { ...base, page: 'admin' };
   return { ...base, notFound: true };
 };
 
-export const isIndexablePage = (page) => ['calendar', 'tides', 'blog', 'about'].includes(page);
+export const isIndexablePage = (page) => ['calendar', 'tides', 'blog', 'about', 'vs'].includes(page);
