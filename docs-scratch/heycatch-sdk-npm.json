@@ -1,0 +1,220 @@
+{
+  "fetchedAt": "2026-11-08T17:54:03.536Z",
+  "npm view @heycatch/sdk version dist-tags --json": {
+    "version": "0.8.5",
+    "dist-tags": {
+      "latest": "0.8.5",
+      "dev": "0.8.5-dev.2562"
+    }
+  },
+  "npm view @heycatch/sdk --json": {
+    "_id": "@heycatch/sdk@0.8.5",
+    "_rev": "54-99bec79a3bbfa19fa51aad4bf62084f1",
+    "name": "@heycatch/sdk",
+    "dist-tags": {
+      "latest": "0.8.5",
+      "dev": "0.8.5-dev.2562"
+    },
+    "versions": [
+      "0.6.0",
+      "0.7.0-dev.13",
+      "0.7.0-dev.41",
+      "0.7.0-dev.43",
+      "0.7.0-dev.59",
+      "0.7.0-dev.351",
+      "0.7.0-dev.433",
+      "0.7.0-dev.714",
+      "0.7.0-dev.974",
+      "0.7.0-dev.1029",
+      "0.7.0",
+      "0.7.1-dev.1123",
+      "0.7.1-dev.1456",
+      "0.7.1-dev.1457",
+      "0.7.1-dev.1458",
+      "0.7.1-dev.1459",
+      "0.7.1",
+      "0.8.0-dev.1460",
+      "0.8.0-dev.1534",
+      "0.8.0",
+      "0.8.1-dev.1579",
+      "0.8.2-dev.1657",
+      "0.8.3-dev.1682",
+      "0.8.3-dev.2140",
+      "0.8.3-dev.2162",
+      "0.8.3-dev.2180",
+      "0.8.3-dev.2283",
+      "0.8.3",
+      "0.8.4-dev.2343",
+      "0.8.4-dev.2561",
+      "0.8.5-dev.2545",
+      "0.8.5-dev.2546",
+      "0.8.5-dev.2562",
+      "0.8.5"
+    ],
+    "time": {
+      "created": "2026-05-21T12:03:44.936Z",
+      "modified": "2026-11-05T08:44:36.120Z",
+      "0.0.1": "2026-05-21T12:03:45.334Z",
+      "0.0.2": "2026-05-21T13:02:26.301Z",
+      "0.1.0": "2026-07-10T17:38:47.172Z",
+      "0.1.1": "2026-07-10T17:55:51.700Z",
+      "0.1.2": "2026-07-10T18:22:29.986Z",
+      "0.1.3": "2026-07-10T18:36:41.690Z",
+      "0.2.0": "2026-07-13T19:06:29.940Z",
+      "0.3.0": "2026-07-26T17:21:51.890Z",
+      "0.4.0": "2026-07-27T08:44:54.947Z",
+      "0.5.0": "2026-07-29T09:50:30.794Z",
+      "0.6.0": "2026-07-30T10:32:35.995Z",
+      "0.7.0-dev.13": "2026-07-30T12:09:36.033Z",
+      "0.7.0-dev.41": "2026-07-31T17:32:29.645Z",
+      "0.7.0-dev.43": "2026-07-31T17:47:16.498Z",
+      "0.7.0": "2026-07-31T17:59:12.109Z",
+      "0.7.0-dev.59": "2026-08-03T10:38:05.770Z",
+      "0.7.0-dev.351": "2026-08-15T11:52:41.253Z",
+      "0.7.0-dev.433": "2026-08-18T09:19:55.017Z",
+      "0.7.0-dev.714": "2026-08-26T14:08:30.753Z",
+      "0.7.0-dev.974": "2026-09-06T22:54:45.308Z",
+      "0.7.0-dev.1029": "2026-09-08T10:31:19.093Z",
+      "0.7.1-dev.1123": "2026-09-14T08:23:15.701Z",
+      "0.7.1-dev.1456": "2026-09-27T21:39:13.495Z",
+      "0.7.1-dev.1457": "2026-09-27T22:02:13.929Z",
+      "0.7.1-dev.1458": "2026-09-27T22:27:09.294Z",
+      "0.7.1-dev.1459": "2026-09-27T22:41:49.466Z",
+      "0.8.0-dev.1460": "2026-09-27T23:25:16.178Z",
+      "0.7.1": "2026-09-28T11:41:37.436Z",
+      "0.8.0-dev.1534": "2026-09-29T13:20:31.883Z",
+      "0.8.0": "2026-09-29T17:08:00.063Z",
+      "0.8.1-dev.1579": "2026-10-01T00:20:02.329Z",
+      "0.8.2-dev.1657": "2026-10-05T00:09:26.953Z",
+      "0.8.3-dev.1682": "2026-10-05T15:28:35.279Z",
+      "0.8.3": "2026-10-07T09:50:40.650Z",
+      "0.8.3-dev.2140": "2026-10-22T08:27:09.975Z",
+      "0.8.3-dev.2162": "2026-10-22T10:53:23.789Z",
+      "0.8.3-dev.2180": "2026-10-22T13:54:00.744Z",
+      "0.8.3-dev.2283": "2026-10-27T00:44:01.307Z",
+      "0.8.4-dev.2343": "2026-10-28T10:22:25.999Z",
+      "0.8.5-dev.2545": "2026-11-04T12:03:39.819Z",
+      "0.8.5-dev.2546": "2026-11-04T12:09:38.106Z",
+      "0.8.4-dev.2561": "2026-11-04T15:53:41.181Z",
+      "0.8.5-dev.2562": "2026-11-04T16:24:37.514Z",
+      "0.8.5": "2026-11-05T08:44:35.962Z"
+    },
+    "bugs": {
+      "url": "https://github.com/White-Digital-Company/heycatch/issues"
+    },
+    "license": "MIT",
+    "homepage": "https://heycatch.ai",
+    "keywords": [
+      "analytics",
+      "sdk"
+    ],
+    "repository": {
+      "url": "git+https://github.com/White-Digital-Company/heycatch.git",
+      "type": "git",
+      "directory": "packages/sdk"
+    },
+    "description": "HeyCatch SDK",
+    "maintainers": [
+      "nick-heycatchai <nick@heycatch.ai>"
+    ],
+    "readmeFilename": "README.md",
+    "_contentLength": 101479,
+    "dist": {
+      "shasum": "c80d120732fd5c59d372af8823fbbe26fd82254b",
+      "tarball": "https://registry.npmjs.org/@heycatch/sdk/-/sdk-0.8.5.tgz",
+      "fileCount": 16,
+      "integrity": "sha512-hKmu9v6KlZ9QYb3iN/Zwnpl4mEyiw5raXSV06uprMgNEp6z8wbTXFrdAIT8tjasLgXh3AhNw2+mJRk60RtHY+g==",
+      "signatures": [
+        {
+          "sig": "MEQCIEJF1E9bVsEzN5xVMzINvWIO6j6jNIvLPIAO9NX95TUeAiBS9n0rGIuoSwNpysXPz8fez70LafH8jRjoOQhDJtVO0w==",
+          "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+        },
+        {
+          "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+          "sig": "MEUCIQDXq87hyxkFlGYz3JLe04EUWgixO9Wr2PiN5m7aJg5PAQIgRYD3ABxLsdoQV1Inu67fO9iMN3cnUMKciUBPeOT1+2w="
+        }
+      ],
+      "unpackedSize": 1026525
+    },
+    "main": "./dist/index.cjs",
+    "type": "module",
+    "types": "./dist/index.d.ts",
+    "module": "./dist/index.js",
+    "engines": {
+      "node": ">=22"
+    },
+    "exports": {
+      ".": {
+        "node": {
+          "types": "./dist/server.d.ts",
+          "import": "./dist/server.js",
+          "require": "./dist/server.cjs"
+        },
+        "browser": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js",
+          "require": "./dist/index.cjs"
+        },
+        "default": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js",
+          "require": "./dist/index.cjs"
+        },
+        "react-native": {
+          "types": "./dist/react-native.d.cts",
+          "default": "./dist/react-native.cjs"
+        }
+      },
+      "./server": {
+        "types": "./dist/server.d.ts",
+        "import": "./dist/server.js",
+        "require": "./dist/server.cjs"
+      },
+      "./react-native": {
+        "types": "./dist/react-native.d.cts",
+        "default": "./dist/react-native.cjs"
+      }
+    },
+    "gitHead": "2955bd1f05e3984e4e4430270e1df51a0c434cda",
+    "version": "0.8.5",
+    "_npmUser": {
+      "name": "GitHub Actions",
+      "email": "npm-oidc-no-reply@github.com",
+      "trustedPublisher": {
+        "id": "github",
+        "oidcConfigId": "91ac57cf-5023-4f36-8bb6-26d2d0d87f6c"
+      }
+    },
+    "_npmVersion": "11.21.2",
+    "directories": {},
+    "sideEffects": [
+      "./dist/index.js",
+      "./dist/index.cjs"
+    ],
+    "_nodeVersion": "24.22.1",
+    "dependencies": {
+      "posthog-react-native": "^4.61.1"
+    },
+    "publishConfig": {
+      "access": "public",
+      "registry": "https://registry.npmjs.org/"
+    },
+    "_hasShrinkwrap": false,
+    "peerDependencies": {
+      "react": "^18.2.0 || ^19.0.0",
+      "expo-router": "*"
+    },
+    "peerDependenciesMeta": {
+      "react": {
+        "optional": true
+      },
+      "expo-router": {
+        "optional": true
+      }
+    },
+    "_npmOperationalInternal": {
+      "host": "s3://npm-registry-packages-npm-production",
+      "tmp": "tmp/sdk_0.8.5_1793868275865_0.8671729857629563"
+    }
+  }
+}
