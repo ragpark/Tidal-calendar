@@ -90,7 +90,7 @@ const createTtlCache = () => {
  * @param {() => Promise<any[]>} deps.fetchBlogPosts  resolves to blog posts [{slug,title,excerpt,contentHtml,publishedAt,updatedAt,coverImageUrl}]
  * @param {string} deps.template  index.html template containing <!--SEO_HEAD--> and <!--SEO_BODY--> markers
  */
-export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPosts, template, logger = console }) => {
+export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPosts, fetchBlogPost = null, template, logger = console }) => {
   const cache = createTtlCache();
   const STATIONS_TTL = 24 * 60 * 60 * 1000;
   const EVENTS_TTL = 6 * 60 * 60 * 1000;
@@ -149,6 +149,24 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
     }
   };
 
+  /** One post with content: via fetchBlogPost when provided (HeyCatch articles carry content only per article). */
+  const getBlogPost = async (slug) => {
+    if (fetchBlogPost) {
+      const key = `blogpost:${slug}`;
+      const cached = cache.get(key);
+      if (cached !== undefined) return cached;
+      try {
+        const post = await fetchBlogPost(slug);
+        return cache.set(key, post || null, BLOG_TTL);
+      } catch (err) {
+        logger.warn(`SEO: blog post ${slug} unavailable:`, err.message);
+        return null;
+      }
+    }
+    const posts = await getBlogPosts();
+    return posts.find((p) => p.slug === slug) || null;
+  };
+
   // -------------------------------------------------------------------------
   // Shared chrome
   // -------------------------------------------------------------------------
@@ -161,14 +179,14 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
     ['/account', 'Account'],
   ];
 
-  const chrome = (inner, { active = '/' } = {}) => `
+  const chrome = (inner, { active = '/', brandAsHeading = true, showBlogLink = true } = {}) => `
 <div class="prerender">
   <header class="pr-header">
     <p class="pr-kicker">For UK boat owners</p>
-    <h1 class="pr-brand"><a href="/">Scrubbing off Calendar</a></h1>
+    ${brandAsHeading ? '<h1 class="pr-brand"><a href="/">Scrubbing off Calendar</a></h1>' : '<p class="pr-brand"><a href="/">Scrubbing off Calendar</a></p>'}
     <p class="pr-tagline">Monthly view • Harmonic predictions • Boat scrubbing day finder</p>
     <nav class="pr-nav" aria-label="Primary">
-      ${NAV_LINKS.map(([href, label]) => `<a href="${href}"${href === active ? ' aria-current="page"' : ''}>${label}</a>`).join('')}
+      ${NAV_LINKS.filter(([href]) => showBlogLink || href !== '/blog').map(([href, label]) => `<a href="${href}"${href === active ? ' aria-current="page"' : ''}>${label}</a>`).join('')}
     </nav>
   </header>
   <main class="pr-main">${inner}</main>
@@ -445,12 +463,28 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
     };
   };
 
+  const formatPostDate = (value) => {
+    if (!value) return '';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${londonDate.format(d)} ${d.getFullYear()}`;
+  };
+
+  const postMeta = (p) => {
+    const parts = [];
+    if (p.publishedAt) parts.push(`<time datetime="${escapeHtml(new Date(p.publishedAt).toISOString())}">${escapeHtml(formatPostDate(p.publishedAt))}</time>`);
+    if (p.readTime) parts.push(`<span>${p.readTime} min read</span>`);
+    return parts.join(' · ');
+  };
+
   const blogIndexPage = async () => {
     const posts = await getBlogPosts();
     const body = chrome(`
       <h2>Boat maintenance and tide planning blog</h2>
       <p>Practical guides on scrubbing, antifouling, spring and neap tides and seasonal maintenance for UK boat owners.</p>
-      ${posts.length ? `<ul class="pr-posts">${posts.map((p) => `<li><article><h3><a href="/blog/${escapeHtml(p.slug)}">${escapeHtml(p.title)}</a></h3>${p.publishedAt ? `<time datetime="${escapeHtml(new Date(p.publishedAt).toISOString())}">${escapeHtml(londonDate.format(new Date(p.publishedAt)))}</time>` : ''}<p>${escapeHtml(truncate(p.excerpt, 220))}</p></article></li>`).join('')}</ul>` : '<p>Articles are on their way.</p>'}`, { active: '/blog' });
+      ${posts.length
+        ? `<ul class="pr-posts">${posts.map((p) => `<li><article><h3><a href="/blog/${escapeHtml(p.slug)}">${escapeHtml(p.title)}</a></h3><p class="pr-post-meta">${postMeta(p)}</p></article></li>`).join('')}</ul>`
+        : '<p>No articles yet.</p>'}`, { active: '/blog' });
     return {
       title: `Boat Maintenance & Tide Planning Blog | ${SITE_NAME}`,
       description: 'Guides on boat scrubbing, antifouling, spring and neap tides and seasonal yacht maintenance for UK boat owners.',
@@ -473,39 +507,65 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
 
   const blogPostPage = async (post) => {
     const path = `/blog/${post.slug}`;
+    const canonical = `${SITE_ORIGIN}${path}`;
     const published = post.publishedAt ? new Date(post.publishedAt) : null;
     const modified = post.updatedAt ? new Date(post.updatedAt) : published;
+    const isHeyCatch = post.source === 'heycatch';
+    const lang = (post.language || 'en').toLowerCase();
+    const wrapperAttrs = [
+      lang && lang !== 'en' && lang !== 'en-gb' ? ` lang="${escapeHtml(lang)}"` : '',
+      post.dir === 'rtl' ? ' dir="rtl"' : '',
+    ].join('');
+    const description = isHeyCatch
+      ? (post.metaDescription || DEFAULT_DESCRIPTION)
+      : truncate(post.excerpt || post.contentHtml?.replace(/<[^>]+>/g, ' ') || DEFAULT_DESCRIPTION);
+
     const body = chrome(`
       <nav class="pr-crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/blog">Blog</a> › <span>${escapeHtml(post.title)}</span></nav>
-      <article class="pr-article">
-        <h2>${escapeHtml(post.title)}</h2>
-        ${published ? `<p><time datetime="${published.toISOString()}">${escapeHtml(londonDate.format(published))} ${published.getFullYear()}</time></p>` : ''}
+      <article class="pr-article"${wrapperAttrs}>
+        <header>
+          <h1 class="pr-article-title">${escapeHtml(post.title)}</h1>
+          <p class="pr-post-meta">${postMeta(post)}</p>
+        </header>
         ${post.coverImageUrl ? `<img src="${escapeHtml(post.coverImageUrl)}" alt="${escapeHtml(post.coverImageAlt || `Cover photo for the article “${post.title}”`)}" loading="lazy" />` : ''}
         ${post.contentHtml || ''}
-      </article>`, { active: '/blog' });
+      </article>`, { active: '/blog', brandAsHeading: false });
+
+    // JSON-LD: HeyCatch supplies its own object; make sure it names the canonical URL.
+    let articleLd;
+    if (isHeyCatch && post.jsonLd) {
+      articleLd = { ...post.jsonLd };
+      if (!articleLd.url) {
+        articleLd.url = canonical;
+        articleLd.mainEntityOfPage = canonical;
+      }
+    } else {
+      articleLd = {
+        '@context': 'https://schema.org',
+        '@type': 'BlogPosting',
+        headline: post.title,
+        description: truncate(description, 200),
+        url: canonical,
+        mainEntityOfPage: canonical,
+        inLanguage: lang === 'en' ? 'en-GB' : lang,
+        image: post.coverImageUrl || SOCIAL_IMAGE,
+        datePublished: published ? published.toISOString() : undefined,
+        dateModified: modified ? modified.toISOString() : undefined,
+        author: { '@type': 'Organization', name: SITE_NAME },
+        publisher: organization,
+      };
+    }
+
     return {
-      title: `${post.title} | ${SITE_NAME}`,
-      description: truncate(post.excerpt || post.contentHtml?.replace(/<[^>]+>/g, ' ') || DEFAULT_DESCRIPTION),
+      title: isHeyCatch ? post.title : `${post.title} | ${SITE_NAME}`,
+      description: truncate(description, 300),
       canonicalPath: path,
       ogType: 'article',
       image: post.coverImageUrl || SOCIAL_IMAGE,
       body,
       jsonLd: [
         breadcrumbs([['Home', '/'], ['Blog', '/blog'], [post.title, path]]),
-        jsonLd({
-          '@context': 'https://schema.org',
-          '@type': 'BlogPosting',
-          headline: post.title,
-          description: truncate(post.excerpt || '', 200),
-          url: `${SITE_ORIGIN}${path}`,
-          mainEntityOfPage: `${SITE_ORIGIN}${path}`,
-          inLanguage: 'en-GB',
-          image: post.coverImageUrl || SOCIAL_IMAGE,
-          datePublished: published ? published.toISOString() : undefined,
-          dateModified: modified ? modified.toISOString() : undefined,
-          author: { '@type': 'Organization', name: SITE_NAME },
-          publisher: organization,
-        }),
+        jsonLd(articleLd),
       ],
     };
   };
@@ -636,6 +696,23 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
 .pr-posts li{background:#fff;border:1px solid #cbd5e1;border-radius:12px;padding:16px;margin-bottom:12px}
 .pr-posts time{font-size:12px;color:#64748b}
 .pr-article img{max-width:100%;border-radius:12px}
+.pr-article-title{font-family:'Cormorant Garamond',Georgia,serif;font-weight:600;font-size:clamp(28px,5vw,40px);line-height:1.15;margin:16px 0 6px;color:#0f172a}
+.pr-post-meta{font-size:13px;color:#64748b;margin:0 0 12px}
+.pr-article h2{font-family:'Cormorant Garamond',Georgia,serif;font-weight:600;font-size:28px;margin:28px 0 10px;scroll-margin-top:16px}
+.pr-article h3{font-size:18px;margin:20px 0 6px;color:#0f172a}
+.pr-article p,.pr-article li{font-size:16px;line-height:1.7;color:#1e293b}
+.pr-article ul,.pr-article ol{padding-left:22px}
+.pr-article blockquote{border-left:4px solid #0ea5e9;margin:16px 0;padding:6px 0 6px 16px;color:#334155;font-style:italic}
+.pr-article table{width:100%;border-collapse:collapse;margin:16px 0;font-size:15px;background:#fff}
+.pr-article th,.pr-article td{border:1px solid #e2e8f0;padding:8px 10px;text-align:left;vertical-align:top}
+.pr-article th{background:#f1f5f9}
+.pr-article a{color:#0284c7}
+.pr-article code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:.92em}
+.pr-article pre{background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:10px;overflow-x:auto}
+.blog-toc{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 18px;margin:20px 0}
+.blog-toc h2{font-size:18px;margin:0 0 8px}
+.blog-toc ol{margin:0;padding-left:20px}
+.blog-toc li{font-size:15px;margin:4px 0}
 .pr-footer{border-top:1px solid rgba(56,189,248,.2);margin-top:40px;padding-top:24px;text-align:center;font-size:12px;color:#475569}
 .pr-shot{margin:24px 0 0}
 .pr-shot img{display:block;width:100%;max-width:720px;height:auto;margin:0 auto;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 10px 30px rgba(15,23,42,.10)}
@@ -698,8 +775,7 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
       }
       case 'blog': {
         if (!route.blogSlug) return blogIndexPage();
-        const posts = await getBlogPosts();
-        const post = posts.find((p) => p.slug === route.blogSlug);
+        const post = await getBlogPost(route.blogSlug);
         if (!post) return notFoundPage(pathname);
         const page = await blogPostPage(post);
         if (normalizePathname(pathname) !== page.canonicalPath) page.redirectTo = page.canonicalPath;
@@ -755,7 +831,7 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
       url('/datasets/', { changefreq: 'weekly', priority: '0.6' }),
       url('/datasets/boat-scrub-windows-v1/', { changefreq: 'weekly', priority: '0.6' }),
       url('/llms.txt', { changefreq: 'weekly', priority: '0.5' }),
-      ...posts.map((p) => url(`/blog/${p.slug}`, { lastmod: (p.updatedAt || p.publishedAt || today).toString().slice(0, 10), changefreq: 'monthly', priority: '0.7' })),
+      ...posts.map((p) => url(`/blog/${p.slug}`, { lastmod: (p.updatedDate || (p.updatedAt ? new Date(p.updatedAt).toISOString() : '') || (p.publishedAt ? new Date(p.publishedAt).toISOString() : '') || today).toString().slice(0, 10), changefreq: 'monthly', priority: '0.7' })),
       ...stations.map((s) => url(stationPath(s), { changefreq: 'daily', priority: '0.8' })),
     ];
     return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries.join('\n')}\n</urlset>\n`;
@@ -791,7 +867,7 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
       'Each station page lists the next 7 days of high and low water with heights and marks scrubbing mornings. URL pattern: /tides/<station-name>-<admiralty-id>. Examples:',
       ...featured.map((s) => `- [${s.name} tide times](${SITE_ORIGIN}${stationPath(s)})`),
       '',
-      ...(posts.length ? ['## Articles', ...posts.slice(0, 30).map((p) => `- [${p.title}](${SITE_ORIGIN}/blog/${p.slug}): ${truncate(p.excerpt, 140)}`), ''] : []),
+      ...(posts.length ? ['## Articles', ...posts.slice(0, 30).map((p) => `- [${p.title}](${SITE_ORIGIN}/blog/${p.slug})${p.excerpt ? `: ${truncate(p.excerpt, 140)}` : ''}`), ''] : []),
       '## API for agents',
       `- Public station list: ${SITE_ORIGIN}/api/Stations (GeoJSON, proxied from the Admiralty API)`,
       `- Tidal events: ${SITE_ORIGIN}/api/Stations/<id>/TidalEvents?duration=7`,

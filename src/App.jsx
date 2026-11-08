@@ -320,6 +320,8 @@ export default function TidalCalendarApp() {
   const [facilityFormName, setFacilityFormName] = useState('');
   const [bookingAssignments, setBookingAssignments] = useState({});
   const [blogPosts, setBlogPosts] = useState([]);
+  const [blogArticles, setBlogArticles] = useState({}); // slug -> full article (HeyCatch content is fetched per article)
+  const [blogAvailable, setBlogAvailable] = useState(true);
   const [blogLoading, setBlogLoading] = useState(false);
   const [blogError, setBlogError] = useState('');
   const [blogAdminError, setBlogAdminError] = useState('');
@@ -392,11 +394,22 @@ export default function TidalCalendarApp() {
     return 'User';
   }, [role]);
   const pages = useMemo(() => {
-    const base = ['calendar', 'profile', 'about', 'blog'];
+    const base = ['calendar', 'profile', 'about'];
+    if (blogAvailable || currentPage === 'blog') base.push('blog');
     if (user?.role === 'club_admin' || user?.role === 'admin') base.push('club');
     if (user?.role === 'admin') base.push('admin');
     return base;
-  }, [user]);
+  }, [user, blogAvailable, currentPage]);
+
+  useEffect(() => {
+    if (isEmbed) return;
+    let cancelled = false;
+    fetch('/api/blog-posts/status')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((status) => { if (!cancelled && status && typeof status.total === 'number') setBlogAvailable(status.total > 0); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isEmbed]);
   const subscriptionEndLabel = subscriptionEnd && !Number.isNaN(new Date(subscriptionEnd).getTime())
     ? new Date(subscriptionEnd).toLocaleDateString('en-GB')
     : 'Not set';
@@ -991,6 +1004,16 @@ export default function TidalCalendarApp() {
       setBlogLoading(false);
     }
   }, [apiRequest, pendingBlogSlug]);
+
+  const loadBlogArticle = useCallback(async (post) => {
+    if (!post?.slug || post.contentHtml || blogArticles[post.slug]) return;
+    try {
+      const article = await apiRequest(`/api/blog-posts/by-slug/${encodeURIComponent(post.slug)}`);
+      if (article) setBlogArticles((current) => ({ ...current, [post.slug]: article }));
+    } catch (err) {
+      setBlogArticles((current) => ({ ...current, [post.slug]: { ...post, contentHtml: '', loadError: err.message || 'Unable to load this article.' } }));
+    }
+  }, [apiRequest, blogArticles]);
 
   const resetBlogEditor = useCallback(() => {
     setBlogEditor({ id: null, title: '', excerpt: '', coverImageUrl: '', coverImageAlt: '', contentHtml: '' });
@@ -2258,7 +2281,15 @@ export default function TidalCalendarApp() {
     );
   }
 
-  const selectedBlogPost = blogPosts.find((post) => post.id === selectedBlogPostId) || blogPosts[0] || null;
+  const selectedBlogSummary = blogPosts.find((post) => post.id === selectedBlogPostId) || blogPosts[0] || null;
+  const selectedBlogPost = selectedBlogSummary
+    ? { ...selectedBlogSummary, ...(blogArticles[selectedBlogSummary.slug] || {}) }
+    : null;
+
+  useEffect(() => {
+    if (currentPage !== 'blog' || !selectedBlogSummary) return;
+    loadBlogArticle(selectedBlogSummary);
+  }, [currentPage, selectedBlogSummary, loadBlogArticle]);
 
   useEffect(() => {
     if (currentPage !== 'blog' || !selectedBlogPost) return;
@@ -2316,6 +2347,21 @@ export default function TidalCalendarApp() {
           .blog-carousel-nav { flex-wrap: wrap; }
           .blog-carousel-nav button { flex: 1; min-width: 140px; }
         }
+        .blog-content h2 { font-family: 'Cormorant Garamond', serif; font-weight: 600; font-size: 26px; margin: 18px 0 4px; color: #0f172a; scroll-margin-top: 16px; }
+        .blog-content h3 { font-size: 17px; margin: 12px 0 2px; color: #0f172a; }
+        .blog-content p, .blog-content li { font-family: 'Outfit', sans-serif; }
+        .blog-content ul, .blog-content ol { padding-left: 22px; margin: 0; }
+        .blog-content a { color: #0284c7; }
+        .blog-content blockquote { border-left: 4px solid #0ea5e9; margin: 8px 0; padding: 4px 0 4px 14px; color: #334155; font-style: italic; }
+        .blog-content table { width: 100%; border-collapse: collapse; font-size: 14px; background: #fff; }
+        .blog-content th, .blog-content td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; vertical-align: top; }
+        .blog-content th { background: #f1f5f9; }
+        .blog-content code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+        .blog-content pre { background: #0f172a; color: #e2e8f0; padding: 12px 14px; border-radius: 10px; overflow-x: auto; }
+        .blog-content .blog-toc { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px; }
+        .blog-content .blog-toc h2 { font-size: 18px; margin: 0 0 6px; }
+        .blog-content .blog-toc ol { margin: 0; padding-left: 20px; }
+        .blog-content .blog-toc li { font-size: 14px; margin: 3px 0; }
         ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); } ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 4px; }
       `}</style>
 
@@ -2325,7 +2371,11 @@ export default function TidalCalendarApp() {
         
         <div style={{ animation: 'fadeInUp 0.8s ease-out' }}>
           <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '4px', textTransform: 'uppercase', color: '#0ea5e9', marginBottom: '12px' }}>For UK boat owners</p>
-          <h1 style={{ fontSize: 'clamp(36px, 8vw, 64px)', fontWeight: 400, letterSpacing: '2px', margin: '0 0 16px', background: 'linear-gradient(135deg, #0f172a 0%, #0ea5e9 60%, #0f172a 100%)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', animation: 'shimmer 4s linear infinite' }}>Scrubbing off Calendar</h1>
+          {React.createElement(
+            currentPage === 'blog' && selectedBlogPost ? 'p' : 'h1',
+            { style: { fontFamily: "'Cormorant Garamond', serif", fontSize: 'clamp(36px, 8vw, 64px)', fontWeight: 400, letterSpacing: '2px', margin: '0 0 16px', background: 'linear-gradient(135deg, #0f172a 0%, #0ea5e9 60%, #0f172a 100%)', backgroundSize: '200% auto', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', animation: 'shimmer 4s linear infinite' } },
+            'Scrubbing off Calendar',
+          )}
           <p style={{ fontFamily: "'Outfit', sans-serif", fontSize: '14px', color: '#475569', maxWidth: '500px', margin: '0 auto 24px' }}>Monthly view • Harmonic predictions • Boat scrubbing day finder</p>
           
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.25)', color: '#15803d', padding: '8px 16px', borderRadius: '20px', fontFamily: "'Outfit', sans-serif", fontSize: '12px', letterSpacing: '1px' }}>
@@ -2512,7 +2562,7 @@ export default function TidalCalendarApp() {
             </header>
             {blogError && <div style={{ color: '#b91c1c', fontWeight: 600 }}>{blogError}</div>}
             {blogLoading && <div style={{ color: '#334155' }}>Loading blog posts…</div>}
-            {!blogLoading && blogPosts.length === 0 && <div style={{ color: '#334155' }}>No blog posts have been published yet.</div>}
+            {!blogLoading && blogPosts.length === 0 && <div style={{ color: '#334155' }}>No articles yet.</div>}
 
             {!blogLoading && blogPosts.length > 0 && (
               <div style={{ display: 'grid', gap: '18px' }}>
@@ -2560,19 +2610,28 @@ export default function TidalCalendarApp() {
                       }}
                     >
                       <div style={{ fontWeight: 600, color: '#0f172a' }}>{post.title}</div>
-                      <div style={{ fontSize: '12px', color: '#64748b' }}>{new Date(post.publishedAt).toLocaleDateString('en-GB')}</div>
-                      <div style={{ fontSize: '13px', color: '#334155' }}>{post.excerpt}</div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        {post.publishedAt ? new Date(post.publishedAt).toLocaleDateString('en-GB') : ''}
+                        {post.readTime ? ` · ${post.readTime} min read` : ''}
+                      </div>
                     </button>
                   ))}
                   </div>
                 </div>
 
                 {selectedBlogPost && (
-                  <article style={{ display: 'grid', gap: '12px', alignContent: 'start', width: '100%' }}>
+                  <article
+                    className="blog-article"
+                    lang={selectedBlogPost.language && !/^en/i.test(selectedBlogPost.language) ? selectedBlogPost.language : undefined}
+                    dir={selectedBlogPost.dir === 'rtl' ? 'rtl' : undefined}
+                    style={{ display: 'grid', gap: '12px', alignContent: 'start', width: '100%' }}
+                  >
                     <header style={{ display: 'grid', gap: '6px' }}>
-                      <h3 className="blog-title" style={{ margin: 0, fontSize: '32px', color: '#0f172a', lineHeight: 1.2 }}>{selectedBlogPost.title}</h3>
+                      <h1 className="blog-title" style={{ margin: 0, fontSize: '32px', color: '#0f172a', lineHeight: 1.2, fontWeight: 600 }}>{selectedBlogPost.title}</h1>
                       <div style={{ color: '#64748b', fontSize: '13px' }}>
-                        {new Date(selectedBlogPost.publishedAt).toLocaleDateString('en-GB')} • {selectedBlogPost.authorEmail || 'Admin'}
+                        {selectedBlogPost.publishedAt ? new Date(selectedBlogPost.publishedAt).toLocaleDateString('en-GB') : ''}
+                        {selectedBlogPost.readTime ? ` · ${selectedBlogPost.readTime} min read` : ''}
+                        {selectedBlogPost.source !== 'heycatch' && selectedBlogPost.authorEmail ? ` · ${selectedBlogPost.authorEmail}` : ''}
                       </div>
                       <div>
                         <a
@@ -2590,10 +2649,15 @@ export default function TidalCalendarApp() {
                     {selectedBlogPost.coverImageUrl && (
                       <img src={selectedBlogPost.coverImageUrl} alt={selectedBlogPost.coverImageAlt || `Cover photo for the article “${selectedBlogPost.title}”`} style={{ width: '100%', borderRadius: '12px', maxHeight: '340px', objectFit: 'cover', border: '1px solid #e2e8f0' }} />
                     )}
-                    <div
-                      style={{ color: '#1e293b', fontSize: '15px', lineHeight: 1.7, display: 'grid', gap: '10px' }}
-                      dangerouslySetInnerHTML={{ __html: selectedBlogPost.contentHtml }}
-                    />
+                    {selectedBlogPost.loadError && <div style={{ color: '#b91c1c', fontWeight: 600 }}>{selectedBlogPost.loadError}</div>}
+                    {!selectedBlogPost.contentHtml && !selectedBlogPost.loadError && <div style={{ color: '#334155' }}>Loading article…</div>}
+                    {selectedBlogPost.contentHtml && (
+                      <div
+                        className="blog-content"
+                        style={{ color: '#1e293b', fontSize: '15px', lineHeight: 1.7, display: 'grid', gap: '10px' }}
+                        dangerouslySetInnerHTML={{ __html: selectedBlogPost.contentHtml }}
+                      />
+                    )}
                   </article>
                 )}
               </div>

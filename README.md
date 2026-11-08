@@ -199,6 +199,26 @@ HeyCatch is installed per [heycatch.ai/agents.md](https://heycatch.ai/agents.md)
   for HeyCatch channel links.
 - The SDK requires Node 22 (`.nvmrc`, `engines`).
 
+## Blog (HeyCatch)
+
+Articles are written by HeyCatch and read live from its API, following
+[heycatch.ai/blog-agents.md](https://heycatch.ai/blog-agents.md):
+
+- Set `HEYCATCH_API_KEY` (the publishable `hck_lv_…` blog key) in the environment. It is sent as
+  the `key` query parameter only; without it the blog shows local posts only and logs a warning.
+- `src/blog/heycatch.js` lists every article (following `total` across pages), fetches one article
+  by slug, sanitises `content_html` with `sanitize-html` (keeping `h2` ids), inserts a table of
+  contents after the Key takeaways list, and caches for 120 s with last-good fallback. Errors never
+  throw; 404 renders the site's 404 page; 429 is retried once after `Retry-After`.
+- `/blog` lists title, date and read time only; `/blog/<slug>` renders the title as the page's only
+  `<h1>`, `meta_description` in meta tags only, an absolute canonical, the article's own JSON-LD,
+  and `lang`/`dir` when the language differs. Both are server-rendered; the React page fetches
+  article content from `/api/blog-posts/by-slug/<slug>`.
+- Posts created earlier through the admin editor stay available and are merged into the same index.
+  New articles should come from HeyCatch; nothing from the API is copied into the database.
+- The sitemap lists every article with `<lastmod>` from `updated`. The Blog nav link hides while the
+  list is empty (`/api/blog-posts/status`), though `/blog` stays reachable.
+
 ## Model Context Protocol (MCP)
 
 This repo includes a standalone MCP server that proxies the existing HTTP API so other agents can use Tidal Calendar tools without modifying the main app.

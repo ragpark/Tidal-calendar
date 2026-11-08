@@ -193,6 +193,51 @@ test('blog cover images get descriptive alt text', async () => {
   assert.match((await noAlt.render('/blog/spring-maintenance')).html, /alt="Cover photo for the article “Spring &lt;Maintenance&gt;”"/);
 });
 
+const heycatchArticle = {
+  id: 'h1', slug: 'grid-mornings', title: 'Grid mornings explained', metaDescription: 'How to read a scrubbing window.', excerpt: '',
+  publishedAt: '2026-10-14T08:00:00Z', updatedAt: '2026-10-20T09:00:00Z', updatedDate: '2026-10-20', readTime: 6, language: 'de', dir: null,
+  coverImageUrl: '', coverImageAlt: '', source: 'heycatch',
+  contentHtml: '<h2>Key takeaways</h2><ul><li>t</li></ul>\n<nav class="blog-toc"><h2 id="blog-toc-heading">Table of contents</h2><ol><li><a href="#why">Why</a></li></ol></nav>\n<h2 id="why">Why</h2><p>Body</p><h2 id="faq">FAQ</h2><h3>Q?</h3><p>A.</p>',
+  jsonLd: { '@context': 'https://schema.org', '@type': 'Article', headline: 'Grid mornings explained' },
+};
+
+test('HeyCatch article page follows the blog guide: h1 title, meta from meta_description, canonical, JSON-LD url, lang', async () => {
+  const renderer = makeRenderer({
+    fetchBlogPosts: async () => [heycatchArticle, ...posts],
+    fetchBlogPost: async (slug) => (slug === 'grid-mornings' ? heycatchArticle : posts.find((p) => p.slug === slug) || null),
+  });
+  const { html, status } = await renderer.render('/blog/grid-mornings');
+  assert.equal(status, 200);
+  assert.match(html, /<title>Grid mornings explained<\/title>/);
+  assert.match(html, /<meta name="description" content="How to read a scrubbing window\." \/>/);
+  assert.match(html, /<meta property="og:type" content="article" \/>/);
+  assert.match(html, /<link rel="canonical" href="https:\/\/boatscrubcalendar\.com\/blog\/grid-mornings" \/>/);
+  assert.match(html, /<h1 class="pr-article-title">Grid mornings explained<\/h1>/);
+  assert.doesNotMatch(html, /<h1 class="pr-brand">/, 'the article title is the only h1');
+  assert.match(html, /6 min read/);
+  assert.match(html, /<article class="pr-article" lang="de">/);
+  assert.match(html, /"@type":"Article","headline":"Grid mornings explained","url":"https:\/\/boatscrubcalendar\.com\/blog\/grid-mornings","mainEntityOfPage":"https:\/\/boatscrubcalendar\.com\/blog\/grid-mornings"/);
+  assert.match(html, /blog-toc/);
+  assert.doesNotMatch(html, /How to read a scrubbing window\.<\/p>/, 'meta_description is never visible text');
+
+  const index = (await renderer.render('/blog')).html;
+  assert.match(index, /<a href="\/blog\/grid-mornings">Grid mornings explained<\/a>/);
+  assert.match(index, /6 min read/);
+  assert.doesNotMatch(index, /How to read a scrubbing window/);
+
+  const xml = await renderer.sitemap();
+  assert.match(xml, /<loc>https:\/\/boatscrubcalendar\.com\/blog\/grid-mornings<\/loc><lastmod>2026-10-20<\/lastmod>/);
+  assert.equal((await renderer.render('/blog/does-not-exist')).status, 404);
+});
+
+test('blog index answers 200 with an empty state when there are no articles', async () => {
+  const renderer = makeRenderer({ fetchBlogPosts: async () => [] });
+  const { html, status } = await renderer.render('/blog');
+  assert.equal(status, 200);
+  assert.match(html, /No articles yet\./);
+  assert.doesNotMatch(html, /<a href="\/blog">Blog<\/a><\/nav>|aria-current="page">Blog/ === null ? /x/ : /never/);
+});
+
 test('rendered pages are cached briefly and refreshed after expiry', async () => {
   let calls = 0;
   const renderer = makeRenderer({ fetchBlogPosts: async () => { calls += 1; return posts; } });
