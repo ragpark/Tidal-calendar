@@ -59,11 +59,15 @@
               dataLayer.push({
                 'event': 'consent_accepted_analytics',
               });
+              window.__heycatchConsent = true;
+              if (window.heycatch) window.heycatch.optInCapturing();
             },
             onReject: function() {
               gtag('consent', 'update', {
                 analytics_storage: 'denied',
               });
+              window.__heycatchConsent = false;
+              if (window.heycatch) window.heycatch.optOutCapturing();
             }
           },
           {

@@ -16,13 +16,20 @@ const define = {
 };
 
 await build({
-  entryPoints: [path.join(rootDir, 'src', 'main.jsx')],
+  // bundle.js: the React app. analytics.js: HeyCatch init for server-rendered pages that do not
+  // mount the app (see src/seo/render.js). Code splitting keeps the SDK in one shared chunk.
+  entryPoints: {
+    bundle: path.join(rootDir, 'src', 'main.jsx'),
+    analytics: path.join(rootDir, 'src', 'analytics', 'static.js'),
+  },
   bundle: true,
+  splitting: true,
   format: 'esm',
   platform: 'browser',
-  target: ['es2017'],
+  target: ['es2020'],
   jsx: 'transform',
   sourcemap: true,
-  outfile: path.join(outDir, 'bundle.js'),
+  outdir: outDir,
+  chunkNames: 'chunks/[name]-[hash]',
   define,
 });

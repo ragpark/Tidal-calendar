@@ -182,6 +182,23 @@ both the pre-rendered pages and the React app. Run the tests with:
 npm test
 ```
 
+## Analytics (HeyCatch)
+
+HeyCatch is installed per [heycatch.ai/agents.md](https://heycatch.ai/agents.md):
+
+- `src/analytics/app.js` calls `analytics.init` at module scope and is the first import in
+  `src/main.jsx`; `src/analytics/static.js` does the same (with `requestBatching: false`) for the
+  server-rendered `/vs/` pages, which load `/assets/analytics.js` instead of the app bundle.
+- The project key lives in `src/analytics/config.js` (it is publishable). The init is tagged
+  `site: 'landing'` and gated behind the cookie banner's Analytics category
+  (`optOutCapturingByDefault: true`; `public/index.html` calls `optInCapturing()` on accept).
+- `server.js` initialises the server entry and sends the business events the backend knows about:
+  `signup_completed`, `subscription_started`, `pdf_tide_booklet_purchased`, `club_scrub_window_booked`.
+  The browser sets identity after sign-in and resets it on sign-out.
+- Single-character paths (`/a`–`/z`, `/0`–`/9`) 302 to `/?utm_source=heycatch&utm_campaign=<char>`
+  for HeyCatch channel links.
+- The SDK requires Node 22 (`.nvmrc`, `engines`).
+
 ## Model Context Protocol (MCP)
 
 This repo includes a standalone MCP server that proxies the existing HTTP API so other agents can use Tidal Calendar tools without modifying the main app.

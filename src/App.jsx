@@ -3,6 +3,25 @@ import ScrubAdvisorChatbot from './chatbot/ScrubAdvisorChatbot';
 import { parseRoute, pathForPage, stationPath, SITE_NAME } from './seo/routes';
 import { SEED_STATIONS, normalizeStationList } from './seo/stations';
 import { CLUB_PITCH, CLUB_PROOF, CONTACT_EMAIL, OPERATOR, PRICING, PRODUCT_SHOT, TESTIMONIALS } from './seo/content';
+import { analytics } from '@heycatch/sdk';
+
+const planForAccount = (account) => {
+  if (!account) return 'free';
+  if (account.role === 'admin') return 'admin';
+  if (account.role === 'club_admin') return 'club_admin';
+  if (account.role === 'subscriber' || account.subscription_status === 'active') return 'subscriber';
+  return 'free';
+};
+
+// HeyCatch identity: a stable internal id, with email and plan as properties (sign-up date set once).
+const identifyAccount = (account) => {
+  if (!account?.id) return;
+  analytics.setIdentity(
+    String(account.id),
+    { email: account.email, plan: planForAccount(account) },
+    account.created_at ? { signup_date: account.created_at } : undefined,
+  );
+};
 
 // Product screenshot shown in the hero/empty state and on the plans page (shared with the server renderer).
 const ProductShot = ({ caption, eager = false }) => (
@@ -463,6 +482,7 @@ export default function TidalCalendarApp() {
     try {
       const me = await apiRequest('/api/auth/me');
       setUser(me);
+      identifyAccount(me);
       setHomePort(me.home_port_id || '');
     } catch {
       setUser(null);
@@ -741,6 +761,7 @@ export default function TidalCalendarApp() {
       const endpoint = authMode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
       const account = await apiRequest(endpoint, { method: 'POST', body: JSON.stringify({ email, password }) });
       setUser(account);
+      identifyAccount(account);
       setHomePort(account.home_port_id || '');
     } catch (err) {
       setAuthError(err.message);
@@ -833,6 +854,7 @@ export default function TidalCalendarApp() {
 
   const handleSignOut = async () => {
     await apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    analytics.resetIdentity();
     setUser(null);
     setSubscriptionNotice('');
     setSubscriptionEnd('');

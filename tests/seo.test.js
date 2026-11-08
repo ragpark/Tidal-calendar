@@ -181,6 +181,7 @@ test('comparison pages are static, indexable and carry FAQ schema', async () => 
   assert.match(html, /<table class="pr-table pr-compare">/);
   assert.match(html, /"@type":"FAQPage"/);
   assert.doesNotMatch(html, /assets\/bundle\.js/);
+  assert.match(html, /<script type="module" src="\/assets\/analytics\.js"><\/script>/);
   assert.equal((await renderer.render('/vs/unknown')).status, 404);
   assert.match((await renderer.render('/')).html, /assets\/bundle\.js/);
 });

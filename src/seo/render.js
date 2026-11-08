@@ -733,8 +733,9 @@ export const createSeoRenderer = ({ fetchStations, fetchTidalEvents, fetchBlogPo
     let html = template
       .replace('<!--SEO_HEAD-->', buildHead(page))
       .replace('<!--SEO_BODY-->', page.body || '');
-    // Content-only pages (comparisons) are complete as served; do not mount the app over them.
-    if (page.static) html = html.replace(BUNDLE_TAG, '');
+    // Content-only pages (comparisons) are complete as served; do not mount the app over them,
+    // but still load the analytics entry so they are tracked like every other page.
+    if (page.static) html = html.replace(BUNDLE_TAG, '\n    <script type="module" src="/assets/analytics.js"></script>');
     const result = { html, status: page.status || 200 };
     if (result.status === 200) cache.set(cacheKey, result, RENDER_TTL);
     return result;

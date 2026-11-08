@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "node scripts/build.mjs && node server.js",
@@ -17,6 +17,7 @@
     "test:voice": "vitest run voice/__tests__"
   },
   "dependencies": {
+    "@heycatch/sdk": "^0.8.5",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
     "dotenv": "^16.4.5",
@@ -28,13 +29,13 @@
     "resend": "^3.2.0"
   },
   "devDependencies": {
-    "esbuild": "^0.21.5",
-    "typescript": "^5.6.3",
-    "vitest": "^2.1.8",
-    "tsx": "^4.19.2",
-    "supertest": "^7.1.1",
     "@types/express": "^5.0.0",
+    "@types/node": "^22.10.1",
     "@types/supertest": "^6.0.3",
-    "@types/node": "^22.10.1"
+    "esbuild": "^0.21.5",
+    "supertest": "^7.1.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
   }
 }

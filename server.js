@@ -13,6 +13,8 @@ import PDFDocument from 'pdfkit';
 import { sendMaintenanceReminderEmail, sendPasswordResetEmail, sendWelcomeEmail } from './src/email/send.js';
 import { createPasswordResetStore } from './src/auth/passwordResetStore.js';
 import { createSeoRenderer } from './src/seo/render.js';
+import { analytics } from '@heycatch/sdk';
+import { HEYCATCH_PROJECT_KEY } from './src/analytics/config.js';
 import { normalizePathname, parseRoute } from './src/seo/routes.js';
 import {
   InMemoryPasswordResetStore,
@@ -24,6 +26,18 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// HeyCatch server entry: business events the backend knows about (sign-ups, subscriptions, bookings).
+// Browser pageviews and clicks are autocaptured by the client init in src/analytics/.
+analytics.init({ projectKey: HEYCATCH_PROJECT_KEY });
+
+const planForUser = (user) => {
+  if (!user) return 'free';
+  if (user.role === 'admin') return 'admin';
+  if (user.role === 'club_admin') return 'club_admin';
+  if (user.role === 'subscriber' || user.subscription_status === 'active') return 'subscriber';
+  return 'free';
+};
 
 const isValidAbsoluteHttpUrl = (value) => {
   if (!value || typeof value !== 'string') return false;
@@ -715,7 +729,7 @@ const getUserFromSession = async (req) => {
   const token = req.cookies?.[SESSION_COOKIE];
   if (!token) return null;
   const { rows } = await pool.query(
-    `SELECT u.id, u.email, u.role, u.subscription_status, u.subscription_period_end, u.has_pdf_calendar_access, u.pdf_calendar_purchased_at, u.stripe_customer_id, u.stripe_last_session_id, u.maintenance_reminders_enabled, u.home_port_id, u.home_port_name, u.home_club_id, u.home_club_name
+    `SELECT u.id, u.email, u.role, u.subscription_status, u.subscription_period_end, u.has_pdf_calendar_access, u.pdf_calendar_purchased_at, u.stripe_customer_id, u.stripe_last_session_id, u.maintenance_reminders_enabled, u.home_port_id, u.home_port_name, u.home_club_id, u.home_club_name, u.created_at
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token = $1 AND s.expires_at > now()`,
@@ -998,6 +1012,11 @@ const passwordResetLimiter = createRateLimiter({
 // Health check endpoint for container monitoring.
 // Keep this endpoint independent of database availability so Railway can
 // consistently validate container liveness during deploys and restarts.
+// HeyCatch short links: single-character paths are reserved for channel attribution.
+app.get(/^\/([a-z0-9])$/, (req, res) => {
+  res.redirect(302, `/?utm_source=heycatch&utm_campaign=${req.params[0]}`);
+});
+
 app.get('/health', (_req, res) => {
   res.status(200).json({
     status: 'ok',
@@ -1076,10 +1095,13 @@ app.post('/api/auth/signup', async (req, res) => {
   try {
     const { rows } = await pool.query(
       `INSERT INTO users (email, password_hash) VALUES ($1, $2)
-       RETURNING id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name`,
+       RETURNING id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, home_port_id, home_port_name, home_club_id, home_club_name, created_at`,
       [email.toLowerCase(), hash],
     );
     const user = rows[0];
+    // The backend is the only side that knows the sign-up completed: report it from here.
+    await analytics.setIdentity(user.id, { email: user.email, plan: 'free' }, { signup_date: user.created_at });
+    await analytics.trackEvent('signup_completed', { method: 'password' }, { userId: user.id, request: req });
     const token = randomUUID();
     await pool.query(`INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, now() + interval '${SESSION_TTL_HOURS} hours')`, [user.id, token]);
     res.cookie(SESSION_COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: SESSION_TTL_HOURS * 3600 * 1000 });
@@ -1113,7 +1135,7 @@ app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   const { rows } = await pool.query(
-    `SELECT id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, password_hash, home_port_id, home_port_name, home_club_id, home_club_name
+    `SELECT id, email, role, subscription_status, subscription_period_end, has_pdf_calendar_access, pdf_calendar_purchased_at, stripe_customer_id, stripe_last_session_id, maintenance_reminders_enabled, password_hash, home_port_id, home_port_name, home_club_id, home_club_name, created_at
      FROM users WHERE email = $1`,
     [email.toLowerCase()],
   );
@@ -1139,6 +1161,7 @@ app.post('/api/auth/login', async (req, res) => {
     home_port_name: user.home_port_name,
     home_club_id: user.home_club_id,
     home_club_name: user.home_club_name,
+    created_at: user.created_at,
   });
 });
 
@@ -1857,7 +1880,19 @@ const applyStripePurchasesForUser = async ({
       grantsPdfCalendar,
     });
   }
-  return rows[0] || null;
+  const updated = rows[0] || null;
+  if (updated) {
+    // The backend is the only side that knows a purchase completed: report it from here.
+    const periodEnd = updated.subscription_period_end ? new Date(updated.subscription_period_end).toISOString() : undefined;
+    if (grantsSubscription) {
+      await analytics.setIdentity(updated.id, { email: updated.email, plan: 'subscriber' });
+      await analytics.trackEvent('subscription_started', { plan: 'subscriber', price_gbp: 5, billing: 'yearly', period_end: periodEnd }, { userId: updated.id });
+    }
+    if (grantsPdfCalendar) {
+      await analytics.trackEvent('pdf_tide_booklet_purchased', { price_gbp: 5 }, { userId: updated.id });
+    }
+  }
+  return updated;
 };
 
 const deactivateSubscriptionByCustomerId = async (customerId) => {
@@ -3113,6 +3148,7 @@ app.post('/api/my-club/windows/:windowId/book', requireAuth, async (req, res) =>
   }
 
   await pool.query(`INSERT INTO bookings (window_id, user_id, boat_name) VALUES ($1, $2, $3)`, [req.params.windowId, req.user.id, normalizedBoatName]);
+  await analytics.trackEvent('club_scrub_window_booked', { window_id: req.params.windowId, club_id: clubId }, { userId: req.user.id, request: req });
   const { rows: clubRows } = await pool.query(`SELECT id, name, capacity FROM clubs WHERE id = $1 LIMIT 1`, [clubId]);
   await syncWindowToExternalCalendars({ club: clubRows[0] || null, windowId: req.params.windowId });
   return res.json({ ok: true, alreadyBooked: false });
@@ -3198,6 +3234,7 @@ app.post('/api/my-club/bookings', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'This facility slot is fully booked' });
     }
     await pool.query(`INSERT INTO bookings (window_id, user_id, boat_name) VALUES ($1, $2, $3)`, [windowId, req.user.id, normalizedBoatName]);
+    await analytics.trackEvent('club_scrub_window_booked', { window_id: windowId, club_id: clubId }, { userId: req.user.id, request: req });
   }
 
   await syncWindowToExternalCalendars({ club, windowId });
