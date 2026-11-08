@@ -216,6 +216,8 @@ Articles are written by HeyCatch and read live from its API, following
   article content from `/api/blog-posts/by-slug/<slug>`.
 - Posts created earlier through the admin editor stay available and are merged into the same index.
   New articles should come from HeyCatch; nothing from the API is copied into the database.
+- Wording fixes that cannot yet be made in the HeyCatch dashboard live in `src/blog/overrides.js`,
+  keyed by slug and applied before sanitising. Remove a slug's rules once the article is corrected at source.
 - The sitemap lists every article with `<lastmod>` from `updated`. The Blog nav link hides while the
   list is empty (`/api/blog-posts/status`), though `/blog` stays reachable.
 

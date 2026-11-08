@@ -5,6 +5,7 @@
 // before anything renders it.
 
 import sanitizeHtml from 'sanitize-html';
+import { applyArticleOverrides } from './overrides.js';
 
 export const HEYCATCH_API_BASE = 'https://api.heycatch.ai/v1';
 const PAGE_SIZE = 50;
@@ -218,7 +219,7 @@ export const createHeyCatchBlog = ({ apiKey, baseUrl = HEYCATCH_API_BASE, fetch:
         throw new Error(`article status ${status}`);
       }
       const a = body.article;
-      const sanitised = sanitizeArticleHtml(a.content_html || '');
+      const sanitised = sanitizeArticleHtml(applyArticleOverrides(a.slug || slug, a.content_html || ''));
       const article = {
         ...normaliseSummary(a),
         contentHtml: insertTableOfContents(sanitised),

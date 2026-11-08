@@ -135,6 +135,23 @@ test('errors never throw: 401/403/timeouts give an empty list, stale content is 
   assert.equal(await noKey.getArticle('x'), null);
 });
 
+test('editorial overrides replace EasyTide references in the Hayling article', async () => {
+  const { applyArticleOverrides } = await import('../src/blog/overrides.js');
+  const raw = '<ul><li>Use the UKHO EasyTide Chichester Harbour entrance station for Hayling, not Portsmouth, whose predictions can be tens of minutes out.</li></ul>'
+    + '<p>The quickest official answer comes from the UKHO\'s own <a href="https://easytide.admiralty.co.uk/">EasyTide predictions for Hayling Island</a>, which are free and based on Admiralty tidal harmonic constants. Pick the station.</p>'
+    + '<p>The Admiralty publishes predictions covering the full year, so you can pencil scrub days months ahead (<a href="https://easytide.admiralty.co.uk/">EasyTide</a>). More.</p>'
+    + '<p>EasyTide gives you the official predictions but makes you click day by day. Imray stays.</p>'
+    + '<p>New sentence citing <a href="https://easytide.admiralty.co.uk/">EasyTide</a> again and plain EasyTide too.</p>';
+  const out = applyArticleOverrides('tide-times-hayling-scrub-launch-planning', raw);
+  assert.doesNotMatch(out, /easytide/i);
+  assert.match(out, /Chichester Harbour entrance station in the BoatScrubCalendar tidal calendar/);
+  assert.match(out, /<a href="\/tides">BoatScrubCalendar tidal calendar<\/a>, which is free to use and derived from official UKHO Admiralty tidal data\./);
+  assert.match(out, /derived from UKHO Admiralty predictions, covers the full year for subscribers/);
+  assert.match(out, /A day-by-day tide lookup gives you the official predictions/);
+  assert.match(out, /Imray stays\./);
+  assert.equal(applyArticleOverrides('some-other-slug', raw), raw);
+});
+
 test('429 is retried once after Retry-After', async () => {
   let n = 0;
   const fetchImpl = async () => {
