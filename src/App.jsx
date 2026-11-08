@@ -2592,7 +2592,7 @@ export default function TidalCalendarApp() {
                   >
                   {blogPosts.map((post) => (
                     <button
-                      key={post.id}
+                      key={post.id || post.slug}
                       onClick={() => selectBlogPost(post)}
                       style={{
                         textAlign: 'left',
@@ -3309,7 +3309,7 @@ export default function TidalCalendarApp() {
             <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', display: 'grid', gap: '16px' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Blog CMS</h3>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>Create, edit, and publish blog posts with rich text content stored in the database.</p>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>New articles are written by HeyCatch and read live from its API. This editor manages the earlier posts stored in the database.</p>
               </div>
               {blogAdminError && (
                 <div style={{ background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '10px', padding: '10px', color: '#b91c1c', fontSize: '12px', fontWeight: 600 }}>
@@ -3322,13 +3322,20 @@ export default function TidalCalendarApp() {
                     + New post
                   </button>
                   {blogPosts.map((post) => (
-                    <div key={post.id} style={{ border: '1px solid #e2e8f0', background: blogEditor.id === post.id ? '#eff6ff' : '#fff', borderRadius: '10px', padding: '10px', display: 'grid', gap: '8px' }}>
+                    <div key={post.id || post.slug} style={{ border: '1px solid #e2e8f0', background: blogEditor.id === post.id ? '#eff6ff' : '#fff', borderRadius: '10px', padding: '10px', display: 'grid', gap: '8px' }}>
                       <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '13px' }}>{post.title}</div>
-                      <div style={{ fontSize: '11px', color: '#64748b' }}>{new Date(post.publishedAt).toLocaleDateString('en-GB')}</div>
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>{post.publishedAt ? new Date(post.publishedAt).toLocaleDateString('en-GB') : ''}</div>
+                      {post.source === 'heycatch' ? (
+                        <div style={{ fontSize: '11px', color: '#475569', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 8px' }}>
+                          Written and managed by HeyCatch. Read live from the API; edit it in your HeyCatch dashboard.{' '}
+                          <a href={`/blog/${encodeURIComponent(post.slug)}`} style={{ color: '#0284c7' }}>View</a>
+                        </div>
+                      ) : (
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <button type="button" onClick={() => handleBlogEdit(post)} style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid #bae6fd', background: '#e0f2fe', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Edit</button>
                         <button type="button" onClick={() => handleBlogDelete(post.id)} style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid #fecaca', background: '#fee2e2', color: '#b91c1c', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Delete</button>
                       </div>
+                      )}
                     </div>
                   ))}
                 </div>

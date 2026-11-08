@@ -59,6 +59,8 @@ const mapLocalBlogRow = (row) => ({
   source: 'local',
 });
 
+const fetchLocalSeedPosts = () => initialBlogPosts.map((post) => ({ ...post, slug: toSlugBase(post.title), publishedAt: null, updatedAt: null, source: 'local' }));
+
 const sortNewestFirst = (posts) => [...posts].sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
 
 const planForUser = (user) => {
@@ -1115,6 +1117,61 @@ app.get('/api/stations.json', async (_req, res) => {
   }
 });
 
+// Public blog reads work without the database: HeyCatch articles plus the bundled seed posts.
+const listLocalBlogPosts = async () => {
+  if (!dbReady) return fetchLocalSeedPosts();
+  const { rows } = await pool.query(
+    `SELECT p.id, p.slug, p.title, p.excerpt, p.cover_image_url, p.cover_image_alt, p.content_html, p.published_at, p.created_at, p.updated_at,
+            u.email AS author_email
+     FROM blog_posts p
+     LEFT JOIN users u ON u.id = p.author_id
+     ORDER BY p.published_at DESC, p.created_at DESC`,
+  );
+  return rows.map(mapLocalBlogRow);
+};
+
+const getLocalBlogPost = async (slug) => {
+  if (!dbReady) return fetchLocalSeedPosts().find((p) => p.slug === slug) || null;
+  const { rows } = await pool.query(
+    `SELECT p.id, p.slug, p.title, p.excerpt, p.cover_image_url, p.cover_image_alt, p.content_html, p.published_at, p.created_at, p.updated_at,
+            u.email AS author_email
+     FROM blog_posts p
+     LEFT JOIN users u ON u.id = p.author_id
+     WHERE p.slug = $1
+     LIMIT 1`,
+    [String(slug || '').trim().toLowerCase()],
+  );
+  return rows.length ? mapLocalBlogRow(rows[0]) : null;
+};
+
+// Blog index: HeyCatch articles (metadata only; content is fetched per article) merged with local posts.
+app.get('/api/blog-posts', async (_req, res) => {
+  const [heycatchArticles, localPosts] = await Promise.all([heycatchBlog.listArticles(), listLocalBlogPosts()]);
+  res.set('Cache-Control', 'public, max-age=120');
+  res.json(sortNewestFirst([...heycatchArticles, ...localPosts]));
+});
+
+app.get('/api/blog-posts/status', async (_req, res) => {
+  const [heycatchCount, localCount] = await Promise.all([
+    heycatchBlog.countArticles(),
+    dbReady ? pool.query(`SELECT COUNT(*)::int AS n FROM blog_posts`).then((r) => r.rows[0]?.n || 0) : Promise.resolve(fetchLocalSeedPosts().length),
+  ]);
+  res.set('Cache-Control', 'public, max-age=120');
+  res.json({ total: heycatchCount + localCount, heycatch: heycatchCount, local: localCount });
+});
+
+app.get('/api/blog-posts/by-slug/:slug', async (req, res) => {
+  const slug = String(req.params.slug || '').trim().toLowerCase();
+  const article = await heycatchBlog.getArticle(slug);
+  if (article) {
+    res.set('Cache-Control', 'public, max-age=120');
+    return res.json(article);
+  }
+  const local = await getLocalBlogPost(slug);
+  if (!local) return res.status(404).json({ error: 'Blog post not found' });
+  return res.json(local);
+});
+
 app.use('/api', requireDatabase);
 
 // Auth routes
@@ -1468,55 +1525,6 @@ app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) =
   const { rowCount } = await pool.query(`DELETE FROM users WHERE id = $1`, [req.params.id]);
   if (rowCount === 0) return res.status(404).json({ error: 'User not found' });
   res.json({ ok: true });
-});
-
-const listLocalBlogPosts = async () => {
-  const { rows } = await pool.query(
-    `SELECT p.id, p.slug, p.title, p.excerpt, p.cover_image_url, p.cover_image_alt, p.content_html, p.published_at, p.created_at, p.updated_at,
-            u.email AS author_email
-     FROM blog_posts p
-     LEFT JOIN users u ON u.id = p.author_id
-     ORDER BY p.published_at DESC, p.created_at DESC`,
-  );
-  return rows.map(mapLocalBlogRow);
-};
-
-const getLocalBlogPost = async (slug) => {
-  const { rows } = await pool.query(
-    `SELECT p.id, p.slug, p.title, p.excerpt, p.cover_image_url, p.cover_image_alt, p.content_html, p.published_at, p.created_at, p.updated_at,
-            u.email AS author_email
-     FROM blog_posts p
-     LEFT JOIN users u ON u.id = p.author_id
-     WHERE p.slug = $1
-     LIMIT 1`,
-    [String(slug || '').trim().toLowerCase()],
-  );
-  return rows.length ? mapLocalBlogRow(rows[0]) : null;
-};
-
-// Blog index: HeyCatch articles (metadata only; content is fetched per article) merged with local posts.
-app.get('/api/blog-posts', async (_req, res) => {
-  const [heycatchArticles, localPosts] = await Promise.all([heycatchBlog.listArticles(), listLocalBlogPosts()]);
-  res.set('Cache-Control', 'public, max-age=120');
-  res.json(sortNewestFirst([...heycatchArticles, ...localPosts]));
-});
-
-app.get('/api/blog-posts/status', async (_req, res) => {
-  const [heycatchCount, localRows] = await Promise.all([heycatchBlog.countArticles(), pool.query(`SELECT COUNT(*)::int AS n FROM blog_posts`)]);
-  res.set('Cache-Control', 'public, max-age=120');
-  res.json({ total: heycatchCount + (localRows.rows[0]?.n || 0), heycatch: heycatchCount, local: localRows.rows[0]?.n || 0 });
-});
-
-app.get('/api/blog-posts/by-slug/:slug', async (req, res) => {
-  const slug = String(req.params.slug || '').trim().toLowerCase();
-  const article = await heycatchBlog.getArticle(slug);
-  if (article) {
-    res.set('Cache-Control', 'public, max-age=120');
-    return res.json(article);
-  }
-  const local = await getLocalBlogPost(slug);
-  if (!local) return res.status(404).json({ error: 'Blog post not found' });
-  return res.json(local);
 });
 
 app.post('/api/admin/blog-posts', requireAuth, requireAdmin, async (req, res) => {
@@ -3698,8 +3706,6 @@ const fetchStationCatalogue = async () => {
   if (!response.ok) throw new Error(`Stations fetch failed (${response.status})`);
   return response.json();
 };
-
-const fetchLocalSeedPosts = () => initialBlogPosts.map((post) => ({ ...post, slug: toSlugBase(post.title), publishedAt: null, updatedAt: null, source: 'local' }));
 
 const fetchPublicBlogPosts = async () => {
   const heycatchArticles = await heycatchBlog.listArticles();
